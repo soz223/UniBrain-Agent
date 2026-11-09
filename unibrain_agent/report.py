@@ -43,6 +43,8 @@ def volume_slice(folder, branch, stage, index):
 def previews(folder, full=False):
     result = {}
     for name in ("baseline", "candidate"):
+        if not (folder / f"{name}_preview.npz").exists():
+            continue
         with np.load(folder / f"{name}_preview.npz", allow_pickle=False) as arrays:
             images = {}
             for key in ("input", "mask", "extracted", "warped"):

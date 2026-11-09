@@ -1,6 +1,6 @@
 # UniBrain Agent
 
-An agent controlled training workspace built on the original [UniBrain](https://github.com/Anonymous7852/UniBrain) implementation. Select modules, inspect generated pipeline code, verify gradients and train a measured baseline and candidate comparison.
+An agent controlled training workspace built on the original [UniBrain](https://github.com/Anonymous7852/UniBrain) implementation. Select modules, inspect generated pipeline code, verify gradients and watch the selected pipeline train.
 
 ## Start
 
@@ -14,7 +14,7 @@ python -m venv .venv
 .venv/Scripts/python.exe -m unibrain_agent serve --open
 ```
 
-The dashboard opens at http://127.0.0.1:8769. On Windows, subsequent launches can use `Launch UniBrain Agent.cmd`. On Linux or macOS, replace `.venv/Scripts/python.exe` with `.venv/bin/python`.
+The dashboard opens at http://127.0.0.1:8770. On Windows, subsequent launches can use `Launch UniBrain Agent.cmd`. On Linux or macOS, replace `.venv/Scripts/python.exe` with `.venv/bin/python`.
 
 The bootstrap script downloads pinned source files and the original public UniBrain examples. It does not download pretrained weights. Upstream licenses remain with their source files. A partial source fetch can be requested with `--source reg_unibrain`.
 
@@ -25,10 +25,10 @@ Codex CLI with an existing login provides the composition, coordination and revi
 1. Click an ordered pipeline step and search for a tool. Selected tools are marked; optional steps offer **Skip**. Tissue segmentation and cortical surface appear separately as branches. The catalog retains all 15 works from the research workbook; tools requiring missing inputs are disabled.
 2. Select multiple tools, then click **Apply changes**. The agent reviews the composition, generates `pipeline.py`, and checks two optimizer steps on one real public sample. Build activity shows the actual phase, elapsed time, forward passes, backpropagation and audit events.
 3. **Review code** shows the generated file, the change from baseline, adapter details and measured parameter updates.
-4. **Confirm & run** runs the validated file. The executor checks that its code and implementation have not changed since validation.
-5. Inspect all 96 slices with the slider, arrow keys or adjacent slice buttons. The main view shows images, gradients, training curves and validation results. **Details** contains decisions, graphs, methods and logs. A failed acceptance gate restores the baseline checkpoint.
+4. **Confirm & run** immediately opens the live run monitor and executes only the selected pipeline. The executor checks that its code and implementation have not changed since validation. The monitor shows completed optimizer steps, a loss curve, actual module calls, agent activity, worker CPU usage and resident memory. CPU usage is normalized to total machine capacity; resources exclude the separate Codex process and cloud inference.
+5. Inspect all 96 slices with the slider, arrow keys or adjacent slice buttons. **What is learning?** explains which modules receive gradients from each loss. Expand **Model & agent calls**, **Experiment notebook**, **Validation results** or **Model, data & checks** for additional measurements. The notebook preserves decisions and execution events. A completed run saves its checkpoint; it does not imply acceptance or improved performance.
 
-The displayed baseline is a compact adapted UniBrain configuration. Running this profile does not establish reproduction of the unchanged upstream training entry point or its reported results.
+The dashboard uses compact adapted model cores. Running this profile does not establish reproduction of the unchanged upstream training entry point or its reported results. The CLI retains the paired baseline and candidate experiment for explicit comparison work; the dashboard does not run or display that comparison.
 
 ## Run the original UniBrain
 
@@ -74,9 +74,9 @@ Preparation requires finite outputs, finite gradients for every active parameter
 
 Spatial checks cover array shapes, affine determinant, probability mass, out of bounds sampling, grid folding and inverse cycle error. NPY samples do not provide physical spacing or orientation, so these checks do not establish physical coordinate alignment.
 
-The tissue branch has its own supervised objective. Learned parcellation adds AAL cross entropy to that branch's loss. nnU Net auxiliary heads receive supervision. Dense registration adds velocity smoothness. The coordinator makes one decision before the candidate's second optimizer update. It sees gradient norms and shared parameter cosines, then keeps the four loss weights or applies bounded gradient norm balancing. **Training dynamics → Training coordination → Inspect decision** shows the rationale and weights before and after. This is not TaskForce reinforcement learning or a learned multiagent policy.
+The tissue branch has its own supervised objective. Learned parcellation adds AAL cross entropy to that branch's loss. nnU Net auxiliary heads receive supervision. Dense registration adds velocity smoothness. The coordinator makes one decision before the second optimizer update. It sees gradient norms and shared parameter cosines, then keeps the four loss weights or applies bounded gradient norm balancing. **What is learning? → Agent training decision → Inspect decision** shows the rationale and weights before and after. This is not TaskForce reinforcement learning or a learned multiagent policy.
 
-The post training gate requires successful spatial checks, classification gradients to registration and graph weights, updates in all active modules, validation reference loss at most 1.10 times baseline, and training time at most four times baseline. Passing trainability does not guarantee passing the quality or compute gate.
+For paired CLI experiments, the post training gate requires successful spatial checks, classification gradients to registration and graph weights, updates in all active modules, validation reference loss at most 1.10 times baseline, and training time at most four times baseline. Passing trainability does not guarantee passing the quality or compute gate. This comparison gate is not applied to single pipeline dashboard runs.
 
 The validation reference objective is fixed: extraction BCE, 0.1 times GCC registration loss, ground truth tissue cross entropy, and diagnosis cross entropy. The public training examples contain only one diagnosis class. These short runs demonstrate execution and trainability, not generalization or diagnostic accuracy.
 

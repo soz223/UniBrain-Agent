@@ -2,115 +2,178 @@
 
 const report = JSON.parse(document.getElementById("reportData").textContent);
 const byId = id => document.getElementById(id);
-const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, character =>
-  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
-const format = (value, digits = 3) => Number.isFinite(value) ? value.toFixed(digits) : "Not defined";
-const scientific = value => Number.isFinite(value) ? value.toExponential(1) : "Not defined";
+const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const format = (value, digits = 3) => Number.isFinite(value) ? value.toFixed(digits) : "Not measured";
+const scientific = value => Number.isFinite(value) ? value.toExponential(1) : "Not measured";
 const titleCase = value => value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
-const icons = {
-  grid: '<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/>',
-  flow: '<rect x="2" y="8" width="5" height="8" rx="1"/><rect x="17" y="8" width="5" height="8" rx="1"/><path d="M7 12h10m-4-3 3 3-3 3"/>',
-  pulse: '<path d="M2 12h4l3-7 5 14 3-7h5"/>',
-  chart: '<path d="M3 3v18h18M6 15l5-4 4 2 6-7"/>',
-  nodes: '<circle cx="5" cy="5" r="3"/><circle cx="19" cy="12" r="3"/><circle cx="5" cy="19" r="3"/><path d="m8 6 8 5m-8 7 8-5M5 8v8"/>',
-  book: '<path d="M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Zm0 0v15"/>',
-  cube: '<path d="m12 2 9 5v10l-9 5-9-5V7l9-5Zm-9 5 9 5 9-5m-9 5v10"/>',
-  play: '<path d="m7 4 13 8-13 8Z"/>',
-  branch: '<path d="M5 3v11c0 4 3 5 7 5h7M5 9h14m-4-4 4 4-4 4"/>',
-  download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
-  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>'
-};
-const modules = {
-  denoise_net: ["DNS", "Denoising"], bias_net: ["BIAS", "Bias correction"], norm_net: ["NORM", "Normalization"],
-  ext_net: ["EXT", "Extraction"], reg_net: ["REG", "Registration"],
-  seg_net: ["SEG", "Segmentation"], par_net: ["PAR", "Parcellation head"],
-  feature_net: ["ROI", "ROI encoder"], graph_gen: ["GRAPH", "Graph generation"],
-  gnn_pred: ["CLS", "Classifier"]
-};
-const tasks = { extraction: "EXT", registration: "REG", segmentation: "SEG", classification: "CLS" };
-let branch = "candidate";
+const modules = { denoise_net: "Denoising", bias_net: "Bias correction", ext_net: "Extraction", norm_net: "Normalization", reg_net: "Registration", seg_net: "Segmentation", par_net: "Parcellation head", feature_net: "ROI encoder", graph_gen: "Graph generation", gnn_pred: "Classifier" };
+const tasks = ["extraction", "registration", "segmentation", "classification"];
+const signalNames = { active: "Receives a learning signal", zero: "Connected · zero gradient", disconnected: "No path from this loss", inactive: "No trainable parameters", nonfinite: "Nonfinite gradient" };
 let imageStage = "input";
-let selectedCell = { task: "classification", module: "reg_net" };
-let graphCell = null;
-let pollTimer = null;
 let volumeRequest = 0;
 let volumeAbort = null;
+let pollTimer = null;
+let liveRun = null;
+let runBusy = false;
+let journalSignature = "";
+let reloadPending = false;
 const sliceCache = new Map();
 
-function paintIcons(root = document) {
-  root.querySelectorAll("[data-icon]").forEach(node => {
-    node.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + (icons[node.dataset.icon] || icons.grid) + "</svg>";
-  });
+function paintIcons() {}
+
+function table(headers, rows) {
+  return '<table class="data-table"><thead><tr>' + headers.map(text => '<th scope="col">' + escapeHtml(text) + '</th>').join("") +
+    '</tr></thead><tbody>' + rows.map(row => '<tr>' + row.map(value => '<td>' + value + '</td>').join("") + '</tr>').join("") + '</tbody></table>';
 }
 
-function table(headers, rows, selectedColumn = -1) {
-  const header = headers.map((value, index) => '<th scope="col"' +
-    (index === selectedColumn ? ' class="selected-column"' : "") + ">" + escapeHtml(value) + "</th>").join("");
-  const body = rows.map(row => "<tr>" + row.map((value, index) =>
-    "<td" + (index === selectedColumn ? ' class="selected-column"' : "") + ">" + value + "</td>"
-  ).join("") + "</tr>").join("");
-  return '<table class="data-table"><thead><tr>' + header + "</tr></thead><tbody>" + body + "</tbody></table>";
-}
-
-function showDetails(title, body, eyebrow = "EXPERIMENT DETAILS") {
+function showDetails(title, body, eyebrow = "EXPERIMENT") {
   byId("detailDialog").classList.remove("tool-dialog");
   byId("dialogTitle").textContent = title;
   byId("dialogEyebrow").textContent = eyebrow;
   byId("dialogBody").innerHTML = body;
-  byId("detailDialog").showModal();
+  if (!byId("detailDialog").open) byId("detailDialog").showModal();
 }
 
 function sourceLink(url, label) {
-  if (!/^https:\/\//.test(url || "")) return "";
-  return '<a href="' + escapeHtml(url) + '" target="_blank" rel="noreferrer">' + escapeHtml(label) + "</a>";
+  return /^https:\/\//.test(url || "") ? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noreferrer">' + escapeHtml(label) + '</a>' : "";
 }
 
-function renderStats() {
-  const linked = Object.values(report[branch].gradients.matrix.classification).filter(cell => cell.state === "active").length;
-  const stats = [
-    ["Sample data", report.data.splits.train.count + " / " + report.data.splits.val.count, "train / val", "Test set untouched", "cube", ""],
-    ["Training updates", report.baseline.steps + report.candidate.steps, "steps", "Matched budget · 2 configurations", "chart", ""],
-    ["Classification paths", String(linked).padStart(2, "0"), "modules", "Nonzero parameter gradients · " + branch, "pulse", "cyan"],
-    ["Compute ratio", format(report.gate.cost_ratio, 2) + "×", "", "Candidate / baseline · limit " + report.gate.thresholds.max_cost_ratio.toFixed(1) + "×", "clock", "amber"]
-  ];
-  byId("stats").innerHTML = stats.map(item =>
-    '<article class="stat"><div class="stat-title">' + item[0] + '<span data-icon="' + item[4] +
-    '"></span></div><div class="stat-value ' + item[5] + '">' + escapeHtml(item[1]) +
-    "<small>" + item[2] + '</small></div><div class="stat-caption">' + escapeHtml(item[3]) + "</div></article>"
-  ).join("");
-  paintIcons(byId("stats"));
+function duration(seconds) {
+  const n = Math.max(0, Math.floor(seconds || 0));
+  return n < 60 ? n + "s" : Math.floor(n / 60) + "m " + n % 60 + "s";
 }
 
-function renderPipeline() {
-  const config = report[branch].model.config;
-  const selected = config.stages;
-  const stages = [
-    ["ext_net", "Extraction", selected?.extraction === "M03" ? "ERNet · soft mask" : config.extraction === "synthstrip" ? "SynthStrip · soft mask" : "UniBrain U-Net", selected?.extraction === "M03" || config.extraction === "synthstrip"],
-    ["reg_net", "Registration", selected?.registration === "M06" ? "Affine + VoxelMorph" : selected?.registration === "M07" ? "Affine + LapIRN" : "Affine · " + config.registration_steps + " stage", selected?.registration && selected.registration !== "unibrain"],
-    ["atlas", "Parcellation", selected?.parcellation === "M09" ? "FastSurfer · AAL head" : selected?.parcellation === "M10" ? "HighResNet · AAL head" : config.soft_atlas ? "Soft atlas probabilities" : "Nearest labels", config.soft_atlas],
-    ["feature_net", "ROI features", "Original ROI encoder", false],
-    ["graph_gen", "Brain graph", selected?.graph === "M11" ? "FBNetGen pair MLP" : config.continuous_edges ? "Continuous weights" : "Discrete perturbation", config.continuous_edges],
-    ["gnn_pred", "Classification", selected?.classification === "M12" ? "BrainNetCNN" : selected?.classification === "M13" ? "Brain Network Transformer" : "Original GCN", selected?.classification && selected.classification !== "unibrain"]
-  ];
-  byId("pipelineLabel").textContent = branch.toUpperCase() + " CONFIGURATION";
-  byId("pipeline").innerHTML = stages.map((stage, index) =>
-    (index ? '<span class="pipeline-arrow" aria-hidden="true">→</span>' : "") +
-    '<button class="pipeline-stage ' + (stage[3] ? "changed" : "") + '" data-module="' + stage[0] +
-    '" aria-label="Inspect ' + stage[1] + '"><span class="stage-kind"><span>' +
-    String(index + 1).padStart(2, "0") + "</span><span>" + (stage[3] ? "ADAPTED" : "UNIBRAIN") +
-    "</span></span><strong>" + stage[1] + "</strong><small>" + stage[2] + "</small></button>"
-  ).join("");
-  byId("pipeline").querySelectorAll("button").forEach(button => {
-    button.onclick = () => moduleDetails(button.dataset.module);
-  });
+function startLiveRun(steps) {
+  runBusy = true;
+  byId("results").hidden = true;
+  byId("empty").hidden = true;
+  byId("activityPanel").hidden = true;
+  byId("runError").hidden = true;
+  renderLive({ phase: "starting", message: "Starting your pipeline", steps, history: [], modules: [], agents: [], events: [], elapsed_seconds: 0, resources: {} });
+  byId("runPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderLive(value) {
+  liveRun = value;
+  const finished = value.phase === "complete";
+  const failed = value.phase === "failed";
+  runBusy = !finished && !failed;
+  byId("runPanel").hidden = false;
+  byId("runPanel").classList.toggle("has-failed", failed);
+  byId("runIndicator").className = runBusy ? "spinner" : "run-mark";
+  byId("runIndicator").textContent = runBusy ? "" : failed ? "!" : "✓";
+  const titles = { starting: "Running, please wait", preparing: "Running, please wait", training: "Model is running", coordination: "Agent is coordinating training", audit: "Checking learning signals", validation: "Validating the model", saving: "Saving your experiment", complete: "Run complete", failed: "Run needs attention" };
+  byId("runTitle").textContent = titles[value.phase] || "Running, please wait";
+  byId("runMessage").textContent = value.message || "Waiting for execution feedback";
+  byId("runElapsed").textContent = duration(value.elapsed_seconds);
+  byId("snapshotLabel").textContent = runBusy ? "Live experiment" : failed ? "Run interrupted" : "Saved experiment";
+  const phases = ["preparing", "training", "audit", "validation", "saving"];
+  const position = finished ? phases.length : value.phase === "coordination" ? 1 : Math.max(0, phases.indexOf(value.phase));
+  byId("runPhases").innerHTML = ["Load pipeline", "Train", "Check gradients", "Validate", "Save"].map((label, i) => '<li class="' + (i < position ? "done" : i === position && !failed ? "current" : "") + '">' + (i < position ? "✓ " : "") + label + '</li>').join("");
+  const stats = value.resources || {};
+  const history = value.history || [];
+  byId("stepCount").textContent = history.length + " / " + value.steps + " updates";
+  byId("runtimeStats").innerHTML = [["Device", stats.device || "Pending", stats.threads ? stats.threads + " threads" : ""], ["Worker CPU", Number.isFinite(stats.cpu_percent) ? format(stats.cpu_percent, 1) + "%" : "…", "of total CPU"], ["Worker memory", Number.isFinite(stats.rss_mb) ? format(stats.rss_mb / 1024, 2) : "…", "GB resident"], ["Updates", history.length + " / " + value.steps, finished ? "completed" : "optimizer steps"]].map(([label, number, unit]) => '<div class="runtime-stat"><span>' + label + '</span><strong>' + number + '</strong><br><small>' + unit + '</small></div>').join("");
+  const current = value.modules?.find(item => item.module === value.current_module);
+  const agent = runBusy && value.agents?.find(item => item.status === "running");
+  let activity = current ? current.label + " is running" : agent ? titleCase(agent.role) + " agent is thinking" : value.phase === "training" ? "Computing gradients and updating weights" : value.phase === "validation" ? "Validation " + value.validation?.completed + " / " + value.validation?.total : finished ? "Checkpoint and outputs saved" : failed ? "Execution stopped" : "Waiting for the next stage";
+  byId("currentActivity").innerHTML = escapeHtml(activity) + '<small>' + (finished ? "Resources: last observed worker sample." : "Live worker metrics · refreshed every second.") + '</small>';
+  renderLoss();
+  renderCalls(value);
+  renderJournal(value.events || []);
+}
+
+function renderLoss() {
+  const key = byId("lossKind").value;
+  const history = liveRun?.history || [];
+  if (!history.length) {
+    byId("lossChart").innerHTML = '<div class="chart-empty"><span>Waiting for the first update</span><small>The curve appears as optimizer steps finish.</small></div>';
+    byId("lossSummary").textContent = "No completed updates yet";
+    return;
+  }
+  const values = history.map(step => key === "weighted_loss" ? step.weighted_loss : step.losses[key]);
+  const low = Math.min(...values), high = Math.max(...values), pad = Math.max((high - low) * .18, Math.abs(high) * .02, .01);
+  const minimum = low - pad, maximum = high + pad;
+  const x = i => 48 + i * 478 / Math.max(1, (liveRun.steps || history.length) - 1);
+  const y = n => 155 - (n - minimum) * 128 / (maximum - minimum);
+  const grid = Array.from({ length: 4 }, (_, i) => {
+    const n = minimum + (maximum - minimum) * i / 3;
+    return '<path d="M48 ' + y(n) + 'H532" stroke="#37413b" stroke-width=".7"/><text x="40" y="' + (y(n) + 3) + '" text-anchor="end" fill="#95a69b">' + n.toFixed(2) + '</text>';
+  }).join("");
+  const line = '<polyline points="' + values.map((v, i) => x(i) + ',' + y(v)).join(' ') + '" fill="none" stroke="#a6d8c7" stroke-width="2"/>';
+  const points = values.map((v, i) => '<circle cx="' + x(i) + '" cy="' + y(v) + '" r="3.5" fill="#a6d8c7"><title>Step ' + history[i].step + ': ' + format(v, 5) + '</title></circle>').join("");
+  byId("lossChart").innerHTML = '<svg viewBox="0 0 550 185" role="img" aria-label="Selected model training loss by optimizer step">' + grid + line + points + '<text x="48" y="179" fill="#89988f">STEP 1</text><text x="528" y="179" text-anchor="end" fill="#89988f">STEP ' + liveRun.steps + '</text></svg>';
+  byId("lossSummary").textContent = "Latest " + format(values.at(-1), 4) + (key === "weighted_loss" ? " · includes current loss weights" : "");
+}
+
+function renderCalls(value) {
+  const calls = value.modules || [];
+  const agentCount = (value.agents || []).length;
+  byId("callSummary").textContent = calls.length + " modules · " + agentCount + (agentCount === 1 ? " agent" : " agents");
+  byId("modelCalls").innerHTML = calls.length ? table(["Module", "Forward calls", "Total time", "State"], calls.map(item => [escapeHtml(item.label), item.calls, format(item.seconds, 2) + "s", item.status === "started" ? runBusy ? "Running" : "Interrupted" : "Completed"])) : '<p class="disclosure-note">Model calls will appear as the pipeline starts.</p>';
+  byId("agentCalls").innerHTML = (value.agents || []).map(item => {
+    const usage = item.usage || {};
+    const tokens = usage.input_tokens != null || usage.output_tokens != null ? (usage.input_tokens || 0).toLocaleString() + " input · " + (usage.output_tokens || 0).toLocaleString() + " output tokens" : "Usage not reported";
+    return '<div class="agent-call"><strong>' + escapeHtml(titleCase(item.role)) + ' agent</strong><span>' + (item.status === "running" ? runBusy ? "Thinking…" : "Interrupted" : duration(item.seconds) + " · " + tokens) + '</span></div>';
+  }).join("");
+}
+
+function renderJournal(events) {
+  const visible = events.filter(event => event.kind !== "module" && event.branch !== "baseline" && event.role !== "review" && !/^baseline:/i.test(event.message));
+  byId("eventCount").textContent = visible.length + (visible.length === 1 ? " entry" : " entries");
+  const signature = JSON.stringify(visible);
+  if (signature === journalSignature) return;
+  journalSignature = signature;
+  const opened = new Set([...byId("events").querySelectorAll("details[open]")].map(node => node.dataset.entry));
+  byId("events").innerHTML = visible.map((event, index) => {
+    const id = String(index), label = event.message.replace(/^candidate: /, "Training: ");
+    const data = Object.fromEntries(Object.entries(event).filter(([key]) => !["message", "seconds", "kind", "subject_id", "config"].includes(key)));
+    let detail;
+    if (event.kind === "training") detail = table(["Loss", "Value", "Weight"], Object.entries(event.losses || {}).map(([task, loss]) => [titleCase(task), format(loss, 5), format(event.weights?.[task])])) + '<p>Weighted total: ' + format(event.weighted_loss, 5) + '</p>';
+    else if (event.decision) detail = '<p>' + escapeHtml(event.decision.rationale) + '</p><p>Action: ' + escapeHtml(titleCase(event.decision.action || "recorded")) + ' · ' + duration(event.duration) + '</p>';
+    else detail = '<pre>' + escapeHtml(Object.keys(data).length ? JSON.stringify(data, null, 2) : "Event recorded by the pipeline runner.") + '</pre>';
+    return '<details class="journal-entry" data-entry="' + id + '"' + (opened.has(id) ? " open" : "") + '><summary><time>' + duration(event.seconds) + '</time><span>' + escapeHtml(label) + '</span></summary>' + detail + '</details>';
+  }).join("");
+}
+
+function setFailure(error) {
+  const message = error.message || String(error);
+  renderLive({ ...liveRun, phase: "failed", message });
+  byId("runError").hidden = false;
+  byId("runError").textContent = message;
+  window.dispatchEvent(new CustomEvent("experimentfailed"));
+}
+
+async function poll() {
+  clearTimeout(pollTimer);
+  try {
+    const response = await fetch("/api/status");
+    if (!response.ok) throw new Error("Execution service unavailable");
+    const state = await response.json();
+    if (state.job !== "run") return;
+    if (state.live) renderLive(state.live);
+    if (state.error) { setFailure(state.error); return; }
+    if (state.running) {
+      byId("results").hidden = true;
+      byId("empty").hidden = true;
+      pollTimer = setTimeout(poll, 1000);
+    } else if (state.completed && state.run_dir !== report?.run_dir && !reloadPending) {
+      reloadPending = true;
+      setTimeout(() => location.reload(), 700);
+    } else if (state.completed) {
+      byId("results").hidden = !report?.candidate;
+    }
+  } catch (_) {
+    byId("runMessage").textContent = "Connection interrupted. Reconnecting to the running experiment…";
+    pollTimer = setTimeout(poll, 2000);
+  }
 }
 
 async function renderVolume() {
   const request = ++volumeRequest;
   volumeAbort?.abort();
-  const preview = report.previews[branch];
-  const shape = preview.shape || [96, 96, 96];
-  const maximum = Math.min(...shape) - 1;
+  const preview = report.previews.candidate;
+  const maximum = Math.min(...(preview.shape || [96, 96, 96])) - 1;
   const index = Math.min(maximum, Math.max(0, Number(byId("sliceIndex").value)));
   byId("sliceIndex").max = maximum;
   byId("sliceIndex").value = index;
@@ -118,7 +181,7 @@ async function renderVolume() {
   byId("previousSlice").disabled = index === 0;
   byId("nextSlice").disabled = index === maximum;
   const position = preview.slice_indices.indexOf(index);
-  const key = branch + ":" + imageStage + ":" + index;
+  const key = imageStage + ":" + index;
   let planes = position >= 0 ? preview.planes[imageStage].map(axis => axis[position]) : sliceCache.get(key);
   if (!planes) {
     byId("volumeImages").setAttribute("aria-busy", "true");
@@ -126,7 +189,7 @@ async function renderVolume() {
     try {
       if (location.protocol === "file:") throw new Error("Open the local workspace to view this slice.");
       volumeAbort = new AbortController();
-      const query = new URLSearchParams({ run: preview.run_id || report.run_dir.split(/[\\/]/).at(-1), branch, stage: imageStage, index });
+      const query = new URLSearchParams({ run: preview.run_id || report.run_dir.split(/[\\/]/).at(-1), branch: "candidate", stage: imageStage, index });
       const response = await fetch("/api/volume?" + query, { signal: volumeAbort.signal });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Slice unavailable");
@@ -144,494 +207,108 @@ async function renderVolume() {
   }
   if (request !== volumeRequest) return;
   const crosshair = byId("crosshair").checked ? " crosshair" : "";
-  byId("volumeImages").innerHTML = ["I", "J", "K"].map((plane, axis) =>
-    '<figure class="volume-plane' + crosshair + '" style="--cross-x:' + (index / maximum * 100) +
-    '%;--cross-y:' + ((maximum - index) / maximum * 100) + '%"><img src="' + planes[axis] +
-    '" alt="' + escapeHtml(titleCase(imageStage)) + ", array " + plane + " plane, index " + index +
-    '"><figcaption>' + plane + ' PLANE</figcaption><span class="plane-index">' + plane + " = " + index +
-    "</span></figure>"
-  ).join("");
+  byId("volumeImages").innerHTML = ["I", "J", "K"].map((plane, axis) => '<figure class="volume-plane' + crosshair + '" style="--cross-x:' + (index / maximum * 100) + '%;--cross-y:' + ((maximum - index) / maximum * 100) + '%"><img src="' + planes[axis] + '" alt="' + escapeHtml(titleCase(imageStage)) + ', array ' + plane + ' plane, index ' + index + '"><figcaption>' + plane + ' PLANE</figcaption><span class="plane-index">' + plane + ' = ' + index + '</span></figure>').join("");
   byId("volumeImages").setAttribute("aria-busy", "false");
-  byId("volumeStatus").textContent = "All " + (maximum + 1) + " slices · arrow keys move one slice";
-  byId("sampleId").textContent = "POST-TRAIN AUDIT";
-}
-
-function gradientDetail() {
-  const cell = report[branch].gradients.matrix[selectedCell.task][selectedCell.module] || {state: "inactive", parameter_tensors: 0, connected_tensors: 0, nonzero_tensors: 0, norm: 0};
-  const name = modules[selectedCell.module][1];
-  const detail = selectedCell.module === "graph_gen" && !cell.parameter_tensors
-    ? "This module has no parameters. Its output gradient is inspected in the Brain graph panel."
-    : selectedCell.module === "par_net" && !cell.parameter_tensors
-      ? "The unused predicted-parcellation head is explicitly frozen in this atlas-based configuration."
-      : cell.connected_tensors + "/" + cell.parameter_tensors + " parameter tensors connected · " +
-        cell.nonzero_tensors + " nonzero · L2 norm " + scientific(cell.norm);
-  byId("gradientDetail").innerHTML = "<strong>" + titleCase(selectedCell.task) + " → " + name +
-    " · " + cell.state + "</strong>" + escapeHtml(detail);
+  byId("volumeStatus").textContent = "All " + (maximum + 1) + " slices · one slice per arrow key";
+  byId("sampleId").textContent = "After training";
 }
 
 function renderGradients() {
-  const matrix = report[branch].gradients.matrix;
-  const headers = Object.entries(modules).map(([name, item]) =>
-    '<th scope="col" title="' + item[1] + '">' + item[0] + "</th>").join("");
-  const rows = Object.entries(tasks).map(([task, short]) => {
-    const cells = Object.keys(modules).map(name => {
-      const cell = matrix[task][name] || {state: "inactive", norm: 0};
-      const focused = selectedCell.task === task && selectedCell.module === name;
-      const label = task + " to " + modules[name][1] + ": " + cell.state;
-      const value = cell.state === "active" ? cell.norm.toExponential(0) : cell.state === "zero" ? "0" : "·";
-      return '<td><button class="gradient-cell ' + cell.state + (focused ? " focused" : "") +
-        '" data-task="' + task + '" data-module="' + name + '" aria-label="' + label +
-        '" title="' + label + " · norm " + scientific(cell.norm) + '">' + value + "</button></td>";
-    }).join("");
-    return '<tr><th scope="row" title="' + titleCase(task) + '">' + short + "</th>" + cells + "</tr>";
+  const task = byId("gradientTask").value;
+  const matrix = report.candidate.gradients.matrix;
+  const connected = Object.values(matrix[task]).filter(cell => cell.state === "active").length;
+  byId("gradientExplanation").textContent = titleCase(task) + " loss sends a nonzero learning signal to " + connected + " modules in this measurement. Select a module to inspect it.";
+  byId("learningPaths").innerHTML = Object.entries(modules).filter(([key]) => matrix[task][key]?.parameter_tensors > 0).map(([key, name]) => {
+    const state = matrix[task][key]?.state || "inactive";
+    return '<button class="learning-chip ' + state + '" data-module="' + key + '"><strong>' + (state === "active" ? "✓ " : "") + name + '</strong><span>' + signalNames[state] + '</span></button>';
   }).join("");
-  byId("gradientMatrix").innerHTML = '<table class="gradient-matrix"><thead><tr><th scope="col">LOSS</th>' +
-    headers + "</tr></thead><tbody>" + rows + "</tbody></table>";
-  byId("gradientMatrix").querySelectorAll("button").forEach(button => {
-    button.onclick = () => {
-      selectedCell = { task: button.dataset.task, module: button.dataset.module };
-      byId("gradientMatrix").querySelectorAll(".focused").forEach(cell => cell.classList.remove("focused"));
-      button.classList.add("focused");
-      gradientDetail();
-    };
+  byId("learningPaths").querySelectorAll("button").forEach(button => button.onclick = () => {
+    const key = button.dataset.module, cell = matrix[task][key] || {};
+    showDetails(titleCase(task) + " → " + modules[key], '<p>' + escapeHtml(signalNames[cell.state || "inactive"]) + '.</p>' + table(["Measurement", "Value"], [["Trainable parameter tensors", cell.parameter_tensors || 0], ["Connected tensors", cell.connected_tensors || 0], ["Tensors with nonzero gradients", cell.nonzero_tensors || 0], ["Gradient L2 norm", scientific(cell.norm)], ["Parameter values changed during training", report.candidate.updated_parameters[key] || 0]]) + '<p>Updates accumulate contributions from all losses. No path from one loss does not mean this module never trains.</p>', "MEASURED LEARNING SIGNAL");
   });
-  gradientDetail();
-}
-
-function renderLoss() {
-  const key = byId("lossKind").value;
-  const value = step => key === "weighted_loss" ? step.weighted_loss : step.losses[key];
-  const series = [report.baseline.history, report.candidate.history];
-  const values = series.flatMap(history => history.map(value));
-  const low = Math.min(...values);
-  const high = Math.max(...values);
-  const padding = Math.max((high - low) * 0.15, 0.001);
-  const minimum = low - padding;
-  const maximum = high + padding;
-  const count = Math.max(...series.map(history => history.length));
-  const x = step => 40 + step * 330 / Math.max(1, count - 1);
-  const y = amount => 150 - (amount - minimum) * 120 / (maximum - minimum);
-  const grid = Array.from({ length: 4 }, (_, index) => {
-    const level = minimum + (maximum - minimum) * index / 3;
-    return '<path d="M40 ' + y(level) + "H376" + '" stroke="#293540" stroke-dasharray="3 4"/>' +
-      '<text x="32" y="' + (y(level) + 3) + '" text-anchor="end">' + level.toFixed(2) + "</text>";
-  }).join("");
-  const lines = series.map((history, index) => {
-    const color = index ? "#62c7ce" : "#839bbd";
-    const points = history.map((step, i) => x(i) + "," + y(value(step))).join(" ");
-    return '<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="2"/>' +
-      history.map((step, i) => '<circle cx="' + x(i) + '" cy="' + y(value(step)) + '" r="3" fill="' + color +
-        '" stroke="#14191f" stroke-width="1.4"><title>' + (index ? "Candidate" : "Baseline") +
-        " · step " + step.step + " · " + format(value(step), 5) + "</title></circle>").join("");
-  }).join("");
-  byId("lossChart").innerHTML = '<svg viewBox="0 0 400 178" role="img" aria-label="' +
-    escapeHtml(byId("lossKind").selectedOptions[0].textContent) + ' loss by training step">' + grid + lines +
-    '<text x="40" y="171">STEP 1</text><text x="370" y="171" text-anchor="end">STEP ' + count + "</text></svg>";
-  byId("lossSummary").textContent = format(value(report[branch].history.at(-1)), 3) + " FINAL";
-  const control = report.candidate.coordination;
-  byId("trainingControl").innerHTML = control ? '<div><strong>Training coordination</strong><span>Step ' + control.step + ' · ' +
-    (control.action === "keep_weights" ? "Kept loss weights" : "Balanced gradient magnitudes") +
-    '</span></div><button id="coordinationDetails" class="text-button">Inspect decision ↗</button>' :
-    '<div><strong>Training coordination</strong><span>No recorded decision</span></div>';
-  if (control) byId("coordinationDetails").onclick = coordinationDetails;
+  byId("gradientMatrix").innerHTML = table(["Module", ...tasks.map(titleCase)], Object.entries(modules).map(([key, name]) => [name, ...tasks.map(t => {
+    const cell = matrix[t][key];
+    return !cell || cell.state === "inactive" ? "No parameters" : cell.state === "active" ? scientific(cell.norm) : cell.state === "disconnected" ? "No path" : cell.state === "zero" ? "0 · connected" : "Nonfinite";
+  })]));
 }
 
 function coordinationDetails() {
   const control = report.candidate.coordination;
-  const rows = Object.keys(tasks).map(task => [titleCase(task), scientific(control.diagnostic.task_norms[task]),
-    format(control.weights_before[task]), format(control.weights_after[task])]);
-  const shared = control.diagnostic.shared_gradient_cosines.map(item => [item.tasks.map(titleCase).join(" / "),
-    item.shared_parameter_tensors, format(item.cosine)]);
-  showDetails("Training coordination", '<p>' + escapeHtml(control.rationale) + '</p>' +
-    table(["Task", "Gradient norm", "Weight before", "Weight after"], rows) +
-    '<h3>Shared parameter gradients at the decision step</h3>' + table(["Task pair", "Shared tensors", "Cosine"], shared) +
-    '<p class="muted">Current controller: one decision before the second optimizer update of the candidate. The agent can keep weights or apply bounded gradient norm balancing. This is not a TaskForce implementation or a learned multiagent policy.</p>',
-    "CANDIDATE / STEP " + control.step);
-}
-
-function renderAgents() {
-  const names = { research: "Research agent", composition: "Composition agent", coordination: "Training coordinator", review: "Experiment reviewer" };
-  const summary = {
-    research: report.plan.extraction === "synthstrip" ? "Selected SynthStrip + connection adapters" : "Selected UniBrain configuration",
-    coordination: report.candidate.coordination?.action === "keep_weights" ? "Kept current loss weights" : "Applied bounded gradient balancing",
-    review: report.review.recommendation === "revert" ? "Recommended baseline restoration" : titleCase(report.review.recommendation) + " recommendation"
-  };
-  byId("agentBackend").textContent = report.backend === "codex" ? "CODEX LLM" : "RULES DEMO";
-  byId("agentFeed").innerHTML = report.agent_calls.map((call, index) =>
-    '<div class="agent-item"><span class="agent-symbol">' + ["R", "C", "V"][index] +
-    '</span><div><div class="agent-role">' + escapeHtml(names[call.role] || call.role) +
-    '</div><div class="agent-action">' + escapeHtml(summary[call.role] || call.decision.rationale) +
-    '</div></div><time>' + format(call.seconds, 1) + " s</time></div>"
-  ).join("");
-}
-
-function renderGraph() {
-  const canvas = byId("graphCanvas");
-  const context = canvas.getContext("2d");
-  const values = report.previews[branch].graph_values;
-  const size = values.length;
-  const cellSize = canvas.width / size;
-  values.forEach((row, i) => row.forEach((weight, j) => {
-    const strength = Math.min(1, Math.abs(weight));
-    const start = [13, 26, 35];
-    const end = weight >= 0 ? [91, 193, 204] : [196, 104, 111];
-    context.fillStyle = "rgb(" + start.map((amount, k) => Math.round(amount + (end[k] - amount) * strength)).join(",") + ")";
-    context.fillRect(j * cellSize, i * cellSize, cellSize + 0.1, cellSize + 0.1);
-  }));
-  if (graphCell) {
-    context.strokeStyle = "#e0f7f9";
-    context.lineWidth = 1;
-    context.strokeRect(graphCell[1] * cellSize, graphCell[0] * cellSize, cellSize, cellSize);
-    const label = index => report.data.atlas_label_values?.[index + 1] ?? index;
-    byId("graphReadout").textContent = label(graphCell[0]) + " ↔ " + label(graphCell[1]) +
-      " · " + format(values[graphCell[0]][graphCell[1]], 4);
-  } else {
-    byId("graphReadout").textContent = size + " × " + size + " · hover to inspect edge weight";
-  }
-  const edge = report[branch].gradients.classification_to_graph_weights;
-  byId("graphGradient").textContent = "Classification → edge weights: " +
-    (edge.connected ? "connected · norm " + scientific(edge.norm) : "disconnected");
-  canvas.tabIndex = 0;
-}
-
-function renderComparison() {
-  const baseline = report.baseline;
-  const candidate = report.candidate;
-  const cell = value => '<span class="mono">' + value + "</span>";
-  const measurements = [
-    ["Reference loss ↓", format(baseline.validation.reference_loss), format(candidate.validation.reference_loss)],
-    ["Brain mask Dice ↑", format(baseline.validation.extraction_dice), format(candidate.validation.extraction_dice)],
-    ["Tissue Dice ↑", format(baseline.validation.tissue_dice), format(candidate.validation.tissue_dice)],
-    ['Diagnosis accuracy <span class="value-note">· smoke test</span>', format(baseline.validation.accuracy), format(candidate.validation.accuracy)],
-    ["Training compute ↓", format(baseline.training_seconds, 2) + " s", format(candidate.training_seconds, 2) + " s"]
-  ];
-  byId("comparison").innerHTML = table(["Validation measure", "Baseline", "Candidate"],
-    measurements.map(row => [row[0], cell(row[1]), cell(row[2])]), branch === "baseline" ? 1 : 2);
-  const singleClass = Object.keys(report.data.splits.train.class_counts).length < 2;
-  byId("dataCaveat").textContent = singleClass
-    ? "All " + report.data.splits.train.count + " training samples share one diagnosis label. Functional checks only; no classification-performance claim."
-    : "Small-sample functional validation only. This experiment does not establish clinical performance.";
-}
-
-function renderGate() {
-  byId("gateBadge").textContent = report.gate.decision.toUpperCase();
-  byId("gateBadge").className = "badge " + (report.gate.decision === "keep" ? "good" : "bad");
-  const gates = [
-    ["Reference loss ratio", report.gate.loss_ratio, report.gate.thresholds.max_loss_ratio],
-    ["Training compute ratio", report.gate.cost_ratio, report.gate.thresholds.max_cost_ratio]
-  ];
-  byId("gateMeters").innerHTML = gates.map(([name, value, limit]) => {
-    const maximum = Math.max(value, limit) * 1.2;
-    return '<div class="meter ' + (value > limit ? "failed" : "") +
-      '"><div class="meter-heading"><span>' + name + "</span><strong>" + format(value, 2) +
-      '×</strong></div><div class="meter-track"><div class="meter-fill" style="width:' +
-      (value / maximum * 100) + '%"></div><span class="meter-limit" style="left:' +
-      (limit / maximum * 100) + '%"></span></div><div class="meter-caption"><span>0×</span><span>LIMIT ' +
-      format(limit, 2) + "×</span></div></div>";
-  }).join("");
-  const control = report[branch].coordination;
-  const weights = control?.weights_after || report[branch].history.at(-1).weights;
-  byId("controlAction").textContent = control ? control.action.replaceAll("_", " ").toUpperCase() : "FIXED BASELINE";
-  byId("weights").innerHTML = Object.entries(tasks).map(([task, short]) =>
-    '<div class="weight"><label>' + short + "</label><strong>" + format(weights[task], 2) + "</strong></div>"
-  ).join("");
+  const rows = tasks.map(task => [titleCase(task), scientific(control.diagnostic.task_norms[task]), format(control.weights_before[task]), format(control.weights_after[task])]);
+  const shared = control.diagnostic.shared_gradient_cosines.map(item => [item.tasks.map(titleCase).join(" / "), item.shared_parameter_tensors, format(item.cosine)]);
+  showDetails("Training coordination", '<p>' + escapeHtml(control.rationale) + '</p>' + table(["Task", "Gradient norm", "Weight before", "Weight after"], rows) + '<h3>Gradients on shared parameters</h3>' + table(["Tasks", "Shared tensors", "Cosine"], shared) + '<p>One agent decision before optimizer update 2. Available actions: retain the loss weights or apply bounded gradient norm balancing. TaskForce multiagent learning is not implemented.</p>', "STEP " + control.step);
 }
 
 function renderMethods() {
-  if (typeof library !== "undefined" && library && report[branch].model.config.stages) {
-    const choices = report[branch].model.config.stages;
-    byId("methodCards").innerHTML = library.stages.filter(stage => choices[stage.id]?.startsWith("M")).map(stage => {
-      const option = stage.options.find(item => item.id === choices[stage.id]);
-      return '<article class="method-card"><header><h3>' + escapeHtml(option.label.split(" (")[0]) + '</h3>' +
-        sourceLink(option.research.code, "↗") + '</header><p>' + escapeHtml(option.label) + '</p><div class="method-stage">' +
-        escapeHtml(stage.name) + '</div></article>';
-    }).join("");
-    return;
-  }
-  const labels = { unibrain: "UniBrain", synthstrip: "SynthStrip", soft_atlas: "Soft atlas transfer", continuous_edges: "Continuous edges" };
-  byId("methodCards").innerHTML = report.research.cards.map(card =>
-    '<article class="method-card"><header><h3>' + escapeHtml(labels[card.id] || card.id) +
-    "</h3>" + sourceLink(card.code, "↗") + "</header><p>" + escapeHtml(card.publication) +
-    '</p><div class="method-stage">' + escapeHtml(card.stage) + "</div></article>"
-  ).join("");
+  if (!report?.candidate || !library) return;
+  const selection = report.build?.selection || report.candidate.model.config.stages || library.defaults;
+  byId("methodCards").innerHTML = library.stages.map(stage => {
+    const option = stage.options.find(item => item.id === selection[stage.id]);
+    if (!option || option.id === "none") return "";
+    return '<div class="method-row"><span>' + escapeHtml(stage.name) + '</span><strong>' + escapeHtml(option.label) + '</strong>' + (option.research ? sourceLink(option.research.paper, "Paper") + sourceLink(option.research.code, "Code") : '') + '</div>';
+  }).join("");
 }
 
-function renderGeometry() {
-  const checks = report[branch].spatial;
-  byId("geometryBadge").textContent = checks.passed ? "PASSED" : "CHECK REQUIRED";
-  byId("geometryBadge").className = "badge " + (checks.passed ? "good" : "bad");
-  const rows = [
-    ["Finite outputs", checks.finite ? "Verified" : "Failed"],
-    ["Array shape", checks.shape_preserved ? "Preserved" : "Changed"],
-    ["Affine determinant", format(checks.affine_determinant, 4)],
-    ["Outside sampling grid", format(checks.out_of_bounds_fraction * 100, 2) + "%"],
-    ["Probability sum error", scientific(checks.atlas_probability_sum_error)]
-  ];
-  if (checks.folding_fraction !== undefined) rows.push(["Grid folding", format(checks.folding_fraction * 100, 3) + "%"],
-    ["Inverse cycle error", scientific(checks.inverse_cycle_max_error)]);
-  byId("geometry").innerHTML = rows.map(row =>
-    '<div class="geometry-row"><span>' + row[0] + "</span><span>" + row[1] + "</span></div>"
-  ).join("");
-}
-
-function renderEvents() {
-  const filter = byId("eventFilter").value;
-  const events = report.events.filter(event => filter === "all" || event.kind === filter).toReversed();
-  byId("events").innerHTML = events.map(event =>
-    '<div class="event" data-kind="' + escapeHtml(event.kind) + '"><time>' + format(event.seconds, 1) +
-    ' s</time><span class="event-kind">' + escapeHtml(event.kind) + "</span><span>" + escapeHtml(event.message) + "</span></div>"
-  ).join("");
-}
-
-function renderBranch() {
-  document.querySelectorAll("[data-branch]").forEach(button => {
-    const selected = button.dataset.branch === branch;
-    button.classList.toggle("selected", selected);
-    button.setAttribute("aria-pressed", String(selected));
+function savedTelemetry() {
+  if (report.live) return report.live;
+  const model = report.candidate;
+  const events = report.events || [];
+  const observed = new Map();
+  if (report.mode === "single") events.filter(event => event.kind === "module").forEach(event => {
+    const item = observed.get(event.module) || { module: event.module, label: event.label, calls: 0, seconds: 0 };
+    if (event.action === "completed") { item.calls++; item.seconds += event.duration; }
+    item.status = event.action;
+    observed.set(event.module, item);
   });
-  renderStats();
-  renderPipeline();
+  return { phase: "complete", message: "Saved model outputs and training records", steps: model.steps, history: model.history, elapsed_seconds: report.mode === "single" ? report.elapsed_seconds : model.training_seconds, events, modules: [...observed.values()], agents: (report.agent_calls || []).filter(call => call.role === "coordination").map(call => ({ ...call, status: "completed" })), resources: { device: (report.environment?.device || "cpu").toUpperCase(), threads: report.environment?.threads } };
+}
+
+function renderResults() {
+  const model = report.candidate, validation = model.validation;
+  byId("results").hidden = false;
+  byId("runDate").textContent = new Date(report.created).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  renderLive(savedTelemetry());
   renderVolume();
   renderGradients();
-  renderLoss();
-  renderGraph();
-  renderComparison();
-  renderGate();
-  renderGeometry();
-  renderMethods();
-}
-
-function moduleDetails(name) {
-  const config = report[branch].model.config;
-  if (name === "atlas") {
-    if (config.stages && config.stages.parcellation !== "soft_atlas") {
-      moduleDetails("par_net");
-      return;
-    }
-    const card = report.research.cards.find(item => item.id === "soft_atlas");
-    showDetails("Atlas transfer", "<p>" + (config.soft_atlas
-      ? "The fixed atlas is converted to 117 one-hot channels before trilinear sampling in the inverse affine grid."
-      : "Nearest-neighbor atlas labels are warped, then converted to one-hot ROI channels.") +
-      "</p><p>The template label vocabulary defines the channel order. Border coverage and probability mass are checked separately.</p>" +
-      sourceLink(card.code, "Original source"), branch.toUpperCase() + " / CONNECTION");
-    return;
-  }
-  const rows = Object.entries(report[branch].gradients.matrix).map(([task, row]) =>
-    [titleCase(task), escapeHtml(row[name]?.state || "inactive"), scientific(row[name]?.norm)]);
-  const parameters = report[branch].model.parameters[name] || 0;
-  showDetails(modules[name][1], "<p>" + parameters.toLocaleString() + " parameters in this compact configuration.</p>" +
-    table(["Loss", "Gradient state", "L2 norm"], rows) +
-    "<p>Parameter updates observed: " + (report[branch].updated_parameters[name]?.toLocaleString() || "Not an active trainable module") + ".</p>",
-    branch.toUpperCase() + " / MODULE");
-}
-
-function decisionDetails() {
-  const sections = report.agent_calls.map(call => {
-    const decision = call.decision;
-    const usage = call.usage;
-    return '<section class="detail-section"><h3>' + titleCase(call.role) + " · " + escapeHtml(call.backend) +
-      " · " + format(call.seconds, 1) + " s</h3><p>" + escapeHtml(decision.rationale) + "</p>" +
-      (decision.limitations ? "<ul>" + decision.limitations.map(item => "<li>" + escapeHtml(item) + "</li>").join("") + "</ul>" : "") +
-      (decision.next_experiment ? "<p><strong>Next experiment:</strong> " + escapeHtml(decision.next_experiment) + "</p>" : "") +
-      (usage ? '<p class="mono tiny">Input tokens ' + usage.input_tokens.toLocaleString() + " · Output tokens " +
-        usage.output_tokens.toLocaleString() + "</p>" : "") + "</section>";
-  }).join("");
-  showDetails("Agent decision record", sections, "RECORDED DECISIONS / NO SIMULATED ACTIVITY");
-}
-
-function dataDetails() {
-  const data = report.data;
-  const rows = [
-    ["Data format", escapeHtml(data.format)], ["Array shape", data.shape.join(" × ")],
-    ["Train / validation", data.splits.train.count + " / " + data.splits.val.count],
-    ["Training labels", escapeHtml(JSON.stringify(data.splits.train.class_counts))],
-    ["Validation labels", escapeHtml(JSON.stringify(data.splits.val.class_counts))],
-    ["Atlas channels", data.atlas_label_values.length], ["Test data used", String(data.test_used)],
-    ["Seed", report.seed], ["Runtime", escapeHtml(report.environment.torch) + " · " + escapeHtml(report.environment.device)],
-    ["UniBrain commit", '<span class="mono">' + escapeHtml(report.upstream_commit) + "</span>"],
-    ["Selected checkpoint", escapeHtml(report.selection.checkpoint) + " · " + escapeHtml(report.selection.branch)]
-  ];
-  showDetails("Data & provenance", table(["Field", "Recorded value"], rows) +
-    "<h3>Scope</h3><ul>" + data.warnings.map(text => "<li>" + escapeHtml(text) + "</li>").join("") +
-    "</ul><h3>Recorded adaptations</h3><ul>" + report[branch].model.adaptations.map(text => "<li>" + escapeHtml(text) + "</li>").join("") +
-    "</ul><h3>Artifact directory</h3><pre>" + escapeHtml(report.run_dir) + "</pre>");
-}
-
-function catalogDetails() {
-  if (typeof library !== "undefined" && library) {
-    const rows = library.stages.flatMap(stage => stage.options.filter(option => option.research).map(option =>
-      [escapeHtml(stage.name), escapeHtml(option.label), sourceLink(option.research.code, "Pinned code"),
-        option.status === "requires_inputs" ? "Needs mesh inputs" : "Validate the selected combination"]));
-    showDetails("Stage research catalog", '<p>Imported from ' + escapeHtml(library.workbook) + '</p>' +
-      table(["Stage", "Method", "Source", "Integration"], rows), "15 RESEARCH METHODS");
-    return;
-  }
-  const available = report.research.cards.map(card =>
-    '<section class="detail-section"><h3>' + escapeHtml(card.id) + "</h3><p>" + escapeHtml(card.adaptation) +
-    "</p><p>" + escapeHtml(card.interface) + "</p><ul>" +
-    card.conditions.map(text => "<li>" + escapeHtml(text) + "</li>").join("") +
-    "</ul>" + sourceLink(card.code, "Pinned implementation") +
-    (card.paper ? " · " + sourceLink(card.paper, "Paper") : "") + "</section>"
-  ).join("");
-  const pending = table(["Candidate", "Publication", "Status"], report.research.other_candidates.map(item =>
-    [escapeHtml(item.name), escapeHtml(item.publication), "Adapter pending"]));
-  showDetails("Methods & evidence", "<p>The research agent reviewed the existing catalog and pinned source definitions. Open-ended web discovery is not implemented.</p>" +
-    available + "<h3>Literature candidates awaiting integration</h3>" + pending, "RESEARCH CATALOG");
-}
-
-function gradientHelp() {
-  const gradient = report[branch].gradients;
-  showDetails("Reading the gradient audit", "<ul>" + gradient.notes.map(text => "<li>" + escapeHtml(text) + "</li>").join("") +
-    "</ul><h3>Shared-parameter gradient cosines</h3>" + table(["Loss pair", "Shared tensors", "Cosine"],
-      gradient.shared_gradient_cosines.map(item => [escapeHtml(item.tasks.join(" / ")), item.shared_parameter_tensors, format(item.cosine)])) +
-    "<p>These observations describe the measured sample after this short run. A nonzero gradient does not establish a useful training signal.</p>",
-    branch.toUpperCase() + " / GRADIENT DIAGNOSTICS");
-}
-
-function reviewDetails() {
-  showDetails("Acceptance & rollback", "<p>" + escapeHtml(report.review.rationale) + "</p><h3>Hard gate</h3><ul>" +
-    report.gate.reasons.map(text => "<li>" + escapeHtml(text) + "</li>").join("") +
-    "</ul><p>" + escapeHtml(report.gate.scope) + "</p><h3>Selected artifact</h3><p>" +
-    escapeHtml(report.selection.reason) + "</p><pre>" + escapeHtml(report.selection.checkpoint) +
-    (report.selection.sha256 ? "\nSHA256 " + escapeHtml(report.selection.sha256) : "") + "</pre>");
-}
-
-function connectionDetails() {
-  if (report[branch].model.config.stages) {
-    showDetails("Pipeline connections", '<p>Image adapters feed extraction and registration. Registration produces forward and inverse grids. Soft region probabilities return to the native array grid before ROI feature extraction.</p>' +
-      '<p>Tissue segmentation is an auxiliary branch with ground truth supervision. A learned parcellation head receives AAL supervision. Dense registration receives a velocity smoothness term.</p><ul>' +
-      report[branch].model.adaptations.map(text => '<li>' + escapeHtml(text) + '</li>').join("") + '</ul>', "CURRENT COMPOSITION");
-    return;
-  }
-  showDetails("Pipeline connections", "<p>Extraction feeds affine registration. The inverse affine maps template tissue labels and atlas regions into the input image grid.</p>" +
-    "<p>The tissue segmentation U-Net reads the input directly and receives its own segmentation loss. It is a parallel branch.</p>" +
-    "<p>The ROI encoder receives the original input multiplied by the transferred atlas probabilities. ROI features feed both graph generation and the GCN classifier.</p>" +
-    "<p>The horizontal pipeline summarizes these dependencies. It does not imply that every module receives every downstream loss.</p>" +
-    "<p>The optional predicted-parcellation head is frozen and skipped in this atlas-based configuration.</p>",
-    "DATA DEPENDENCIES / " + branch.toUpperCase());
-}
-
-function setFailure(error) {
-  byId("progress").hidden = false;
-  byId("progressTitle").textContent = "Experiment could not complete";
-  byId("error").textContent = error.message || String(error);
-  byId("runSpinner").hidden = true;
-  window.dispatchEvent(new Event("experimentfailed"));
-}
-
-async function poll() {
-  clearTimeout(pollTimer);
-  try {
-    const response = await fetch("/api/status");
-    if (!response.ok) throw new Error("The local service is unavailable.");
-    const state = await response.json();
-    if (state.running) {
-      byId("progress").hidden = false;
-      byId("progressText").textContent = state.message;
-      byId("snapshotLabel").textContent = "Experiment running";
-      pollTimer = setTimeout(poll, 1500);
-    } else if (state.error && state.job === "run") {
-      setFailure(new Error(state.error));
-    } else if (state.completed && state.job === "run") {
-      location.reload();
-    }
-  } catch (error) {
-    setFailure(error);
-  }
-}
-
-function bindControls() {
-  document.querySelectorAll("[data-branch]").forEach(button => {
-    button.onclick = () => { branch = button.dataset.branch; graphCell = null; renderBranch(); };
-  });
-  document.querySelectorAll("[data-stage]").forEach(button => {
-    button.onclick = () => {
-      imageStage = button.dataset.stage;
-      document.querySelectorAll("[data-stage]").forEach(item => {
-        item.classList.toggle("selected", item === button);
-        item.setAttribute("aria-pressed", String(item === button));
-      });
-      renderVolume();
-    };
-  });
-  byId("sliceIndex").oninput = renderVolume;
-  byId("previousSlice").onclick = () => { byId("sliceIndex").stepDown(); renderVolume(); };
-  byId("nextSlice").onclick = () => { byId("sliceIndex").stepUp(); renderVolume(); };
-  byId("crosshair").onchange = renderVolume;
-  byId("lossKind").onchange = renderLoss;
-  byId("eventFilter").onchange = renderEvents;
-  byId("allDecisions").onclick = decisionDetails;
-  byId("dataDetails").onclick = dataDetails;
-  byId("catalogDetails").onclick = catalogDetails;
-  byId("gradientHelp").onclick = gradientHelp;
-  byId("reviewDetails").onclick = reviewDetails;
-  byId("pipelineDetails").onclick = connectionDetails;
-  byId("graphCanvas").onpointermove = event => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const size = report.previews[branch].graph_values.length;
-    graphCell = [Math.min(size - 1, Math.max(0, Math.floor((event.clientY - rect.top) / rect.height * size))),
-      Math.min(size - 1, Math.max(0, Math.floor((event.clientX - rect.left) / rect.width * size)))];
-    renderGraph();
-  };
-  byId("graphCanvas").onkeydown = event => {
-    const offset = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[event.key];
-    if (!offset) return;
-    event.preventDefault();
-    const size = report.previews[branch].graph_values.length;
-    graphCell = (graphCell || [0, 0]).map((value, axis) => Math.max(0, Math.min(size - 1, value + offset[axis])));
-    renderGraph();
-  };
-  byId("download").onclick = () => {
-    const { previews, ...data } = report;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "unibrain_" + report.created.replaceAll(":", "") + ".json";
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-  };
+  const control = model.coordination;
+  byId("trainingControl").innerHTML = control ? '<div><strong>Agent training decision</strong><span>Step ' + control.step + ' · ' + (control.action === "keep_weights" ? "Kept loss weights" : "Balanced gradient magnitudes") + '</span></div><button id="coordinationDetails" class="text-button">Inspect decision ↗</button>' : '<span>No coordination decision recorded.</span>';
+  if (control) byId("coordinationDetails").onclick = coordinationDetails;
+  byId("validationMetrics").innerHTML = [["Extraction Dice", validation.extraction_dice], ["Tissue Dice", validation.tissue_dice], ["Classification accuracy", validation.accuracy], ["Reference loss", validation.reference_loss]].map(([label, value]) => '<div class="metric"><span>' + label + '</span><strong>' + format(value) + '</strong></div>').join("");
+  byId("dataCaveat").textContent = validation.count + " validation samples. Smoke test only: the training sample contains one class. These metrics do not establish diagnostic performance.";
+  const splits = report.data.splits;
+  byId("modelFacts").innerHTML = '<p class="facts">Compact research adapters · ' + model.steps + ' optimizer updates · seed ' + report.seed + '<br>' + splits.train.count + ' training samples · ' + splits.val.count + ' validation samples<br>Original UniBrain source: ' + escapeHtml(report.upstream_commit.slice(0, 12)) + '<br>Checkpoint: ' + escapeHtml(model.checkpoint) + '<br>Run: ' + escapeHtml(report.run_dir.split(/[\\/]/).at(-1)) + '</p><p class="disclosure-note">This workspace runs compact stage adapters. The verified full original UniBrain workflow is available through scripts/run_upstream.py.</p>';
+  byId("geometry").innerHTML = table(["Check", "Measured result"], Object.entries(model.spatial).map(([key, value]) => [escapeHtml(titleCase(key)), typeof value === "number" ? format(value, 5) : value === true ? "Passed" : key === "physical_coordinates_verified" ? "Not checked: physical affine unavailable" : "Failed"]));
+  byId("footerMeta").textContent = "UniBrain " + report.upstream_commit.slice(0, 8) + " · seed " + report.seed;
 }
 
 function initialize() {
-  paintIcons();
   byId("closeDialog").onclick = () => byId("detailDialog").close();
   byId("detailDialog").addEventListener("click", event => {
-    if (event.target === byId("detailDialog")) {
-      const rect = event.target.getBoundingClientRect();
-      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.target.close();
-    }
+    if (event.target !== byId("detailDialog")) return;
+    const r = event.target.getBoundingClientRect();
+    if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) event.target.close();
   });
-  document.querySelectorAll(".nav-link[href]").forEach(link => {
-    link.onclick = () => {
-      const target = document.querySelector(link.getAttribute("href"));
-      const details = target?.closest("details");
-      if (details) details.open = true;
-      document.querySelectorAll(".nav-link.active").forEach(item => item.classList.remove("active"));
-      link.classList.add("active");
-    };
+  byId("lossKind").onchange = renderLoss;
+  byId("gradientTask").onchange = renderGradients;
+  byId("sliceIndex").oninput = renderVolume;
+  byId("crosshair").onchange = renderVolume;
+  byId("previousSlice").onclick = () => { byId("sliceIndex").stepDown(); renderVolume(); };
+  byId("nextSlice").onclick = () => { byId("sliceIndex").stepUp(); renderVolume(); };
+  document.querySelectorAll("[data-stage]").forEach(button => button.onclick = () => {
+    imageStage = button.dataset.stage;
+    document.querySelectorAll("[data-stage]").forEach(node => { node.classList.toggle("selected", node === button); node.setAttribute("aria-pressed", node === button); });
+    renderVolume();
   });
-  if (!report) {
-    byId("results").hidden = true;
-    byId("empty").hidden = false;
-    byId("dataDetails").disabled = true;
-  } else {
-    byId("runId").textContent = "RUN " + report.run_dir.split(/[\\/]/).at(-1);
-    byId("runDate").textContent = new Date(report.created).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
-    byId("statusPill").textContent = report.selection.action === "revert" ? "BASELINE RESTORED" : "CANDIDATE RETAINED";
-    byId("statusPill").className = "badge " + (report.selection.action === "revert" ? "" : "good");
-    byId("footerMeta").textContent = "UniBrain " + report.upstream_commit.slice(0, 8) +
-      " · seed " + report.seed + " · " + format(report.elapsed_seconds, 1) + " s total";
-    bindControls();
-    renderBranch();
-    renderAgents();
-    renderMethods();
-    renderEvents();
-  }
-  if (location.protocol !== "file:") {
-    fetch("/api/status").then(response => response.json()).then(state => {
-      if (state.running && state.job === "run") poll();
-    }).catch(() => { byId("snapshotLabel").textContent = "Saved report · service offline"; });
-  }
+  byId("download").onclick = () => {
+    const { previews, ...data } = report || {};
+    const payload = liveRun?.phase !== "complete" ? { status: liveRun?.phase, live: liveRun } : { ...data, live: liveRun };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = "unibrain_experiment.json"; anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+  if (report?.candidate) renderResults();
+  else byId("empty").hidden = false;
 }
 
 initialize();

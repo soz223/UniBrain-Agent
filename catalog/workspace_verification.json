@@ -1,0 +1,90 @@
+{
+  "verified_at": "2026-11-09T19:36:29.540328+00:00",
+  "scope": "Compact selected pipeline on the public UniBrain sample data; no accuracy claim.",
+  "upstream_commit": "f9f8d906b1725046d532f862a28876482aca2cfa",
+  "selection": {
+    "denoising": "none",
+    "bias": "none",
+    "extraction": "M02",
+    "normalization": "none",
+    "registration": "M07",
+    "segmentation": "M08",
+    "parcellation": "soft_atlas",
+    "graph": "M11",
+    "classification": "M12",
+    "surface": "none"
+  },
+  "preflight_passed": true,
+  "agent_backend": "codex",
+  "optimizer_updates": 5,
+  "validation_samples": 5,
+  "spatial_checks_passed": true,
+  "updated_parameter_values": {
+    "ext_net": 91577,
+    "reg_net": 65536,
+    "seg_net": 21568,
+    "feature_net": 7078111,
+    "graph_gen": 545,
+    "gnn_pred": 556957
+  },
+  "observed_forward_calls": [
+    {
+      "module": "ext_net",
+      "label": "SynthStrip",
+      "calls": 11,
+      "seconds": 2.6169,
+      "status": "completed"
+    },
+    {
+      "module": "reg_net",
+      "label": "LapIRN",
+      "calls": 11,
+      "seconds": 2.0857,
+      "status": "completed"
+    },
+    {
+      "module": "seg_net",
+      "label": "nnU Net",
+      "calls": 11,
+      "seconds": 0.41100000000000003,
+      "status": "completed"
+    },
+    {
+      "module": "feature_net",
+      "label": "ROI encoder",
+      "calls": 11,
+      "seconds": 0.33180000000000004,
+      "status": "completed"
+    },
+    {
+      "module": "graph_gen",
+      "label": "FBNetGen",
+      "calls": 11,
+      "seconds": 0.05519999999999999,
+      "status": "completed"
+    },
+    {
+      "module": "gnn_pred",
+      "label": "BrainNetCNN",
+      "calls": 11,
+      "seconds": 0.1089,
+      "status": "completed"
+    }
+  ],
+  "elapsed_seconds": 75.2,
+  "baseline_executed": false,
+  "checkpoint_sha256": "865d3e82ccb26c5466da577cf492cfdc66066fba836138dfe1309aa3112e57d0",
+  "report_sha256": "b53c03fc395abd62f869a52e70f93776b607cb5608987399e3222e6814f9ca1a",
+  "browser_checks": [
+    "Immediate run feedback",
+    "Live optimizer loss curve",
+    "Live module and agent activity",
+    "Worker CPU and resident memory",
+    "Refresh during validation restores progress",
+    "Loss-specific module gradient inspection",
+    "Expandable decision notebook",
+    "Adjacent volume slices",
+    "Responsive layout without horizontal overflow"
+  ],
+  "unit_and_api_tests_passed": 19
+}

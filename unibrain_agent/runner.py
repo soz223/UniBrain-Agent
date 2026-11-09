@@ -5,6 +5,7 @@ import shutil
 import time
 import traceback
 from dataclasses import asdict
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,7 +44,7 @@ def dice(prediction, target):
     return float((2 * (prediction & target).sum() + 1) / (prediction.sum() + target.sum() + 1))
 
 
-def evaluate(model, array, template):
+def evaluate(model, array, template, emit=None):
     model.eval()
     records = []
     with torch.no_grad():
@@ -61,6 +62,9 @@ def evaluate(model, array, template):
                             "extraction_dice": dice(output["mask"] >= 0.5, sample["raw_img_brain_mask_np"]),
                             "tissue_dice": sum(dice(predicted == k, sample["raw_img_gm_mask_np"] == k) for k in (1, 2, 3)) / 3,
                             "losses": {key: float(value) for key, value in terms.items()}})
+            if emit:
+                emit("validation_progress", f"Evaluated {len(records)}/{len(array)} validation samples",
+                     completed=len(records), total=len(array))
     means = {task: sum(r["losses"][task] for r in records) / len(records) for task in TASKS}
     return {"count": len(records), "records": records, "mean_losses": means,
             "reference_loss": sum(REFERENCE_WEIGHTS[k] * v for k, v in means.items()),
@@ -71,7 +75,48 @@ def evaluate(model, array, template):
             "classification_interpretation": "Smoke-test metric only: training data contain one class"}
 
 
+@contextmanager
+def trace_modules(model, emit):
+    from .catalog import catalog
+    stages = {"denoise_net": "denoising", "bias_net": "bias", "ext_net": "extraction", "norm_net": "normalization",
+              "reg_net": "registration", "seg_net": "segmentation", "par_net": "parcellation",
+              "graph_gen": "graph", "gnn_pred": "classification"}
+    choices = model.config.stages or {}
+    library = {stage["id"]: stage for stage in catalog()["stages"]}
+    handles = []
+    starts = {}
+
+    def attach(key, module, label):
+        def before(module, inputs):
+            starts[key] = time.perf_counter()
+            emit("module", label + " is running", module=key, label=label, action="started")
+
+        def after(module, inputs, output):
+            emit("module", label + " finished", module=key, label=label, action="completed",
+                 duration=round(time.perf_counter() - starts[key], 4))
+
+        handles.extend([module.register_forward_pre_hook(before), module.register_forward_hook(after)])
+
+    for key, module in model.named_children():
+        if key not in MODULES or isinstance(module, torch.nn.Identity):
+            continue
+        stage = library.get(stages.get(key))
+        option = next((item for item in stage["options"] if item["id"] == choices.get(stage["id"])), None) if stage else None
+        label = option["label"].split(" (")[0] if option and option["research"] else stage["name"] if stage else "ROI encoder"
+        attach(key, module, label)
+    try:
+        yield
+    finally:
+        for handle in handles:
+            handle.remove()
+
+
 def train_branch(model, train, val, template, steps, seed, folder, name, emit, agent=None, extraction_loss="bce"):
+    with trace_modules(model, emit):
+        return _train_branch(model, train, val, template, steps, seed, folder, name, emit, agent, extraction_loss)
+
+
+def _train_branch(model, train, val, template, steps, seed, folder, name, emit, agent, extraction_loss):
     optimizer = torch.optim.Adam((p for p in model.parameters() if p.requires_grad), lr=1e-4, weight_decay=1e-6)
     initial = {key: value.detach().clone() for key, value in model.named_parameters() if value.requires_grad}
     weights, history, control = dict(REFERENCE_WEIGHTS), [], None
@@ -82,11 +127,13 @@ def train_branch(model, train, val, template, steps, seed, folder, name, emit, a
         torch.manual_seed(seed + step)
         sample = batch(train[order[step % len(order)]])
         optimizer.zero_grad(set_to_none=True)
+        emit("phase", f"Model is running: training step {step + 1}/{steps}", phase="training", operation="forward")
         started = time.perf_counter()
         output = model(sample, template, augment=True)
         terms = loss_terms(output, sample, template, extraction_loss)
         training_seconds += time.perf_counter() - started
         if agent is not None and step == 1:
+            emit("phase", "Checking task gradients for the training coordinator", phase="coordination")
             diagnostic = gradients(model, terms, output)
             control = agent.coordinate(diagnostic, weights)
             previous = dict(weights)
@@ -95,6 +142,7 @@ def train_branch(model, train, val, template, steps, seed, folder, name, emit, a
             control = {**control, "weights_before": previous, "weights_after": dict(weights),
                        "step": step + 1, "diagnostic": diagnostic}
         started = time.perf_counter()
+        emit("phase", f"Backpropagation and parameter update {step + 1}/{steps}", phase="training", operation="backward")
         total = sum(weights[key] * value for key, value in terms.items())
         if not bool(torch.isfinite(total)):
             raise RuntimeError(f"Nonfinite loss in {name}")
@@ -114,6 +162,7 @@ def train_branch(model, train, val, template, steps, seed, folder, name, emit, a
             updated[module] = sum(int(torch.count_nonzero(value.detach() != initial[key])) for key, value in values)
     del initial
     model.eval()
+    emit("phase", "Measuring learning signals and spatial consistency", phase="audit")
     torch.manual_seed(seed + 1000)
     sample = batch(train[order[-1]])
     output = model(sample, template, augment=True)
@@ -123,7 +172,9 @@ def train_branch(model, train, val, template, steps, seed, folder, name, emit, a
     preview = {key: output[key].detach().cpu().numpy() for key in ("mask", "extracted", "warped", "edges")}
     preview["input"] = sample["raw_img_np"].numpy()
     del output, terms
-    validation = evaluate(model, val, template)
+    emit("phase", f"Evaluating the model on {len(val)} validation samples", phase="validation")
+    validation = evaluate(model, val, template, emit)
+    emit("phase", "Saving trained weights and volume previews", phase="saving")
     checkpoint = folder / f"{name}.pt"
     torch.save({"config": asdict(model.config), "state_dict": model.state_dict(),
                 "optimizer": optimizer.state_dict(), "weights": weights, "seed": seed,
@@ -140,7 +191,7 @@ def train_branch(model, train, val, template, steps, seed, folder, name, emit, a
     return result
 
 
-def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_event=None, build_dir=None):
+def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_event=None, build_dir=None, comparison=True):
     if not 2 <= steps <= 100:
         raise ValueError("Use 2 to 100 steps per branch")
     torch.set_num_threads(4)
@@ -150,6 +201,7 @@ def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_ev
     started = time.perf_counter()
     report = {"status": "running", "created": datetime.now(timezone.utc).isoformat(), "backend": backend,
               "seed": seed, "steps_per_branch": steps, "run_dir": str(folder.resolve()),
+              "mode": "comparison" if comparison else "single",
               "upstream_commit": UNIBRAIN_COMMIT, "synthstrip_commit": SYNTHSTRIP_COMMIT,
               "environment": {"torch": torch.__version__, "device": "cpu", "threads": 4},
               "events": []}
@@ -160,11 +212,13 @@ def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_ev
         with (folder / "events.jsonl").open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + "\n")
         write_json(folder / "report.json", report)
-        print(f"[{event['seconds']:7.1f}s] {message}", flush=True)
+        if kind != "module":
+            print(f"[{event['seconds']:7.1f}s] {message}", flush=True)
         if on_event:
             on_event(event, folder)
 
     try:
+        emit("phase", "Loading the selected pipeline and checking source files", phase="preparing")
         report["source_verification"] = verify_sources()
         report["implementation_hashes"] = {str(path.relative_to(PROJECT)): digest(path)
                                             for path in sorted((PROJECT / "unibrain_agent").glob("*.py"))}
@@ -190,11 +244,13 @@ def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_ev
         report["plan"] = plan
         report["research"] = {key: value for key, value in evidence.items() if key != "connection_code"}
         seed_everything(seed)
-        baseline_model = Pipeline()
-        initial_state = {key: value.clone() for key, value in baseline_model.state_dict().items()}
-        report["baseline"] = train_branch(baseline_model, train, val, template, steps, seed, folder, "baseline", emit)
-        del baseline_model
-        gc.collect()
+        initial_state = {}
+        if comparison:
+            baseline_model = Pipeline()
+            initial_state = {key: value.clone() for key, value in baseline_model.state_dict().items()}
+            report["baseline"] = train_branch(baseline_model, train, val, template, steps, seed, folder, "baseline", emit)
+            del baseline_model
+            gc.collect()
         config = PipelineConfig(plan["extraction"], plan["soft_atlas"], plan["continuous_edges"])
         seed_everything(seed)
         if build_dir:
@@ -208,7 +264,8 @@ def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_ev
                   if key in candidate_state and candidate_state[key].shape == value.shape and
                   (not key.startswith("ext_net.") or config.extraction == "unibrain")}
         candidate_model.load_state_dict(shared, strict=False)
-        report["comparison"] = {"shared_initial_tensors": len(shared), "same_seed": True, "same_subject_order": True,
+        if comparison:
+            report["comparison"] = {"shared_initial_tensors": len(shared), "same_seed": True, "same_subject_order": True,
                                 "same_step_budget": True, "same_reference_objective": True,
                                 "independent_extraction_initialization": config.extraction != "unibrain",
                                 "is_single_factor_ablation": False}
@@ -217,27 +274,31 @@ def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_ev
         report["candidate"] = train_branch(candidate_model, train, val, template, steps, seed, folder, "candidate",
                                             emit, agent=agent, extraction_loss=plan["extraction_loss"])
         del candidate_model
-        report["gate"] = gate_candidate(report["baseline"], report["candidate"])
-        review_summary = {"gate": report["gate"], "plan": plan, "data_warnings": report["data"]["warnings"]}
-        for branch in ("baseline", "candidate"):
-            result = report[branch]
-            review_summary[branch] = {"training_seconds": result["training_seconds"], "gradients": result["gradients"],
-                                      "validation": {key: value for key, value in result["validation"].items() if key != "records"}}
-        report["review"] = agent.review(review_summary)
-        keep = report["gate"]["decision"] == "keep" and report["review"]["recommendation"] == "keep"
-        selected = "candidate" if keep else "baseline"
+        selected = "candidate"
+        if comparison:
+            report["gate"] = gate_candidate(report["baseline"], report["candidate"])
+            review_summary = {"gate": report["gate"], "plan": plan, "data_warnings": report["data"]["warnings"]}
+            for branch in ("baseline", "candidate"):
+                result = report[branch]
+                review_summary[branch] = {"training_seconds": result["training_seconds"], "gradients": result["gradients"],
+                                          "validation": {key: value for key, value in result["validation"].items() if key != "records"}}
+            emit("phase", "Reviewing the measured comparison", phase="review")
+            report["review"] = agent.review(review_summary)
+            selected = "candidate" if report["gate"]["decision"] == "keep" and report["review"]["recommendation"] == "keep" else "baseline"
         shutil.copy2(folder / f"{selected}.pt", folder / "selected.pt")
         report["selection"] = {"branch": selected, "checkpoint": "selected.pt",
                                "sha256": digest(folder / "selected.pt"),
-                               "action": "keep" if keep else "revert",
-                               "reason": "Candidate passed both the hard gate and review" if keep else "Restored the baseline checkpoint; candidate retained for inspection"}
+                               "action": "saved" if not comparison else "keep" if selected == "candidate" else "revert",
+                               "reason": "Saved the selected pipeline. No comparison or acceptance claim." if not comparison else
+                                         "Candidate passed both the hard gate and review" if selected == "candidate" else "Restored the baseline checkpoint"}
         report["agent_calls"] = (build["agent_calls"] if build_dir else []) + agent.calls
         report["elapsed_seconds"] = time.perf_counter() - started
         report["status"] = "complete"
-        emit("complete", f"Selected {selected}; saved checkpoints and evidence")
+        emit("phase", "Writing the experiment report", phase="saving")
         from .report import render
         render(report, folder)
         write_json(RUNS / "latest.json", {"run_dir": str(folder.resolve())})
+        emit("complete", "Run completed. Weights, images and training records saved.")
         return report
     except Exception as error:
         if (folder / "baseline.pt").exists():

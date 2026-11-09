@@ -130,6 +130,11 @@ function showBuild(record) {
   byId("viewBuild").hidden = !record.code;
   byId("viewBuild").disabled = !record.code;
   showActivity(record);
+  if (record.status === "ready" && report?.build?.id === record.id && report.status === "complete") {
+    byId("activityPanel").hidden = true;
+    byId("buildStatus").textContent = "Ready for another run";
+    byId("buildMessage").textContent = "Last run completed. Adjust the tools or run this pipeline again.";
+  }
   renderChoices();
 }
 
@@ -190,23 +195,27 @@ async function runBuild() {
   buildBusy = true;
   byId("confirmBuild").disabled = true;
   byId("prepareBuild").disabled = true;
+  byId("buildSteps").disabled = true;
+  byId("confirmBuild").textContent = "Running…";
+  byId("buildStatus").textContent = "Running, please wait";
+  byId("buildMessage").textContent = "Your selected pipeline is starting. Follow its progress below.";
+  startLiveRun(Number(byId("buildSteps").value));
   renderChoices();
   try {
     await requestJson("/api/builds/" + activeBuild.id + "/run", { steps: Number(byId("buildSteps").value), backend: activeBuild.backend });
-    byId("buildStatus").textContent = "Running the pipeline";
-    byId("buildMessage").textContent = "Training baseline and candidate. Results below show the last completed experiment.";
-    byId("progressTitle").textContent = "Experiment running";
-    byId("error").textContent = "";
-    byId("runSpinner").hidden = false;
     poll();
-  } catch (error) { buildError(error); }
+  } catch (error) { setFailure(error); }
 }
 
 async function initializeEditor() {
   byId("prepareBuild").onclick = prepareSelection;
   byId("viewBuild").onclick = reviewBuild;
   byId("confirmBuild").onclick = runBuild;
-  window.addEventListener("experimentfailed", () => buildError(new Error("See the experiment error above. Apply changes to retry.")));
+  window.addEventListener("experimentfailed", () => {
+    byId("buildSteps").disabled = false;
+    byId("confirmBuild").textContent = "Confirm & run";
+    buildError(new Error("See the run error below. Apply changes to retry."));
+  });
   setInterval(() => {
     if (activityStarted) byId("buildElapsed").textContent = Math.max(0, Math.floor((Date.now() - activityStarted) / 1000)) + "s";
   }, 1000);
@@ -241,8 +250,16 @@ async function initializeEditor() {
       buildBusy = true;
       byId("confirmBuild").disabled = true;
       byId("prepareBuild").disabled = true;
+      byId("buildSteps").disabled = true;
+      byId("confirmBuild").textContent = "Running…";
+      byId("buildStatus").textContent = "Running, please wait";
+      byId("buildMessage").textContent = "Your selected pipeline is running. Follow its progress below.";
+      byId("activityPanel").hidden = true;
       renderChoices();
       poll();
+    } else if (status.job === "run" && status.error) {
+      if (status.live) renderLive(status.live);
+      setFailure(status.error);
     }
   } catch (error) {
     byId("buildMessage").textContent = error.message;

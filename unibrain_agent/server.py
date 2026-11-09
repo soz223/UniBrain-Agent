@@ -7,24 +7,32 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from .paths import RUNS
+from .live import RunMonitor
 from .report import document, landing, previews, volume_slice
 
 
-def create_server(port=8769):
-    state = {"app": "unibrain_agent", "version": "0.3", "running": False, "completed": False,
+def create_server(port=8770):
+    state = {"app": "unibrain_agent", "version": "0.4", "running": False, "completed": False,
              "message": "Ready", "error": None, "job": None, "build_id": None}
     lock = threading.Lock()
+    monitor = RunMonitor()
 
     def execute(backend, steps, folder=None):
-        from .runner import run
+        from .runner import run, write_json
         try:
             def event(value, run_folder):
+                monitor.record(value)
                 with lock:
                     state["message"] = value["message"]
-            result = run(backend=backend, steps=steps, on_event=event, build_dir=folder)
+                    state["run_dir"] = str(run_folder.resolve())
+            result = run(backend=backend, steps=steps, on_event=event, build_dir=folder, comparison=False)
+            result["live"] = monitor.snapshot()
+            write_json(Path(result["run_dir"]) / "report.json", result)
             with lock:
                 state.update(running=False, completed=True, run_dir=result["run_dir"])
         except Exception as error:
+            if monitor.snapshot()["phase"] != "failed":
+                monitor.record({"kind": "failed", "message": str(error)})
             with lock:
                 state.update(running=False, error=str(error))
 
@@ -68,7 +76,10 @@ def create_server(port=8769):
             try:
                 if path == "/api/status":
                     with lock:
-                        self.respond(dict(state))
+                        snapshot = dict(state)
+                    if snapshot["job"] == "run":
+                        snapshot["live"] = monitor.snapshot()
+                    self.respond(snapshot)
                 elif path == "/api/catalog":
                     from .catalog import catalog
                     self.respond(catalog())
@@ -138,9 +149,10 @@ def create_server(port=8769):
                         state.update(job="prepare", build_id=record["id"])
                         target, args = prepare_build, (record["id"],)
                     else:
+                        monitor.reset(steps)
                         state.update(job="run", build_id=folder.name if folder else None)
                         target, args = execute, (backend, steps, folder)
-                    state.update(running=True, completed=False, message="Starting", error=None)
+                    state.update(running=True, completed=False, message="Starting", error=None, run_dir=None)
                 threading.Thread(target=target, args=args, daemon=True).start()
                 self.respond({"started": True, "build_id": state["build_id"]}, 202)
             except (ValueError, FileNotFoundError, json.JSONDecodeError) as error:
@@ -154,7 +166,7 @@ def create_server(port=8769):
     return server
 
 
-def serve(port=8769, open_browser=False):
+def serve(port=8770, open_browser=False):
     server = create_server(port)
     print(f"UniBrain Agent: http://127.0.0.1:{server.server_port}", flush=True)
     if open_browser:

@@ -59,7 +59,7 @@ class Agent:
                        "--skip-git-repo-check", "--json", "--output-schema", str(schema_path.resolve()),
                        "--output-last-message", str(output_path.resolve()), "-"]
             start = time.perf_counter()
-            self.emit("agent", f"Waiting for {role} decision", backend=self.backend)
+            self.emit("agent", f"{role.title()} agent is reviewing the experiment", role=role, backend=self.backend)
             completed = subprocess.run(command, input=prompt, text=True, encoding="utf-8", errors="replace",
                                        capture_output=True, timeout=240, cwd=self.folder,
                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -79,7 +79,8 @@ class Agent:
         validate_decision(result, schema)
         self.calls.append({"role": role, "backend": self.backend, "seconds": elapsed, "usage": usage,
                            "decision": result})
-        self.emit("decision", role, backend=self.backend, decision=result)
+        self.emit("decision", f"{role.title()} decision recorded", role=role, backend=self.backend,
+                  decision=result, duration=elapsed, usage=usage)
         return result
 
     def plan(self, evidence):

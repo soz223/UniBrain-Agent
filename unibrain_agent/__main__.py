@@ -15,7 +15,7 @@ def main():
     prepare.add_argument("selection")
     prepare.add_argument("--backend", choices=["codex", "rules"], default="codex")
     serve = sub.add_parser("serve", help="Open the local prototype dashboard")
-    serve.add_argument("--port", type=int, default=8769)
+    serve.add_argument("--port", type=int, default=8770)
     serve.add_argument("--open", action="store_true")
     args = parser.parse_args()
     if args.command == "run":
