@@ -1,0 +1,247 @@
+{
+  "commit": "f9f8d906b1725046d532f862a28876482aca2cfa",
+  "status": "completed",
+  "epochs": 2,
+  "runtime": {
+    "python": "3.10.18 | packaged by Anaconda, Inc. | (main, Jun  5 2025, 13:08:55) [MSC v.1929 64 bit (AMD64)]",
+    "torch": "2.5.1+cu121",
+    "torchvision": "0.20.1+cu121",
+    "torch_geometric": "2.4.0",
+    "gpu": "NVIDIA GeForce RTX 3060 Ti"
+  },
+  "source_sha256": {
+    "main.py": "3fe5ad396feff0beba83e8e72ed849dfd3e3a2f8e0951511f0ea67c4a2987730",
+    "model.py": "97c777b93e85432ed93897570c829d9568dc08ba415e3a8a91b2261b0cfe198c",
+    "train.py": "f7aa33bc9f094e9aff58ab77d506400fa3a5441dffd0c8fad0b30899bcabdfc5",
+    "utils.py": "cdb8de5498ed78e00d09b035b3c3263cff47a6741b471898d8d85a8546e78296"
+  },
+  "changes": [
+    "Epoch budget only",
+    "Read-only optimizer observations"
+  ],
+  "updates": [
+    {
+      "step": 1,
+      "seconds": 46.483,
+      "gradient_tensors": 124,
+      "finite_gradient_norms": true,
+      "modules_with_observed_updates": [
+        "ext_net",
+        "feature_net",
+        "gnn_pred",
+        "reg_net",
+        "seg_net"
+      ],
+      "cuda_peak_allocated_bytes": 14667200000
+    },
+    {
+      "step": 2,
+      "seconds": 93.227,
+      "gradient_tensors": 124,
+      "finite_gradient_norms": true,
+      "modules_with_observed_updates": [
+        "ext_net",
+        "feature_net",
+        "gnn_pred",
+        "reg_net",
+        "seg_net"
+      ],
+      "cuda_peak_allocated_bytes": 18468301824
+    },
+    {
+      "step": 3,
+      "seconds": 129.904,
+      "gradient_tensors": 124,
+      "finite_gradient_norms": true,
+      "modules_with_observed_updates": [
+        "ext_net",
+        "feature_net",
+        "gnn_pred",
+        "reg_net",
+        "seg_net"
+      ],
+      "cuda_peak_allocated_bytes": 18470136832
+    },
+    {
+      "step": 4,
+      "seconds": 180.18,
+      "gradient_tensors": 124,
+      "finite_gradient_norms": true,
+      "modules_with_observed_updates": [
+        "ext_net",
+        "feature_net",
+        "gnn_pred",
+        "reg_net",
+        "seg_net"
+      ],
+      "cuda_peak_allocated_bytes": 18470267904
+    },
+    {
+      "step": 5,
+      "seconds": 237.361,
+      "gradient_tensors": 124,
+      "finite_gradient_norms": true,
+      "modules_with_observed_updates": [
+        "ext_net",
+        "feature_net",
+        "gnn_pred",
+        "reg_net",
+        "seg_net"
+      ],
+      "cuda_peak_allocated_bytes": 18470267904
+    },
+    {
+      "step": 6,
+      "seconds": 394.829,
+      "gradient_tensors": 124,
+      "finite_gradient_norms": true,
+      "modules_with_observed_updates": [
+        "ext_net",
+        "feature_net",
+        "gnn_pred",
+        "reg_net",
+        "seg_net"
+      ],
+      "cuda_peak_allocated_bytes": 18976292864
+    },
+    {
+      "step": 7,
+      "seconds": 438.514,
+      "gradient_tensors": 124,
+      "finite_gradient_norms": true,
+      "modules_with_observed_updates": [
+        "ext_net",
+        "feature_net",
+        "gnn_pred",
+        "reg_net",
+        "seg_net"
+      ],
+      "cuda_peak_allocated_bytes": 18976292864
+    },
+    {
+      "step": 8,
+      "seconds": 479.17,
+      "gradient_tensors": 124,
+      "finite_gradient_norms": true,
+      "modules_with_observed_updates": [
+        "ext_net",
+        "feature_net",
+        "gnn_pred",
+        "reg_net",
+        "seg_net"
+      ],
+      "cuda_peak_allocated_bytes": 18976292864
+    },
+    {
+      "step": 9,
+      "seconds": 527.287,
+      "gradient_tensors": 124,
+      "finite_gradient_norms": true,
+      "modules_with_observed_updates": [
+        "ext_net",
+        "feature_net",
+        "gnn_pred",
+        "reg_net",
+        "seg_net"
+      ],
+      "cuda_peak_allocated_bytes": 18976292864
+    },
+    {
+      "step": 10,
+      "seconds": 567.782,
+      "gradient_tensors": 124,
+      "finite_gradient_norms": true,
+      "modules_with_observed_updates": [
+        "ext_net",
+        "feature_net",
+        "gnn_pred",
+        "reg_net",
+        "seg_net"
+      ],
+      "cuda_peak_allocated_bytes": 18976292864
+    }
+  ],
+  "original_epochs": 1000,
+  "training_arguments": {
+    "img_size": 96,
+    "abn_stage": 5,
+    "seg_stage": 1,
+    "train_set_name": "adhd_train_sample.npy",
+    "val_set_name": "adhd_val_sample.npy",
+    "test_set_name": "adhd_test_sample.npy",
+    "batch_size": 1,
+    "num_epochs": 2,
+    "learning_rate": 1e-05,
+    "reg_loss_name": "GCC",
+    "save_every_epoch": 1,
+    "weight_decay": 1e-06,
+    "if_train_aug": true,
+    "if_pred_aal": false,
+    "save_start_epoch": 0,
+    "round_num": 1,
+    "lambda_ext": 1,
+    "lambda_reg": 0.1,
+    "lambda_seg": 1,
+    "lambda_cls": 1
+  },
+  "parameters": 305812248,
+  "parameters_by_module": {
+    "ext_net": 561889,
+    "reg_net": 6489020,
+    "seg_net": 35858308,
+    "par_net": 36248949,
+    "feature_net": 226591360,
+    "graph_gen": 0,
+    "gnn_pred": 62722
+  },
+  "elapsed_seconds": 658.9087165999226,
+  "source_unchanged": true,
+  "checkpoints": [
+    "result\\model\\UniBrain_1_5_1e-05_1e-06_adhd_train_sample_True_False_1_1_0.1_1_1_1.pth"
+  ],
+  "audit": {
+    "passed": true,
+    "checks": {
+      "source_unchanged": true,
+      "training_completed": true,
+      "all_training_updates": true,
+      "finite_gradient_norms": true,
+      "active_modules_updated": true,
+      "all_validation_epochs": true,
+      "checkpoint_saved": true,
+      "checkpoint_finite": true
+    },
+    "sample_counts": {
+      "train": 5,
+      "val": 5,
+      "test": 5
+    },
+    "expected_updates": 10,
+    "validation_epochs": 2,
+    "checkpoints": [
+      {
+        "file": "UniBrain_1_5_1e-05_1e-06_adhd_train_sample_True_False_1_1_0.1_1_1_1.pth",
+        "bytes": 1223405454,
+        "sha256": "1fe8ff5011a625d15e86a28098b76a8ec4581293396671bc109e7889e98911e1",
+        "state_tensors": 274,
+        "finite": true
+      }
+    ],
+    "dataset_sha256": {
+      "adhd_test_sample.npy": "6ec393bb7060546607561c590d6a86cd3b41e275623b116e96074502a3a7b367",
+      "adhd_train_sample.npy": "f35b1ed143ef81c4d5286bbf55fde3f1b224eca3d030127fb13d4be6e185a562",
+      "adhd_val_sample.npy": "c8d3e28b8cc0999ebd76c01aed38d44e2eff8a7506723eb76bdadd28baa800b7",
+      "template_img_aal_mask_orig_96.npy": "1005826c84c23ff95fbefcd6b2c8b20707fb0e61b4b604de6941aa5f4489a1ad",
+      "template_img_gm_mask_orig_96.npy": "d49e401cd35acfa08b06a075da32dc4621d9c886fa067638bce0f9842d2ba22e",
+      "template_img_orig_96.npy": "9f7cbef2016a83418ed3438f28f166e0fe77c62b0bba32f043cdc41e00889b28"
+    },
+    "checkpoint_strict_load": true
+  },
+  "scope": "Full upstream architecture and trainer with a two epoch budget on the public samples. This verifies execution, not paper accuracy or 1000 epoch convergence.",
+  "profile": "Original upstream CUDA run, separate from the compact dashboard baseline",
+  "source_findings": [
+    "if_pred_aal=False leaves the predicted parcellation head outside the loss. Updates are expected in extraction, registration, segmentation, ROI features and classification.",
+    "The original trainer enters eval mode for validation and does not call model.train() at the next epoch. This behavior was preserved.",
+    "Nearest label sampling, hard one-hot region conversion and discrete edge perturbation remain unchanged. Execution does not certify every downstream gradient path."
+  ]
+}

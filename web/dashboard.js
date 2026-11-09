@@ -228,6 +228,25 @@ function renderLoss() {
     escapeHtml(byId("lossKind").selectedOptions[0].textContent) + ' loss by training step">' + grid + lines +
     '<text x="40" y="171">STEP 1</text><text x="370" y="171" text-anchor="end">STEP ' + count + "</text></svg>";
   byId("lossSummary").textContent = format(value(report[branch].history.at(-1)), 3) + " FINAL";
+  const control = report.candidate.coordination;
+  byId("trainingControl").innerHTML = control ? '<div><strong>Training coordination</strong><span>Step ' + control.step + ' · ' +
+    (control.action === "keep_weights" ? "Kept loss weights" : "Balanced gradient magnitudes") +
+    '</span></div><button id="coordinationDetails" class="text-button">Inspect decision ↗</button>' :
+    '<div><strong>Training coordination</strong><span>No recorded decision</span></div>';
+  if (control) byId("coordinationDetails").onclick = coordinationDetails;
+}
+
+function coordinationDetails() {
+  const control = report.candidate.coordination;
+  const rows = Object.keys(tasks).map(task => [titleCase(task), scientific(control.diagnostic.task_norms[task]),
+    format(control.weights_before[task]), format(control.weights_after[task])]);
+  const shared = control.diagnostic.shared_gradient_cosines.map(item => [item.tasks.map(titleCase).join(" / "),
+    item.shared_parameter_tensors, format(item.cosine)]);
+  showDetails("Training coordination", '<p>' + escapeHtml(control.rationale) + '</p>' +
+    table(["Task", "Gradient norm", "Weight before", "Weight after"], rows) +
+    '<h3>Shared parameter gradients at the decision step</h3>' + table(["Task pair", "Shared tensors", "Cosine"], shared) +
+    '<p class="muted">Current controller: one decision before the second optimizer update of the candidate. The agent can keep weights or apply bounded gradient norm balancing. This is not a TaskForce implementation or a learned multiagent policy.</p>',
+    "CANDIDATE / STEP " + control.step);
 }
 
 function renderAgents() {

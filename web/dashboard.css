@@ -156,6 +156,9 @@ input[type="range"] { width: 100%; min-width: 40px; height: 3px; accent-color: v
 .loss-chart { padding: 0 8px; min-height: 176px; display: flex; align-items: center; flex: 1; }
 .loss-chart svg { width: 100%; height: auto; }
 .loss-chart text { font: 9px var(--mono); fill: #687c8e; }
+.training-control { margin: 0 17px 12px; padding: 10px 0 0; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.training-control strong { display: block; color: #b8d2da; font-size: 10px; font-weight: 500; }
+.training-control span { display: block; color: var(--muted); font-size: 9px; margin-top: 3px; }
 .agent-panel { grid-column: span 4; display: flex; flex-direction: column; }
 .agent-feed { flex: 1; padding: 0 16px; }
 .agent-item { display: grid; grid-template-columns: 24px 1fr auto; column-gap: 9px; padding: 12px 0; position: relative; }

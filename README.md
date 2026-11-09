@@ -30,6 +30,23 @@ Codex CLI with an existing login provides the composition, coordination and revi
 
 The displayed baseline is a compact adapted UniBrain configuration. Running this profile does not establish reproduction of the unchanged upstream training entry point or its reported results.
 
+## Run the original UniBrain
+
+Use a separate Python 3.10 CUDA environment for the full upstream model. The CPU adapters in the dashboard are a separate profile.
+
+```powershell
+python -m pip install -r requirements-upstream.txt
+git clone https://github.com/Anonymous7852/UniBrain.git builds/original/source
+git -C builds/original/source checkout f9f8d906b1725046d532f862a28876482aca2cfa
+python scripts/run_upstream.py builds/original/source --epochs 2
+```
+
+The verifier executes the original `main.py`, `train.py`, `model.py` and `utils.py` without editing them. It changes only the epoch budget passed to the original trainer, records optimizer observations, and saves file hashes and diagnostics next to the checkout. Network widths, five registration stages, losses, augmentation, Adam settings and all sample splits remain as specified upstream. The original trainer loads the test split but evaluates the validation split.
+
+Two epochs cover ten training updates, two validation passes and the upstream checkpoint saving branch. This verifies execution of the original sample workflow; it does not reproduce the paper's accuracy or its full 1000 epoch schedule. `requirements-upstream.txt` describes the tested environment, which uses PyTorch 2.5.1 rather than the repository's historical 2.1.2 environment. The original model requires substantially more memory than the compact profile.
+
+The measured run in [catalog/upstream_verification.json](catalog/upstream_verification.json) completed all ten updates and both validation passes in 658.9 seconds on Windows with an RTX 3060 Ti. The model contained 305,812,248 parameters. Its 1,223,405,454 byte checkpoint had finite tensors and loaded strictly into the full original architecture. All four upstream code files remained unchanged. Source behavior findings, including the unused parcellation head and the trainer's mode handling after validation, are recorded separately in that audit.
+
 The agent composes registered, source pinned adapters. It does not freely rewrite arbitrary upstream code or implement unseen methods. Every generated build is retained separately, so selecting a new method cannot overwrite the original UniBrain source.
 
 ## Available stages
@@ -57,7 +74,7 @@ Preparation requires finite outputs, finite gradients for every active parameter
 
 Spatial checks cover array shapes, affine determinant, probability mass, out of bounds sampling, grid folding and inverse cycle error. NPY samples do not provide physical spacing or orientation, so these checks do not establish physical coordinate alignment.
 
-The tissue branch has its own supervised objective. Learned parcellation adds AAL cross entropy to that branch's loss. nnU Net auxiliary heads receive supervision. Dense registration adds velocity smoothness. The coordinator may adjust the four task weights with bounded gradient norm balancing; this is not TaskForce reinforcement learning.
+The tissue branch has its own supervised objective. Learned parcellation adds AAL cross entropy to that branch's loss. nnU Net auxiliary heads receive supervision. Dense registration adds velocity smoothness. The coordinator makes one decision before the candidate's second optimizer update. It sees gradient norms and shared parameter cosines, then keeps the four loss weights or applies bounded gradient norm balancing. **Training dynamics → Training coordination → Inspect decision** shows the rationale and weights before and after. This is not TaskForce reinforcement learning or a learned multiagent policy.
 
 The post training gate requires successful spatial checks, classification gradients to registration and graph weights, updates in all active modules, validation reference loss at most 1.10 times baseline, and training time at most four times baseline. Passing trainability does not guarantee passing the quality or compute gate.
 
