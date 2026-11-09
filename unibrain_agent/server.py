@@ -1,16 +1,17 @@
 import json
+import re
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from .paths import RUNS
-from .report import document, landing, previews
+from .report import document, landing, previews, volume_slice
 
 
-def create_server(port=8768):
-    state = {"app": "unibrain_agent", "version": "0.2", "running": False, "completed": False,
+def create_server(port=8769):
+    state = {"app": "unibrain_agent", "version": "0.3", "running": False, "completed": False,
              "message": "Ready", "error": None, "job": None, "build_id": None}
     lock = threading.Lock()
 
@@ -71,6 +72,17 @@ def create_server(port=8768):
                 elif path == "/api/catalog":
                     from .catalog import catalog
                     self.respond(catalog())
+                elif path == "/api/volume":
+                    query = parse_qs(urlsplit(self.path).query)
+                    if set(query) != {"run", "branch", "stage", "index"} or any(len(v) != 1 for v in query.values()):
+                        raise ValueError("Expected one run, branch, stage and index")
+                    identifier = query["run"][0]
+                    if not re.fullmatch(r"[A-Za-z0-9_]+", identifier):
+                        raise ValueError("Invalid run identifier")
+                    folder = (RUNS / identifier).resolve()
+                    if folder.parent != RUNS.resolve():
+                        raise ValueError("Invalid run directory")
+                    self.respond(volume_slice(folder, query["branch"][0], query["stage"][0], int(query["index"][0])))
                 elif path.startswith("/api/builds/"):
                     from .builds import read_build
                     self.respond(read_build(path.removeprefix("/api/builds/")))
@@ -142,7 +154,7 @@ def create_server(port=8768):
     return server
 
 
-def serve(port=8768, open_browser=False):
+def serve(port=8769, open_browser=False):
     server = create_server(port)
     print(f"UniBrain Agent: http://127.0.0.1:{server.server_port}", flush=True)
     if open_browser:

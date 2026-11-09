@@ -33,6 +33,9 @@ let imageStage = "input";
 let selectedCell = { task: "classification", module: "reg_net" };
 let graphCell = null;
 let pollTimer = null;
+let volumeRequest = 0;
+let volumeAbort = null;
+const sliceCache = new Map();
 
 function paintIcons(root = document) {
   root.querySelectorAll("[data-icon]").forEach(node => {
@@ -50,6 +53,7 @@ function table(headers, rows, selectedColumn = -1) {
 }
 
 function showDetails(title, body, eyebrow = "EXPERIMENT DETAILS") {
+  byId("detailDialog").classList.remove("tool-dialog");
   byId("dialogTitle").textContent = title;
   byId("dialogEyebrow").textContent = eyebrow;
   byId("dialogBody").innerHTML = body;
@@ -101,19 +105,54 @@ function renderPipeline() {
   });
 }
 
-function renderVolume() {
+async function renderVolume() {
+  const request = ++volumeRequest;
+  volumeAbort?.abort();
   const preview = report.previews[branch];
-  const position = Number(byId("sliceIndex").value);
-  const index = preview.slice_indices[position];
+  const shape = preview.shape || [96, 96, 96];
+  const maximum = Math.min(...shape) - 1;
+  const index = Math.min(maximum, Math.max(0, Number(byId("sliceIndex").value)));
+  byId("sliceIndex").max = maximum;
+  byId("sliceIndex").value = index;
+  byId("sliceValue").textContent = index + " / " + maximum;
+  byId("previousSlice").disabled = index === 0;
+  byId("nextSlice").disabled = index === maximum;
+  const position = preview.slice_indices.indexOf(index);
+  const key = branch + ":" + imageStage + ":" + index;
+  let planes = position >= 0 ? preview.planes[imageStage].map(axis => axis[position]) : sliceCache.get(key);
+  if (!planes) {
+    byId("volumeImages").setAttribute("aria-busy", "true");
+    byId("volumeStatus").textContent = "Loading slice " + index + "…";
+    try {
+      if (location.protocol === "file:") throw new Error("Open the local workspace to view this slice.");
+      volumeAbort = new AbortController();
+      const query = new URLSearchParams({ run: preview.run_id || report.run_dir.split(/[\\/]/).at(-1), branch, stage: imageStage, index });
+      const response = await fetch("/api/volume?" + query, { signal: volumeAbort.signal });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Slice unavailable");
+      if (request !== volumeRequest) return;
+      planes = result.planes;
+      sliceCache.set(key, planes);
+      if (sliceCache.size > 120) sliceCache.delete(sliceCache.keys().next().value);
+    } catch (error) {
+      if (request !== volumeRequest || error.name === "AbortError") return;
+      byId("volumeImages").innerHTML = "";
+      byId("volumeImages").setAttribute("aria-busy", "false");
+      byId("volumeStatus").textContent = error.message;
+      return;
+    }
+  }
+  if (request !== volumeRequest) return;
   const crosshair = byId("crosshair").checked ? " crosshair" : "";
   byId("volumeImages").innerHTML = ["I", "J", "K"].map((plane, axis) =>
-    '<figure class="volume-plane' + crosshair + '" style="--cross-x:' + (index / 95 * 100) +
-    '%;--cross-y:' + ((95 - index) / 95 * 100) + '%"><img src="' + preview.planes[imageStage][axis][position] +
+    '<figure class="volume-plane' + crosshair + '" style="--cross-x:' + (index / maximum * 100) +
+    '%;--cross-y:' + ((maximum - index) / maximum * 100) + '%"><img src="' + planes[axis] +
     '" alt="' + escapeHtml(titleCase(imageStage)) + ", array " + plane + " plane, index " + index +
     '"><figcaption>' + plane + ' PLANE</figcaption><span class="plane-index">' + plane + " = " + index +
     "</span></figure>"
   ).join("");
-  byId("sliceValue").textContent = index + " / 95";
+  byId("volumeImages").setAttribute("aria-busy", "false");
+  byId("volumeStatus").textContent = "All " + (maximum + 1) + " slices · arrow keys move one slice";
   byId("sampleId").textContent = "POST-TRAIN AUDIT";
 }
 
@@ -457,8 +496,7 @@ function setFailure(error) {
   byId("progress").hidden = false;
   byId("progressTitle").textContent = "Experiment could not complete";
   byId("error").textContent = error.message || String(error);
-  byId("run").disabled = false;
-  document.querySelector(".spinner").hidden = true;
+  byId("runSpinner").hidden = true;
   window.dispatchEvent(new Event("experimentfailed"));
 }
 
@@ -470,7 +508,6 @@ async function poll() {
     const state = await response.json();
     if (state.running) {
       byId("progress").hidden = false;
-      byId("run").disabled = true;
       byId("progressText").textContent = state.message;
       byId("snapshotLabel").textContent = "Experiment running";
       pollTimer = setTimeout(poll, 1500);
@@ -478,34 +515,7 @@ async function poll() {
       setFailure(new Error(state.error));
     } else if (state.completed && state.job === "run") {
       location.reload();
-    } else {
-      byId("run").disabled = false;
     }
-  } catch (error) {
-    setFailure(error);
-  }
-}
-
-async function startExperiment() {
-  if (location.protocol === "file:") {
-    showDetails("Open the local workspace", "<p>This is a saved experiment report. To run a new experiment, open " +
-      '<a href="http://127.0.0.1:8768">the local dashboard</a> or launch <strong>Launch UniBrain Agent.cmd</strong> from the workspace folder.</p>');
-    return;
-  }
-  byId("progress").hidden = false;
-  byId("progressTitle").textContent = "Experiment running";
-  byId("progressText").textContent = "Starting the measured comparison. The panels below show the last completed run.";
-  byId("error").textContent = "";
-  document.querySelector(".spinner").hidden = false;
-  byId("run").disabled = true;
-  try {
-    const response = await fetch("/api/run", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ backend: byId("backend").value, steps: 5 })
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "The experiment could not start.");
-    poll();
   } catch (error) {
     setFailure(error);
   }
@@ -526,6 +536,8 @@ function bindControls() {
     };
   });
   byId("sliceIndex").oninput = renderVolume;
+  byId("previousSlice").onclick = () => { byId("sliceIndex").stepDown(); renderVolume(); };
+  byId("nextSlice").onclick = () => { byId("sliceIndex").stepUp(); renderVolume(); };
   byId("crosshair").onchange = renderVolume;
   byId("lossKind").onchange = renderLoss;
   byId("eventFilter").onchange = renderEvents;
@@ -563,7 +575,6 @@ function bindControls() {
 
 function initialize() {
   paintIcons();
-  byId("run").onclick = startExperiment;
   byId("closeDialog").onclick = () => byId("detailDialog").close();
   byId("detailDialog").addEventListener("click", event => {
     if (event.target === byId("detailDialog")) {
@@ -573,6 +584,9 @@ function initialize() {
   });
   document.querySelectorAll(".nav-link[href]").forEach(link => {
     link.onclick = () => {
+      const target = document.querySelector(link.getAttribute("href"));
+      const details = target?.closest("details");
+      if (details) details.open = true;
       document.querySelectorAll(".nav-link.active").forEach(item => item.classList.remove("active"));
       link.classList.add("active");
     };
@@ -582,7 +596,6 @@ function initialize() {
     byId("empty").hidden = false;
     byId("dataDetails").disabled = true;
   } else {
-    byId("backend").value = report.backend;
     byId("runId").textContent = "RUN " + report.run_dir.split(/[\\/]/).at(-1);
     byId("runDate").textContent = new Date(report.created).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
     byId("statusPill").textContent = report.selection.action === "revert" ? "BASELINE RESTORED" : "CANDIDATE RETAINED";

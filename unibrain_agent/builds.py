@@ -26,7 +26,11 @@ def read_build(identifier):
     path = build_path(identifier) / "build.json"
     if not path.exists():
         raise FileNotFoundError("Build not found")
-    return json.loads(path.read_text(encoding="utf-8"))
+    record = json.loads(path.read_text(encoding="utf-8"))
+    progress = path.with_name("progress.json")
+    if progress.exists():
+        record["progress"] = json.loads(progress.read_text(encoding="utf-8"))
+    return record
 
 
 def create_build(selection, backend):
@@ -52,7 +56,7 @@ def prepare(identifier, on_event=None):
     record = read_build(identifier)
 
     def emit(kind, message, **extra):
-        event = {"kind": kind, "message": message, **extra}
+        event = {"kind": kind, "message": message, "at": datetime.now(timezone.utc).isoformat(), **extra}
         record["events"].append(event)
         write_json(folder / "build.json", record)
         if on_event:
@@ -60,11 +64,12 @@ def prepare(identifier, on_event=None):
 
     try:
         record["status"] = "preparing"
-        emit("build", "Checking stage contracts and pinned source files")
+        emit("build", "Checking stage contracts and pinned source files", phase="contracts")
         selection = validate_selection(record["selection"])
         record["sources"] = verify(required_sources(selection))
         agent = Agent(record["backend"], folder / "agent", emit)
         methods = {x: ADAPTATIONS[x] for x in dict.fromkeys(selection.values()) if x in ADAPTATIONS}
+        emit("build", "Agent is reviewing the selected tools and connection changes", phase="planning")
         record["plan"] = agent.compose(selection, methods)
         record["agent_calls"] = agent.calls
         code = generated_code(selection)
@@ -77,7 +82,7 @@ def prepare(identifier, on_event=None):
                                                     fromfile="baseline/pipeline.py", tofile="candidate/pipeline.py"))
         record["implementation_hashes"] = {str(p.relative_to(PROJECT)): digest(p) for p in sorted((PROJECT / "unibrain_agent").glob("*.py"))}
         record["status"] = "validating"
-        emit("build", "Generated pipeline.py; checking two optimizer steps on a real GitHub example")
+        emit("build", "Code generated. Loading the selected models for two optimizer steps", phase="training")
         with (folder / "validation.log").open("w", encoding="utf-8") as log:
             completed = subprocess.run([sys.executable, "-m", "unibrain_agent.build_worker", str(folder)],
                                        cwd=PROJECT, stdout=log, stderr=subprocess.STDOUT, timeout=900,

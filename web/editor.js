@@ -5,77 +5,132 @@ let draft = null;
 let activeBuild = null;
 let buildBusy = false;
 let buildPoll = null;
+let activityStarted = null;
+const mainStages = ["denoising", "bias", "extraction", "normalization", "registration", "parcellation", "graph", "classification"];
+const stageNames = { extraction: "Extraction", normalization: "Normalization", parcellation: "Parcellation", graph: "Network generation" };
 
 function chosenOption(stage, selection = draft) {
   return stage.options.find(option => option.id === selection[stage.id]);
 }
 
-function renderChoices() {
-  byId("stageChoices").innerHTML = library.stages.map((stage, index) => {
-    const option = chosenOption(stage);
-    return '<article class="choice-card ' + (option.id !== library.defaults[stage.id] ? "chosen" : "") + '"><div class="choice-heading"><span>' +
-      String(index + 1).padStart(2, "0") + '</span><span>' + escapeHtml(stage.route) + '</span></div><h3>' + escapeHtml(stage.name) +
-      '</h3><p>' + escapeHtml(option.label) + '</p><button class="text-button choose-tool" data-choice-stage="' + stage.id +
-      '" aria-label="Choose tool for ' + escapeHtml(stage.name) + '">Choose tool <span>↗</span></button></article>';
-  }).join("");
-  byId("stageChoices").querySelectorAll("button").forEach(button => {
-    button.onclick = () => chooseTool(button.dataset.choiceStage);
-  });
+function toolName(option) {
+  return { none: "Skip", unibrain: "UniBrain", soft_atlas: "Soft atlas", continuous: "Cosine graph" }[option.id] || option.label.split(" (")[0];
 }
 
-function toolEvidence(stage, choice) {
-  const option = stage.options.find(item => item.id === choice);
-  const research = option.research;
-  byId("toolEvidence").innerHTML = '<p class="tool-adaptation">' + escapeHtml(option.adaptation) + '</p>' +
-    (research ? '<h3>Interface</h3><p>' + escapeHtml(research.interface) + '</p><h3>Prior isolated checks</h3><p>' +
-      escapeHtml(research.prior_check) + '</p><h3>Transfer limits</h3><p>' + escapeHtml(research.limitations) + '</p><div class="tool-sources">' +
-      sourceLink(research.paper, "Paper") + sourceLink(research.code, "Pinned source") + '</div>' : "") +
-    '<p class="muted">The selected combination must pass a new runtime check. Prior isolated checks do not certify this pipeline.</p>';
+function renderChoices() {
+  const button = (stage, index) => {
+    const option = chosenOption(stage);
+    const optional = stage.options.some(item => item.id === "none");
+    const skipped = option.id === "none";
+    return '<button class="stage-choice ' + (skipped ? "skipped" : "enabled") + '" data-choice-stage="' + stage.id +
+      '" aria-label="' + escapeHtml(stage.name + ": " + toolName(option) + ". Change tool") + '"' + (buildBusy ? " disabled" : "") +
+      '><span class="stage-top"><span class="stage-number">' + (index === null ? "↳" : String(index + 1).padStart(2, "0")) +
+      '</span><strong>' + escapeHtml(stageNames[stage.id] || stage.name) + '</strong>' + (optional ? '<small>optional</small>' : "") +
+      '</span><span class="stage-tool"><span>' + (skipped ? "○ " : "✓ ") + escapeHtml(toolName(option)) + '</span><span>⌄</span></span></button>';
+  };
+  byId("stageChoices").innerHTML = mainStages.map((id, index) => button(library.stages.find(stage => stage.id === id), index)).join("");
+  byId("branchChoices").innerHTML = ["segmentation", "surface"].map(id => button(library.stages.find(stage => stage.id === id), null)).join("");
+  document.querySelectorAll("[data-choice-stage]").forEach(node => node.onclick = () => chooseTool(node.dataset.choiceStage));
 }
 
 function chooseTool(stageId) {
+  if (buildBusy) return;
   const stage = library.stages.find(item => item.id === stageId);
-  const options = stage.options.map(option => '<option value="' + option.id + '"' + (draft[stageId] === option.id ? " selected" : "") + '>' +
-    escapeHtml(option.label + (option.status === "requires_inputs" ? " · needs mesh inputs" : "")) + '</option>').join("");
-  showDetails(stage.name, '<label class="tool-select-label" for="toolChoice">Tool for this stage</label><select id="toolChoice">' + options +
-    '</select><div id="toolEvidence"></div><div class="tool-action"><button id="useTool" class="primary"' + (buildBusy ? " disabled" : "") +
-    '>Use tool and validate</button><span>' + (buildBusy ? "Wait for the current build to finish." : "Generates code and tests two optimizer steps.") + '</span></div>', "STAGE TOOL SELECTION");
-  byId("toolChoice").onchange = event => toolEvidence(stage, event.target.value);
-  toolEvidence(stage, draft[stageId]);
-  byId("useTool").onclick = () => {
-    const choice = byId("toolChoice").value;
-    draft[stageId] = choice;
-    if (choice === "M03") {
-      draft.extraction = "M03";
-      draft.registration = "M03";
-    } else if (stageId === "extraction" && draft.registration === "M03") {
-      draft.registration = "unibrain";
-    } else if (stageId === "registration" && draft.extraction === "M03") {
-      draft.extraction = "unibrain";
-    }
-    activeBuild = null;
-    byId("detailDialog").close();
-    renderChoices();
-    prepareSelection();
+  showDetails(stage.name, '<input id="toolSearch" type="search" placeholder="Search tools…" aria-label="Search tools" autocomplete="off">' +
+    '<div id="toolOptions" class="tool-options"></div><div id="toolEvidence"></div>', "SELECT ONE TOOL");
+  byId("detailDialog").classList.add("tool-dialog");
+  const renderOptions = () => {
+    const query = byId("toolSearch").value.trim().toLowerCase();
+    const options = stage.options.filter(option => (option.label + " " + toolName(option)).toLowerCase().includes(query));
+    byId("toolOptions").innerHTML = options.length ? options.map(option => {
+      const selected = draft[stageId] === option.id;
+      const blocked = option.status === "requires_inputs";
+      return '<button class="tool-option ' + (selected ? "selected" : "") + '" data-tool="' + option.id +
+        '" aria-pressed="' + selected + '"' + (blocked ? ' disabled title="Requires a mesh and physical image coordinates"' : "") +
+        '><span><strong>' + escapeHtml(toolName(option)) + '</strong><small>' + escapeHtml(blocked ? "Unavailable · mesh inputs required" :
+          option.id === "none" ? "Bypass this optional step" : option.research ? option.label : "Current compact adapter") +
+        '</small></span><span class="tool-mark">' + (selected ? "✓ Selected" : blocked ? "Unavailable" : "Select") + '</span></button>';
+    }).join("") : '<p class="no-tools">No matching tools.</p>';
+    byId("toolOptions").querySelectorAll("[data-tool]").forEach(node => node.onclick = () => selectTool(stageId, node.dataset.tool));
   };
+  const option = chosenOption(stage);
+  byId("toolEvidence").innerHTML = '<details><summary>Current tool: adaptation & sources</summary><p>' + escapeHtml(option.adaptation) + '</p>' +
+    (option.research ? '<p>' + escapeHtml(option.research.interface) + '</p><p>' + escapeHtml(option.research.limitations) + '</p>' +
+      sourceLink(option.research.paper, "Paper") + ' · ' + sourceLink(option.research.code, "Source") : "") + '</details>';
+  byId("toolSearch").oninput = renderOptions;
+  byId("toolSearch").onkeydown = event => {
+    if (event.key === "ArrowDown") { event.preventDefault(); byId("toolOptions").querySelector("button:not(:disabled)")?.focus(); }
+    if (event.key === "Enter") { event.preventDefault(); byId("toolOptions").querySelector("button:not(:disabled)")?.click(); }
+  };
+  renderOptions();
+  byId("toolSearch").focus();
+}
+
+function selectTool(stageId, choice) {
+  if (draft[stageId] === choice) { byId("detailDialog").close(); return; }
+  draft[stageId] = choice;
+  let note = "Selection updated. Apply changes to generate and validate the pipeline.";
+  if (choice === "M03") {
+    draft.extraction = draft.registration = "M03";
+    draft.normalization = "none";
+    note = "ERNet links extraction and registration. Normalization is skipped to preserve that connection.";
+  } else if (stageId === "extraction" && draft.registration === "M03") draft.registration = "unibrain";
+  else if (stageId === "registration" && draft.extraction === "M03") draft.extraction = "unibrain";
+  activeBuild = null;
+  sessionStorage.removeItem("unibrainBuild");
+  sessionStorage.setItem("unibrainDraft", JSON.stringify(draft));
+  byId("detailDialog").close();
+  renderChoices();
+  byId("activityPanel").hidden = true;
+  byId("buildStatus").textContent = "Unapplied changes";
+  byId("buildStatus").className = "";
+  byId("buildMessage").textContent = note;
+  byId("confirmBuild").hidden = true;
+  byId("prepareBuild").hidden = false;
+  byId("viewBuild").hidden = true;
+}
+
+function showActivity(record) {
+  const phases = ["contracts", "planning", "training", "audit", "ready"];
+  const labels = ["Check tools", "Agent plan", "Train × 2", "Audit", "Ready"];
+  const latestPhase = record.events?.filter(event => event.phase).at(-1)?.phase || "contracts";
+  const phase = record.status === "ready" ? "ready" : record.progress?.phase || latestPhase;
+  const position = phases.indexOf(phase);
+  byId("activityPanel").hidden = false;
+  byId("activityPanel").classList.toggle("is-working", buildBusy);
+  byId("activityPanel").classList.toggle("has-failed", record.status === "failed");
+  byId("activitySteps").innerHTML = labels.map((label, i) => '<li class="' +
+    (i < position || record.status === "ready" ? "done" : i === position ? record.status === "failed" ? "failed" : "current" : "") +
+    '"><span>' + (i < position || record.status === "ready" ? "✓" : i + 1) + '</span>' + label + '</li>').join("");
+  const history = [...(record.events || []), ...(record.progress?.events || [])].sort((a, b) => (a.at || "").localeCompare(b.at || ""));
+  byId("activityLog").innerHTML = history.map(event => '<div><time>' + (event.at ?
+    Math.max(0, Math.round((Date.parse(event.at) - Date.parse(record.created)) / 1000)) + "s" : "") + '</time>' + escapeHtml(event.message) + '</div>').join("");
+  byId("activityIcon").className = buildBusy ? "spinner" : "activity-result";
+  byId("activityIcon").textContent = buildBusy ? "" : record.status === "ready" ? "✓" : "!";
+  activityStarted = buildBusy ? Date.parse(record.created) : null;
+  const end = history.at(-1)?.at;
+  byId("buildElapsed").textContent = (buildBusy ? Math.floor((Date.now() - Date.parse(record.created)) / 1000) :
+    end ? Math.max(0, Math.round((Date.parse(end) - Date.parse(record.created)) / 1000)) : 0) + "s";
 }
 
 function showBuild(record) {
   activeBuild = record;
   buildBusy = ["queued", "preparing", "validating"].includes(record.status);
-  const matches = JSON.stringify(record.selection) === JSON.stringify(draft);
-  const titles = { queued: "Build queued", preparing: "Agent is preparing the changes", validating: "Checking the training graph",
-    ready: "Training checks passed", failed: "This composition cannot run yet" };
+  const matches = library.stages.every(stage => record.selection[stage.id] === draft[stage.id]);
+  const titles = { queued: "Starting checks", preparing: "Agent is building your pipeline", validating: "Validating the training graph",
+    ready: "Ready to run", failed: "Build needs attention" };
   byId("buildStatus").textContent = titles[record.status] || record.status;
-  byId("buildMessage").textContent = record.error || record.events?.at(-1)?.message || "Preparing selected stages";
   byId("buildStatus").className = record.status === "ready" ? "build-ready" : record.status === "failed" ? "build-failed" : "";
+  byId("buildMessage").textContent = record.error || (record.status === "ready" ? "Gradient, parameter update and spatial checks passed on one sample." :
+    record.progress?.message || record.events?.at(-1)?.message || "Preparing selected stages");
   byId("prepareBuild").disabled = buildBusy;
-  byId("viewBuild").disabled = !record.code;
+  byId("prepareBuild").hidden = record.status === "ready" && matches;
+  byId("confirmBuild").hidden = record.status !== "ready" || !matches;
   byId("confirmBuild").disabled = buildBusy || record.status !== "ready" || !matches;
-  const validation = record.validation;
-  byId("buildChecks").innerHTML = validation?.passed ? ['Finite outputs', 'Input gradients', 'Parameter gradients', 'Optimizer updates', 'Spatial checks']
-    .map(label => '<span>✓ ' + label + '</span>').join("") : "";
-  if (validation?.passed) byId("buildChecks").innerHTML += '<small>One sample · two updates · random weights</small>';
+  byId("viewBuild").hidden = !record.code;
+  byId("viewBuild").disabled = !record.code;
+  showActivity(record);
+  renderChoices();
 }
 
 async function requestJson(url, data) {
@@ -85,37 +140,38 @@ async function requestJson(url, data) {
   return value;
 }
 
+function buildError(error) {
+  buildBusy = false;
+  activityStarted = null;
+  byId("buildStatus").textContent = "Build needs attention";
+  byId("buildMessage").textContent = error.message;
+  byId("buildStatus").className = "build-failed";
+  byId("activityPanel").classList.remove("is-working");
+  byId("activityIcon").className = "activity-result";
+  byId("activityIcon").textContent = "!";
+  byId("prepareBuild").disabled = false;
+  byId("prepareBuild").hidden = false;
+  byId("confirmBuild").disabled = true;
+  renderChoices();
+}
+
 async function pollBuild(identifier) {
   clearTimeout(buildPoll);
   try {
-    const value = await requestJson("/api/builds/" + identifier);
-    showBuild(value);
-    if (buildBusy) buildPoll = setTimeout(() => pollBuild(identifier), 1500);
-  } catch (error) {
-    buildBusy = false;
-    byId("buildMessage").textContent = error.message;
-    byId("prepareBuild").disabled = false;
-  }
+    showBuild(await requestJson("/api/builds/" + identifier));
+    if (buildBusy) buildPoll = setTimeout(() => pollBuild(identifier), 1000);
+  } catch (error) { buildError(error); }
 }
 
 async function prepareSelection() {
-  buildBusy = true;
-  byId("prepareBuild").disabled = true;
-  byId("confirmBuild").disabled = true;
-  byId("viewBuild").disabled = true;
-  byId("buildStatus").textContent = "Preparing the selected tools";
-  byId("buildMessage").textContent = "The current experiment remains visible below.";
-  byId("buildChecks").innerHTML = "";
+  if (buildBusy) return;
+  showBuild({ status: "queued", selection: { ...draft }, created: new Date().toISOString(), events: [] });
   try {
-    const value = await requestJson("/api/prepare", { selection: draft, backend: byId("backend").value });
+    const value = await requestJson("/api/prepare", { selection: draft, backend: "codex" });
     sessionStorage.setItem("unibrainBuild", value.build_id);
+    sessionStorage.removeItem("unibrainDraft");
     await pollBuild(value.build_id);
-  } catch (error) {
-    buildBusy = false;
-    byId("buildStatus").textContent = "Preparation failed";
-    byId("buildMessage").textContent = error.message;
-    byId("prepareBuild").disabled = false;
-  }
+  } catch (error) { buildError(error); }
 }
 
 function reviewBuild() {
@@ -125,42 +181,35 @@ function reviewBuild() {
     escapeHtml(activeBuild.code) + '</pre><h3>Changes from baseline</h3><pre class="code-preview">' + escapeHtml(activeBuild.diff) + '</pre>';
   if (validation?.updates) body += '<h3>Measured parameter updates</h3>' + table(["Module", "Parameter tensors", "Updated tensors"],
     Object.entries(validation.updates).map(([name, info]) => [escapeHtml(name), info.parameter_tensors, info.updated_tensors]));
-  if (validation?.model) body += '<h3>Applied adaptations</h3><ul>' + validation.model.adaptations.map(text => '<li>' + escapeHtml(text) + '</li>').join("") + '</ul>';
   body += '<p class="muted">' + escapeHtml(validation?.scope || activeBuild.error || "Validation in progress") + '</p>';
   showDetails("Review the build", body, "BUILD " + activeBuild.id);
 }
 
 async function runBuild() {
-  if (!activeBuild || activeBuild.status !== "ready") return;
+  if (!activeBuild || activeBuild.status !== "ready" || buildBusy) return;
+  buildBusy = true;
   byId("confirmBuild").disabled = true;
   byId("prepareBuild").disabled = true;
-  buildBusy = true;
+  renderChoices();
   try {
     await requestJson("/api/builds/" + activeBuild.id + "/run", { steps: Number(byId("buildSteps").value), backend: activeBuild.backend });
-    byId("buildStatus").textContent = "Running the generated pipeline";
-    byId("buildMessage").textContent = "Paired baseline and candidate training is running. Results below belong to the previous experiment.";
+    byId("buildStatus").textContent = "Running the pipeline";
+    byId("buildMessage").textContent = "Training baseline and candidate. Results below show the last completed experiment.";
     byId("progressTitle").textContent = "Experiment running";
     byId("error").textContent = "";
-    document.querySelector(".spinner").hidden = false;
+    byId("runSpinner").hidden = false;
     poll();
-  } catch (error) {
-    buildBusy = false;
-    byId("buildStatus").textContent = "Run could not start";
-    byId("buildMessage").textContent = error.message;
-    byId("prepareBuild").disabled = false;
-  }
+  } catch (error) { buildError(error); }
 }
 
 async function initializeEditor() {
-  byId("run").onclick = () => byId("builderPanel").scrollIntoView({ behavior: "smooth", block: "start" });
   byId("prepareBuild").onclick = prepareSelection;
   byId("viewBuild").onclick = reviewBuild;
   byId("confirmBuild").onclick = runBuild;
-  window.addEventListener("experimentfailed", () => {
-    buildBusy = false;
-    byId("prepareBuild").disabled = false;
-    byId("confirmBuild").disabled = true;
-  });
+  window.addEventListener("experimentfailed", () => buildError(new Error("See the experiment error above. Apply changes to retry.")));
+  setInterval(() => {
+    if (activityStarted) byId("buildElapsed").textContent = Math.max(0, Math.floor((Date.now() - activityStarted) / 1000)) + "s";
+  }, 1000);
   if (location.protocol === "file:") {
     byId("buildMessage").textContent = "Open the local dashboard to edit and run a pipeline.";
     byId("prepareBuild").disabled = true;
@@ -169,16 +218,21 @@ async function initializeEditor() {
   try {
     library = await requestJson("/api/catalog");
     draft = { ...library.defaults, ...(report?.build?.selection || {}) };
-    byId("catalogCount").textContent = library.method_count + " RESEARCH METHODS";
+    const saved = sessionStorage.getItem("unibrainDraft");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (library.stages.every(stage => stage.options.some(option => option.id === parsed[stage.id]))) draft = parsed;
+      } catch (_) { sessionStorage.removeItem("unibrainDraft"); }
+    }
     renderChoices();
     if (report) renderMethods();
     const status = await requestJson("/api/status");
-    const previous = status.build_id || sessionStorage.getItem("unibrainBuild");
+    const previous = status.running ? status.build_id : saved ? null : sessionStorage.getItem("unibrainBuild");
     if (previous) {
       try {
         const record = await requestJson("/api/builds/" + previous);
         draft = { ...record.selection };
-        renderChoices();
         showBuild(record);
         if (buildBusy) pollBuild(previous);
       } catch (_) { sessionStorage.removeItem("unibrainBuild"); }
@@ -187,6 +241,7 @@ async function initializeEditor() {
       buildBusy = true;
       byId("confirmBuild").disabled = true;
       byId("prepareBuild").disabled = true;
+      renderChoices();
       poll();
     }
   } catch (error) {

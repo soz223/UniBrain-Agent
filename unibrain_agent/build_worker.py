@@ -1,6 +1,7 @@
 import json
 import sys
 import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
@@ -15,6 +16,13 @@ from .validation import gradients, spatial_checks
 
 def validate(folder):
     folder = Path(folder)
+    events = []
+
+    def progress(phase, message):
+        events.append({"phase": phase, "message": message, "at": datetime.now(timezone.utc).isoformat()})
+        write_json(folder / "progress.json", {**events[-1], "events": events})
+
+    progress("training", "Loading models and the GitHub training sample")
     record = json.loads((folder / "build.json").read_text(encoding="utf-8"))
     torch.set_num_threads(4)
     seed_everything(17)
@@ -30,9 +38,11 @@ def validate(folder):
         model.train()
         optimizer.zero_grad(set_to_none=True)
         sample["raw_img_np"].grad = None
+        progress("training", f"Optimizer step {step + 1}/2: forward pass")
         output = model(sample, template)
         terms = loss_terms(output, sample, template, record["plan"]["extraction_loss"])
         total = sum(REFERENCE_WEIGHTS[key] * value for key, value in terms.items())
+        progress("training", f"Optimizer step {step + 1}/2: backpropagation and gradient checks")
         total.backward()
         missing = [name for name, p in named.items() if p.grad is None]
         nonfinite = [name for name, p in named.items() if p.grad is not None and not bool(torch.isfinite(p.grad).all())]
@@ -42,6 +52,7 @@ def validate(folder):
             raise ValueError(f"Trainability failed at step {step + 1}: missing={missing}, nonfinite={nonfinite}, input_gradient={input_ok}")
         torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0, error_if_nonfinite=True)
         optimizer.step()
+        progress("training", f"Optimizer step {step + 1}/2 completed")
         passes.append({"step": step + 1, "loss": float(total.detach()), "parameter_tensors": len(named),
                        "finite_gradient_tensors": len(named), "input_gradient_norm": float(input_grad.norm())})
         del output, terms, total
@@ -52,6 +63,7 @@ def validate(folder):
             updates[name] = {"parameter_tensors": len(members),
                              "updated_tensors": sum(not torch.equal(before[key], p.detach()) for key, p in members)}
     model.eval()
+    progress("audit", "Measuring loss to module gradients and spatial consistency")
     output = model(sample, template)
     terms = loss_terms(output, sample, template, record["plan"]["extraction_loss"])
     audit = gradients(model, terms, output)
@@ -66,6 +78,7 @@ def validate(folder):
     edge = audit["classification_to_graph_weights"]
     if not edge["connected"] or not edge["norm"]:
         failures.append("Classification gradient did not reach graph weights")
+    progress("audit", "Gradient and spatial checks completed" if not failures else "; ".join(failures))
     return {"passed": not failures, "error": "; ".join(failures) or None, "passes": passes,
             "updates": updates, "gradients": audit, "spatial": spatial, "model": model.description(),
             "scope": "Two optimizer steps on one original GitHub training sample. Random weights. Not an accuracy evaluation."}

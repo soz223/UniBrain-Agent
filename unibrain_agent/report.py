@@ -1,5 +1,6 @@
 import base64
 import json
+from functools import lru_cache
 import struct
 import zlib
 from pathlib import Path
@@ -22,7 +23,24 @@ def png(array):
     return "data:image/png;base64," + base64.b64encode(value).decode()
 
 
-def previews(folder):
+@lru_cache(maxsize=2)
+def volume_arrays(path, modified):
+    with np.load(path, allow_pickle=False) as arrays:
+        return {key: arrays[key][0, 0].copy() for key in ("input", "mask", "extracted", "warped")}
+
+
+def volume_slice(folder, branch, stage, index):
+    if branch not in {"baseline", "candidate"} or stage not in {"input", "mask", "extracted", "warped"}:
+        raise ValueError("Unknown volume")
+    path = folder / f"{branch}_preview.npz"
+    volume = volume_arrays(str(path), path.stat().st_mtime_ns)[stage]
+    if type(index) is not int or not 0 <= index < min(volume.shape):
+        raise ValueError("Slice index outside the volume")
+    return {"index": index, "shape": list(volume.shape),
+            "planes": [png(np.rot90(np.take(volume, index, axis=axis))) for axis in range(3)]}
+
+
+def previews(folder, full=False):
     result = {}
     for name in ("baseline", "candidate"):
         with np.load(folder / f"{name}_preview.npz", allow_pickle=False) as arrays:
@@ -30,7 +48,9 @@ def previews(folder):
             for key in ("input", "mask", "extracted", "warped"):
                 volume = arrays[key][0, 0]
                 images[key] = png(np.rot90(volume[:, :, 48]))
-            images["slice_indices"] = [16, 32, 48, 64, 80]
+            images["shape"] = list(arrays["input"].shape[2:])
+            images["run_id"] = folder.name
+            images["slice_indices"] = list(range(min(images["shape"]))) if full else [48]
             images["planes"] = {}
             for key in ("input", "mask", "extracted", "warped"):
                 volume = arrays[key][0, 0]
@@ -53,7 +73,7 @@ def document(payload):
 
 
 def render(report, folder):
-    payload = {**report, "previews": previews(folder)}
+    payload = {**report, "previews": previews(folder, full=True)}
     (folder / "index.html").write_text(document(payload), encoding="utf-8")
 
 

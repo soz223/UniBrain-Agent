@@ -14,19 +14,21 @@ python -m venv .venv
 .venv/Scripts/python.exe -m unibrain_agent serve --open
 ```
 
-The dashboard opens at http://127.0.0.1:8768. On Windows, subsequent launches can use `Launch UniBrain Agent.cmd`. On Linux or macOS, replace `.venv/Scripts/python.exe` with `.venv/bin/python`.
+The dashboard opens at http://127.0.0.1:8769. On Windows, subsequent launches can use `Launch UniBrain Agent.cmd`. On Linux or macOS, replace `.venv/Scripts/python.exe` with `.venv/bin/python`.
 
 The bootstrap script downloads pinned source files and the original public UniBrain examples. It does not download pretrained weights. Upstream licenses remain with their source files. A partial source fetch can be requested with `--source reg_unibrain`.
 
-Codex CLI with an existing login provides the composition, coordination and review agents. Select **Rules demo** for an explicit offline workflow. A failed Codex invocation never silently falls back to rules. Prompts contain the catalog and aggregate diagnostics; MRI arrays and subject records stay local.
+Codex CLI with an existing login provides the composition, coordination and review agents. The dashboard uses Codex; `--backend rules` is available through the CLI for an explicit offline test. A failed Codex invocation never silently falls back to rules. Prompts contain the catalog and aggregate diagnostics; MRI arrays and subject records stay local.
 
 ## Choose, validate, run
 
-1. Open **Pipeline builder** and choose a tool for a stage. The selector includes all 15 works from the supplied research workbook, with publication, source, prior evidence and transfer limits.
-2. **Use tool and validate** fixes that choice, asks the agent to review the composition, generates `pipeline.py`, and checks two optimizer steps on one real public sample.
+1. Click an ordered pipeline step and search for a tool. Selected tools are marked; optional steps offer **Skip**. Tissue segmentation and cortical surface appear separately as branches. The catalog retains all 15 works from the research workbook; tools requiring missing inputs are disabled.
+2. Select multiple tools, then click **Apply changes**. The agent reviews the composition, generates `pipeline.py`, and checks two optimizer steps on one real public sample. Build activity shows the actual phase, elapsed time, forward passes, backpropagation and audit events.
 3. **Review code** shows the generated file, the change from baseline, adapter details and measured parameter updates.
-4. **Build and run** runs the validated file. The executor checks that its code and implementation have not changed since validation.
-5. Compare the resulting images, gradient matrix, training curves, graph, validation results, decisions and execution log. A failed acceptance gate restores the baseline checkpoint.
+4. **Confirm & run** runs the validated file. The executor checks that its code and implementation have not changed since validation.
+5. Inspect all 96 slices with the slider, arrow keys or adjacent slice buttons. The main view shows images, gradients, training curves and validation results. **Details** contains decisions, graphs, methods and logs. A failed acceptance gate restores the baseline checkpoint.
+
+The displayed baseline is a compact adapted UniBrain configuration. Running this profile does not establish reproduction of the unchanged upstream training entry point or its reported results.
 
 The agent composes registered, source pinned adapters. It does not freely rewrite arbitrary upstream code or implement unseen methods. Every generated build is retained separately, so selecting a new method cannot overwrite the original UniBrain source.
 

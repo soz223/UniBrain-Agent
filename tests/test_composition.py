@@ -9,6 +9,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import torch
+import numpy as np
 from torch import nn
 from torch.nn import functional as F
 
@@ -18,6 +19,7 @@ from unibrain_agent.data import digest
 from unibrain_agent.pipeline import loss_terms
 from unibrain_agent.server import create_server
 from unibrain_agent.sources import Compatibility
+from unibrain_agent.report import png
 from unibrain_agent.validation import spatial_checks
 
 
@@ -117,6 +119,27 @@ class ServiceTests(unittest.TestCase):
             urlopen(request)
         self.assertEqual(error.exception.code, 400)
         self.assertFalse(self.server.state["running"])
+
+    def test_volume_api_preserves_adjacent_slices_and_bounds(self):
+        with tempfile.TemporaryDirectory() as directory, patch("unibrain_agent.server.RUNS", Path(directory)):
+            folder = Path(directory) / "sample_run"
+            folder.mkdir()
+            volume = np.arange(5 * 6 * 7, dtype=np.float32).reshape(5, 6, 7) / 210
+            np.savez(folder / "candidate_preview.npz", **{key: volume[None, None] for key in ("input", "mask", "extracted", "warped")})
+            url = self.base + "/api/volume?run=sample_run&branch=candidate&stage=input&index="
+            for index in range(5):
+                with urlopen(url + str(index)) as response:
+                    value = json.load(response)
+                self.assertEqual(value["index"], index)
+                self.assertEqual(value["shape"], [5, 6, 7])
+                self.assertEqual(value["planes"], [png(np.rot90(volume[index, :, :])),
+                                                  png(np.rot90(volume[:, index, :])), png(np.rot90(volume[:, :, index]))])
+            for bad in ("-1", "5", "1.5", "0&index=1"):
+                with self.assertRaises(HTTPError):
+                    urlopen(url + bad)
+            for bad in ("../sample_run", "%2Fsample_run", "sample_run%5C.."):
+                with self.assertRaises(HTTPError):
+                    urlopen(url.replace("run=sample_run", "run=" + bad) + "0")
 
 
 if __name__ == "__main__":
