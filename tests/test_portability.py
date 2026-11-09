@@ -26,7 +26,7 @@ class PortabilityTests(unittest.TestCase):
 
     def test_paths_resolve_from_config_directory_outside_checkout(self):
         with tempfile.TemporaryDirectory() as directory:
-            folder = Path(directory)
+            folder = Path(directory).resolve()
             config = folder / "runtime.json"
             config.write_text(json.dumps({"data": "cohort", "runs": "results", "builds": "prepared"}))
             env = {key: value for key, value in os.environ.items() if not key.startswith("UNIBRAIN_")}
