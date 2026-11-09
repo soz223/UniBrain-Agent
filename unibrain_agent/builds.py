@@ -9,7 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .agents import Agent
-from .catalog import ADAPTATIONS, required_sources, validate_selection
+from .catalog import ADAPTATIONS, required_sources, validate_selection, original_selection
 from .data import digest
 from .paths import BUILDS, PROJECT
 from .runner import write_json
@@ -41,12 +41,15 @@ def create_build(selection, backend):
     folder = build_path(identifier)
     folder.mkdir(parents=True)
     record = {"id": identifier, "status": "queued", "selection": selection, "backend": backend,
+              "profile": "original" if original_selection(selection) else "composed",
               "created": datetime.now(timezone.utc).isoformat(), "events": [], "error": None}
     write_json(folder / "build.json", record)
     return record
 
 
 def generated_code(selection):
+    if original_selection(selection):
+        return "from unibrain_agent.native import run_original\n\ndef run_pipeline(epochs=2):\n    return run_original(epochs=epochs)\n"
     return ("from unibrain_agent.composition import ComposedPipeline\n\n"
             "SELECTION = " + repr(selection) + "\n\n\ndef build_pipeline():\n    return ComposedPipeline(SELECTION)\n")
 
@@ -66,12 +69,26 @@ def prepare(identifier, on_event=None):
         record["status"] = "preparing"
         emit("build", "Checking stage contracts and pinned source files", phase="contracts")
         selection = validate_selection(record["selection"])
-        record["sources"] = verify(required_sources(selection))
+        from .runtime import settings
+        record["runtime"] = settings()
+        if original_selection(selection):
+            from .native import check_original_runtime, verify_original
+            record["sources"] = verify_original(record["runtime"]["original_source"])
+            emit("build", "Checking the original CUDA runtime and data paths", phase="audit")
+            environment = check_original_runtime(record["runtime"])
+            record["plan"] = {"rationale": "Run original main.py and train.py with unchanged architecture, losses and optimizer. Only the explicit epoch budget and data IO wrapper differ."}
+            record["agent_calls"] = []
+            record["validation"] = {"passed": True, "kind": "prerequisites", "environment": environment,
+                                     "scope": "Pinned sources, CUDA runtime and input paths checked. Full training is verified during the run; original gradient boundaries remain."}
+        else:
+            record["sources"] = verify(required_sources(selection))
         agent = Agent(record["backend"], folder / "agent", emit)
         methods = {x: ADAPTATIONS[x] for x in dict.fromkeys(selection.values()) if x in ADAPTATIONS}
-        emit("build", "Agent is reviewing the selected tools and connection changes", phase="planning")
-        record["plan"] = agent.compose(selection, methods)
-        record["agent_calls"] = agent.calls
+        emit("build", "Original settings preserved" if original_selection(selection) else
+             "Agent is reviewing the selected tools and connection changes", phase="planning")
+        if not original_selection(selection):
+            record["plan"] = agent.compose(selection, methods)
+            record["agent_calls"] = agent.calls
         code = generated_code(selection)
         compile(code, "pipeline.py", "exec")
         (folder / "pipeline.py").write_text(code, encoding="utf-8")
@@ -81,6 +98,11 @@ def prepare(identifier, on_event=None):
         record["diff"] = "".join(difflib.unified_diff(original.splitlines(True), code.splitlines(True),
                                                     fromfile="baseline/pipeline.py", tofile="candidate/pipeline.py"))
         record["implementation_hashes"] = {str(p.relative_to(PROJECT)): digest(p) for p in sorted((PROJECT / "unibrain_agent").glob("*.py"))}
+        record["implementation_hashes"]["scripts/run_upstream.py"] = digest(PROJECT / "scripts/run_upstream.py")
+        if original_selection(selection):
+            record["status"] = "ready"
+            emit("ready", "Original UniBrain sources and runtime are ready. Confirm to train.", phase="ready")
+            return record
         record["status"] = "validating"
         emit("build", "Code generated. Loading the selected models for two optimizer steps", phase="training")
         with (folder / "validation.log").open("w", encoding="utf-8") as log:
@@ -115,7 +137,12 @@ def verify_build(folder, ready=True):
     for name, expected in record["implementation_hashes"].items():
         if digest(PROJECT / name) != expected:
             raise ValueError("Implementation changed. Prepare the selection again before running.")
-    verify(required_sources(record["selection"]))
+    if original_selection(record["selection"]):
+        from .native import verify_original
+        from .runtime import settings
+        verify_original(record.get("runtime", settings())["original_source"])
+    else:
+        verify(required_sources(record["selection"]))
     return record
 
 

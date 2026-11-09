@@ -11,8 +11,8 @@ from .live import RunMonitor
 from .report import document, landing, previews, volume_slice
 
 
-def create_server(port=8770):
-    state = {"app": "unibrain_agent", "version": "0.4", "running": False, "completed": False,
+def create_server(port=8771):
+    state = {"app": "unibrain_agent", "version": "0.5", "running": False, "completed": False,
              "message": "Ready", "error": None, "job": None, "build_id": None}
     lock = threading.Lock()
     monitor = RunMonitor()
@@ -25,7 +25,13 @@ def create_server(port=8770):
                 with lock:
                     state["message"] = value["message"]
                     state["run_dir"] = str(run_folder.resolve())
-            result = run(backend=backend, steps=steps, on_event=event, build_dir=folder, comparison=False)
+            from .builds import verify_build
+            build = verify_build(folder) if folder else None
+            if build and build.get("profile") == "original":
+                from .native import run_original
+                result = run_original(epochs=steps, build=build, on_event=event)
+            else:
+                result = run(backend=backend, steps=steps, on_event=event, build_dir=folder, comparison=False)
             result["live"] = monitor.snapshot()
             write_json(Path(result["run_dir"]) / "report.json", result)
             with lock:
@@ -83,6 +89,9 @@ def create_server(port=8770):
                 elif path == "/api/catalog":
                     from .catalog import catalog
                     self.respond(catalog())
+                elif path == "/api/runtime":
+                    from .runtime import settings
+                    self.respond(settings())
                 elif path == "/api/volume":
                     query = parse_qs(urlsplit(self.path).query)
                     if set(query) != {"run", "branch", "stage", "index"} or any(len(v) != 1 for v in query.values()):
@@ -166,7 +175,7 @@ def create_server(port=8770):
     return server
 
 
-def serve(port=8770, open_browser=False):
+def serve(port=8771, open_browser=False):
     server = create_server(port)
     print(f"UniBrain Agent: http://127.0.0.1:{server.server_port}", flush=True)
     if open_browser:

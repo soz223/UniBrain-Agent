@@ -15,7 +15,8 @@ from torch.nn import functional as F
 
 from .agents import Agent, balance_weights
 from .data import batch, digest, inspect_data, load_split, templates
-from .paths import PROJECT, RUNS, UPSTREAM
+from .paths import PROJECT, RUNS, UPSTREAM, DATA
+from .runtime import device_for, move_model, settings
 from .pipeline import MODULES, TASKS, Pipeline, PipelineConfig, loss_terms
 from .research import evidence_bundle
 from .upstream import SYNTHSTRIP_COMMIT, UNIBRAIN_COMMIT, verify_sources
@@ -49,7 +50,7 @@ def evaluate(model, array, template, emit=None):
     records = []
     with torch.no_grad():
         for row in array:
-            sample = batch(row)
+            sample = batch(row, template["image"].device)
             output = model(sample, template)
             terms = loss_terms(output, sample, template)
             # A fixed reference objective keeps changes in training weights comparable.
@@ -125,7 +126,7 @@ def _train_branch(model, train, val, template, steps, seed, folder, name, emit, 
     for step in range(steps):
         model.train()
         torch.manual_seed(seed + step)
-        sample = batch(train[order[step % len(order)]])
+        sample = batch(train[order[step % len(order)]], template["image"].device)
         optimizer.zero_grad(set_to_none=True)
         emit("phase", f"Model is running: training step {step + 1}/{steps}", phase="training", operation="forward")
         started = time.perf_counter()
@@ -164,13 +165,13 @@ def _train_branch(model, train, val, template, steps, seed, folder, name, emit, 
     model.eval()
     emit("phase", "Measuring learning signals and spatial consistency", phase="audit")
     torch.manual_seed(seed + 1000)
-    sample = batch(train[order[-1]])
+    sample = batch(train[order[-1]], template["image"].device)
     output = model(sample, template, augment=True)
     terms = loss_terms(output, sample, template, extraction_loss)
     diagnostic = gradients(model, terms, output)
     spatial = spatial_checks(output)
     preview = {key: output[key].detach().cpu().numpy() for key in ("mask", "extracted", "warped", "edges")}
-    preview["input"] = sample["raw_img_np"].numpy()
+    preview["input"] = sample["raw_img_np"].cpu().numpy()
     del output, terms
     emit("phase", f"Evaluating the model on {len(val)} validation samples", phase="validation")
     validation = evaluate(model, val, template, emit)
@@ -191,10 +192,15 @@ def _train_branch(model, train, val, template, steps, seed, folder, name, emit, 
     return result
 
 
-def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_event=None, build_dir=None, comparison=True):
-    if not 2 <= steps <= 100:
-        raise ValueError("Use 2 to 100 steps per branch")
-    torch.set_num_threads(4)
+def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_event=None, build_dir=None, comparison=True, device=None):
+    if steps < 2:
+        raise ValueError("Use at least two optimizer steps")
+    runtime = settings()
+    if build_dir:
+        from .builds import verify_build
+        runtime = verify_build(build_dir).get("runtime", runtime)
+    device = device_for(device or runtime["device"])
+    torch.set_num_threads(runtime["threads"])
     seed_everything(seed)
     folder = Path(output_dir) if output_dir else RUNS / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     folder.mkdir(parents=True, exist_ok=False)
@@ -203,7 +209,7 @@ def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_ev
               "seed": seed, "steps_per_branch": steps, "run_dir": str(folder.resolve()),
               "mode": "comparison" if comparison else "single",
               "upstream_commit": UNIBRAIN_COMMIT, "synthstrip_commit": SYNTHSTRIP_COMMIT,
-              "environment": {"torch": torch.__version__, "device": "cpu", "threads": 4},
+              "environment": {"torch": torch.__version__, "device": str(device), "threads": runtime["threads"]},
               "events": []}
 
     def emit(kind, message, **extra):
@@ -218,13 +224,13 @@ def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_ev
             on_event(event, folder)
 
     try:
-        emit("phase", "Loading the selected pipeline and checking source files", phase="preparing")
+        emit("phase", "Loading the selected pipeline and checking source files", phase="preparing", environment=report["environment"])
         report["source_verification"] = verify_sources()
         report["implementation_hashes"] = {str(path.relative_to(PROJECT)): digest(path)
                                             for path in sorted((PROJECT / "unibrain_agent").glob("*.py"))}
-        data_dir = Path(data_dir) if data_dir else UPSTREAM / "dataset"
+        data_dir = Path(data_dir or runtime.get("data", DATA))
         train, val = load_split(data_dir, "train"), load_split(data_dir, "val")
-        template = templates(data_dir)
+        template = templates(data_dir, device)
         report["data"] = inspect_data(data_dir, train, val)
         emit("data", "Validated original GitHub sample format and atlas label mapping")
         evidence = evidence_bundle()
@@ -246,7 +252,7 @@ def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_ev
         seed_everything(seed)
         initial_state = {}
         if comparison:
-            baseline_model = Pipeline()
+            baseline_model = move_model(Pipeline(), device)
             initial_state = {key: value.clone() for key, value in baseline_model.state_dict().items()}
             report["baseline"] = train_branch(baseline_model, train, val, template, steps, seed, folder, "baseline", emit)
             del baseline_model
@@ -255,10 +261,10 @@ def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_ev
         seed_everything(seed)
         if build_dir:
             from .builds import load_pipeline
-            candidate_model = load_pipeline(build_dir)
+            candidate_model = move_model(load_pipeline(build_dir), device)
             config = candidate_model.config
         else:
-            candidate_model = Pipeline(config)
+            candidate_model = move_model(Pipeline(config), device)
         candidate_state = candidate_model.state_dict()
         shared = {key: value for key, value in initial_state.items()
                   if key in candidate_state and candidate_state[key].shape == value.shape and

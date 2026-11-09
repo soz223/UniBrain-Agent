@@ -12,6 +12,17 @@
   --amber:#d9be8b;
   --mono:"Cascadia Code",Consolas,monospace;
 }
+.sidebar { position:fixed; inset:0 auto 0 0; width:172px; background:#151716; border-right:1px solid var(--line); display:flex; flex-direction:column; padding:23px 13px; z-index:20; }
+.sidebar .brand { font-size:13px; gap:8px; }
+.sidebar .brand-symbol { flex-shrink:0; }
+.sidebar nav { display:grid; gap:6px; margin-top:33px; }
+.sidebar nav a { display:flex; align-items:center; gap:12px; padding:10px; border-radius:8px; color:var(--muted); font-size:11px; }
+.sidebar nav a:hover { background:var(--soft); color:var(--ink); text-decoration:none; }
+.sidebar nav a>span:first-child { width:18px; font-size:17px; text-align:center; }
+.sidebar-bottom { margin-top:auto; display:grid; gap:9px; }
+.sidebar-bottom button { text-align:left; }
+.sidebar-bottom small { color:var(--dim); font-size:9px; padding:8px; }
+body { padding-left:172px; }
 * {
   box-sizing:border-box;
 }
@@ -257,6 +268,9 @@ main {
 .stage-choice.skipped {
   background:transparent;
   border:1px dashed #4b5150;
+}
+.stage-choice:disabled {
+  opacity:.8;
 }
 .stage-top {
   display:flex;
@@ -1139,6 +1153,12 @@ dialog::backdrop {
   }
 }
 @media(max-width:850px) {
+  body { padding-left:156px; }
+  .sidebar { width:156px; padding:19px 10px; }
+  .sidebar .nav-text { display:inline; }
+  .sidebar nav a { padding:10px; }
+  .sidebar nav a>span:first-child { width:18px; }
+  .sidebar-bottom button { font-size:17px; text-align:center; }
   main {
     padding:25px 20px 20px;
   }
@@ -1174,6 +1194,9 @@ dialog::backdrop {
   }
 }
 @media(max-width:580px) {
+  body { padding-left:50px; }
+  .sidebar { width:50px; padding:18px 6px; }
+  .sidebar .nav-text { display:none; }
   main {
     padding:23px 14px 18px;
   }

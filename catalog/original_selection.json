@@ -1,0 +1,12 @@
+{
+  "denoising": "none",
+  "bias": "none",
+  "extraction": "unibrain",
+  "normalization": "none",
+  "registration": "unibrain",
+  "segmentation": "unibrain",
+  "parcellation": "unibrain",
+  "graph": "unibrain",
+  "classification": "unibrain",
+  "surface": "none"
+}

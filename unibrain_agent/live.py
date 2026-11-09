@@ -19,6 +19,9 @@ class RunMonitor:
             self.started = time.time()
             self.finished = None
             self.phase = "starting"
+            self.device = "Pending"
+            self.threads = 4
+            self.resources = {}
             self.message = "Starting your pipeline"
             self.steps = steps
             self.history = []
@@ -32,6 +35,13 @@ class RunMonitor:
         with self.lock:
             kind = event["kind"]
             self.message = event["message"]
+            if event.get("resources"):
+                self.resources = event["resources"]
+            if event.get("environment"):
+                self.device = event["environment"]["device"]
+                self.threads = event["environment"]["threads"]
+            if kind == "budget":
+                self.steps = event["steps"]
             if kind == "phase":
                 self.phase = event["phase"]
                 self.current_module = None
@@ -67,10 +77,11 @@ class RunMonitor:
     def snapshot(self):
         with self.lock:
             now = time.time()
-            if not self.resources or (not self.finished and now - self.sampled_at >= 1):
+            external = self.resources.get("scope") == "Original UniBrain worker process"
+            if not external and (not self.resources or (not self.finished and now - self.sampled_at >= 1)):
                 self.resources = {"cpu_percent": round(self.process.cpu_percent() / (psutil.cpu_count() or 1), 1),
                                   "rss_mb": round(self.process.memory_info().rss / 1024 ** 2, 1),
-                                  "device": "CPU", "threads": 4, "scope": "Python worker process"}
+                                  "device": self.device.upper(), "threads": self.threads, "scope": "Python worker process"}
                 self.sampled_at = now
             return copy.deepcopy({"phase": self.phase, "message": self.message, "started_at": self.started,
                                   "elapsed_seconds": round((self.finished or now) - self.started, 1),

@@ -4,48 +4,49 @@ An agent controlled training workspace built on the original [UniBrain](https://
 
 ## Start
 
-Python 3.12 is the tested runtime. Run these commands from the repository root:
+The default pipeline is the full original UniBrain CUDA workflow. Use Python 3.10 with a CUDA GPU. Run these commands from the repository root on Windows:
 
 ```powershell
 python -m venv .venv
-.venv/Scripts/python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-.venv/Scripts/python.exe -m pip install -r requirements.txt
-.venv/Scripts/python.exe scripts/bootstrap.py --samples
+.venv/Scripts/python.exe -m pip install -r requirements-upstream.txt -r requirements.txt
+.venv/Scripts/python.exe scripts/bootstrap.py --source reg_unibrain --samples
 .venv/Scripts/python.exe -m unibrain_agent serve --open
 ```
 
-The dashboard opens at http://127.0.0.1:8770. On Windows, subsequent launches can use `Launch UniBrain Agent.cmd`. On Linux or macOS, replace `.venv/Scripts/python.exe` with `.venv/bin/python`.
+The dashboard opens at http://127.0.0.1:8771. Subsequent Windows launches can use `Launch UniBrain Agent.cmd`. Linux uses `.venv/bin/python` or `bash launch.sh`. See [deployment instructions](docs/deployment.md) for Linux setup, external cohorts, GPU selection, remote access and CPU development.
 
 The bootstrap script downloads pinned source files and the original public UniBrain examples. It does not download pretrained weights. Upstream licenses remain with their source files. A partial source fetch can be requested with `--source reg_unibrain`.
 
-Codex CLI with an existing login provides the composition, coordination and review agents. The dashboard uses Codex; `--backend rules` is available through the CLI for an explicit offline test. A failed Codex invocation never silently falls back to rules. Prompts contain the catalog and aggregate diagnostics; MRI arrays and subject records stay local.
+The original workflow does not require an agent login. Custom compositions use Codex CLI with an existing login; `--backend rules` is available through the CLI for an explicit offline test. A failed Codex invocation never silently falls back to rules. Prompts contain the catalog and aggregate diagnostics; MRI arrays and subject records stay local.
 
 ## Choose, validate, run
 
-1. Click an ordered pipeline step and search for a tool. Selected tools are marked; optional steps offer **Skip**. Tissue segmentation and cortical surface appear separately as branches. The catalog retains all 15 works from the research workbook; tools requiring missing inputs are disabled.
-2. Select multiple tools, then click **Apply changes**. The agent reviews the composition, generates `pipeline.py`, and checks two optimizer steps on one real public sample. Build activity shows the actual phase, elapsed time, forward passes, backpropagation and audit events.
-3. **Review code** shows the generated file, the change from baseline, adapter details and measured parameter updates.
-4. **Confirm & run** immediately opens the live run monitor and executes only the selected pipeline. The executor checks that its code and implementation have not changed since validation. The monitor shows completed optimizer steps, a loss curve, actual module calls, agent activity, worker CPU usage and resident memory. CPU usage is normalized to total machine capacity; resources exclude the separate Codex process and cloud inference.
-5. Inspect all 96 slices with the slider, arrow keys or adjacent slice buttons. **What is learning?** explains which modules receive gradients from each loss. Expand **Model & agent calls**, **Experiment notebook**, **Validation results** or **Model, data & checks** for additional measurements. The notebook preserves decisions and execution events. A completed run saves its checkpoint; it does not imply acceptance or improved performance.
+1. A fresh workspace starts with UniBrain extraction, registration, segmentation, atlas transfer, cosine graph and GCN. Optional additions start skipped. Previous experiments do not become the default selection. **New UniBrain run** restores this configuration.
+2. **Prepare UniBrain** checks the pinned original source, CUDA environment and data paths. **Confirm & run** executes original `main.py` and `train.py` with the requested epoch budget. Full widths, five registration stages, original losses, augmentation and Adam are preserved. Original nearest label sampling, discrete edges and unused parcellation computations are also preserved.
+3. To modify the pipeline, select alternative tools and click **Apply changes**. This explicitly enters the compact adapter profile, enables the displayed soft atlas and continuous graph connections, generates `pipeline.py`, and tests two optimizer updates on one sample. Alternatives such as FBNetGen are optional. Run `python scripts/bootstrap.py` to fetch their pinned code.
+4. **Review code** shows the generated entry point, adapter changes and measured checks. Original prerequisite checks do not claim complete gradient connectivity.
+5. **Confirm & run** immediately opens the live monitor. It shows optimizer progress, recorded losses, actual module calls, agent activity when applicable, CPU usage and memory. The original worker also reports allocated GPU memory. Resource metrics exclude separate agent processes and cloud inference.
+6. Inspect all 96 slices. **What is learning?** shows measured loss connectivity for adapters, or observed original parameter updates for native runs. Expand calls, the notebook, validation or source checks as needed. Completion does not imply improved performance.
 
-The dashboard uses compact adapted model cores. Running this profile does not establish reproduction of the unchanged upstream training entry point or its reported results. The CLI retains the paired baseline and candidate experiment for explicit comparison work; the dashboard does not run or display that comparison.
+The original and custom adapter profiles are explicitly separate. The CLI retains paired adapter comparisons for explicit comparison work; the dashboard runs only the selected pipeline. The sidebar contains pipeline navigation, a reset to UniBrain and runtime information.
 
 ## Run the original UniBrain
 
-Use a separate Python 3.10 CUDA environment for the full upstream model. The CPU adapters in the dashboard are a separate profile.
+The default dashboard and the following headless command use the full original CUDA workflow. A separate worker interpreter can be configured with `UNIBRAIN_ORIGINAL_PYTHON`.
 
 ```powershell
-python -m pip install -r requirements-upstream.txt
-git clone https://github.com/Anonymous7852/UniBrain.git builds/original/source
-git -C builds/original/source checkout f9f8d906b1725046d532f862a28876482aca2cfa
-python scripts/run_upstream.py builds/original/source --epochs 2
+python -m pip install -r requirements-upstream.txt -r requirements.txt
+python scripts/bootstrap.py --source reg_unibrain --samples
+python -m unibrain_agent original --epochs 2
 ```
 
-The verifier executes the original `main.py`, `train.py`, `model.py` and `utils.py` without editing them. It changes only the epoch budget passed to the original trainer, records optimizer observations, and saves file hashes and diagnostics next to the checkout. Network widths, five registration stages, losses, augmentation, Adam settings and all sample splits remain as specified upstream. The original trainer loads the test split but evaluates the validation split.
+The verifier executes original `main.py`, `train.py`, `model.py` and `utils.py` without editing them. The wrapper sets the explicit epoch budget, routes external data and output paths, memory maps inputs, and records optimizer observations. Network widths, five registration stages, losses, augmentation, Adam settings and the requested sample splits remain as specified upstream. The original trainer loads the test split but evaluates the validation split. Each execution writes an isolated run directory.
 
 Two epochs cover ten training updates, two validation passes and the upstream checkpoint saving branch. This verifies execution of the original sample workflow; it does not reproduce the paper's accuracy or its full 1000 epoch schedule. `requirements-upstream.txt` describes the tested environment, which uses PyTorch 2.5.1 rather than the repository's historical 2.1.2 environment. The original model requires substantially more memory than the compact profile.
 
 The measured run in [catalog/upstream_verification.json](catalog/upstream_verification.json) completed all ten updates and both validation passes in 658.9 seconds on Windows with an RTX 3060 Ti. The model contained 305,812,248 parameters. Its 1,223,405,454 byte checkpoint had finite tensors and loaded strictly into the full original architecture. All four upstream code files remained unchanged. Source behavior findings, including the unused parcellation head and the trainer's mode handling after validation, are recorded separately in that audit.
+
+The new dashboard execution and Windows CUDA / Ubuntu CPU adapter checks are recorded in [catalog/portability_verification.json](catalog/portability_verification.json). Linux full original CUDA training, distributed training and large cohort throughput have not been verified.
 
 The agent composes registered, source pinned adapters. It does not freely rewrite arbitrary upstream code or implement unseen methods. Every generated build is retained separately, so selecting a new method cannot overwrite the original UniBrain source.
 
@@ -70,7 +71,7 @@ The compact CPU profile preserves the 96 cubed external image interface. Individ
 
 ## Training checks
 
-Preparation requires finite outputs, finite gradients for every active parameter tensor, a nonzero image input gradient, observable updates in every active module, and usable classification paths through extraction, registration, ROI features and graph weights. Zero derivatives and missing paths are reported separately. Frozen parameters are excluded from trainable coverage.
+Custom adapter preparation requires finite outputs, finite gradients for every active parameter tensor, a nonzero image input gradient, observable updates in every active module, and usable classification paths through extraction, registration, ROI features and graph weights. Zero derivatives and missing paths are reported separately. Frozen parameters are excluded from trainable coverage. Original preparation checks prerequisites; its actual training and finite checkpoint are audited after execution, preserving original gradient boundaries.
 
 Spatial checks cover array shapes, affine determinant, probability mass, out of bounds sampling, grid folding and inverse cycle error. NPY samples do not provide physical spacing or orientation, so these checks do not establish physical coordinate alignment.
 
@@ -84,7 +85,7 @@ The validation reference objective is fixed: extraction BCE, 0.1 times GCC regis
 
 The default data directory is `sources/reg_unibrain/dataset`. It contains `adhd_train_sample.npy`, `adhd_val_sample.npy`, and the three `template_img*_96.npy` files. Train and validation arrays use the original structured fields: `id`, `label`, `raw_img_np`, `raw_img_brain_mask_np`, `raw_img_gm_mask_np`, `raw_img_aal_mask_np`. Volume shape is 96 by 96 by 96, batch size is one. Test examples are not used.
 
-Set `UNIBRAIN_SOURCES` and `UNIBRAIN_RUNS` to reuse local source and run directories. An ignored `local.json` can specify `sources`, `runs` and the Windows launcher `python` path. None of these local settings are required by a fresh checkout.
+Set `UNIBRAIN_CONFIG` to an external JSON file, or use the `UNIBRAIN_SOURCES`, `UNIBRAIN_DATA`, `UNIBRAIN_RUNS`, `UNIBRAIN_BUILDS` and device environment overrides. Relative configuration paths resolve against that file's directory. `config.example.json` contains portable defaults. An ignored `local.json` can provide machine specific interpreters. Reprepare builds after migration; stored builds bind to the verified code and runtime configuration.
 
 ## Reproduce and maintain
 

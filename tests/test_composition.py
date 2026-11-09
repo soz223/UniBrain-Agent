@@ -14,7 +14,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from unibrain_agent.builds import generated_code, verify_build
-from unibrain_agent.catalog import DEFAULTS, catalog, validate_selection
+from unibrain_agent.catalog import DEFAULTS, ADAPTER_DEFAULTS, catalog, validate_selection
 from unibrain_agent.data import digest
 from unibrain_agent.pipeline import loss_terms
 from unibrain_agent.server import create_server
@@ -48,8 +48,8 @@ class CompositionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
             code = folder / "pipeline.py"
-            code.write_text(generated_code(DEFAULTS), encoding="utf-8")
-            record = {"status": "ready", "validation": {"passed": True}, "selection": DEFAULTS,
+            code.write_text(generated_code(ADAPTER_DEFAULTS), encoding="utf-8")
+            record = {"status": "ready", "validation": {"passed": True}, "selection": ADAPTER_DEFAULTS,
                       "code_sha256": digest(code), "implementation_hashes": {}}
             (folder / "build.json").write_text(json.dumps(record), encoding="utf-8")
             with patch("unibrain_agent.builds.verify", return_value=[]):

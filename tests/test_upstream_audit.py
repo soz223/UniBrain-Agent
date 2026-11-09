@@ -1,14 +1,35 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import numpy as np
 import torch
 
-from scripts.run_upstream import audit_results
+from scripts.run_upstream import audit_results, training_values
 
 
 class UpstreamAuditTests(unittest.TestCase):
+    def test_optimizer_wrappers_do_not_hide_training_scalars(self):
+        ext_loss = torch.tensor(1.0)
+        sim_loss_train = torch.tensor(2.0)
+        seg_loss_train = torch.tensor(3.0)
+        classifier_loss_train = torch.tensor(4.0)
+        loss_train = ext_loss + .1 * sim_loss_train + seg_loss_train + classifier_loss_train
+        parameter = torch.nn.Parameter(torch.ones(1))
+        observed = []
+        original_step = torch.optim.Adam.step
+        def optimizer_wrapper(optimizer, *args, **kwargs):
+            observed.append(training_values())
+            return original_step(optimizer, *args, **kwargs)
+        with patch.object(torch.optim.Adam, "step", optimizer_wrapper):
+            optimizer = torch.optim.Adam([parameter])
+            parameter.square().sum().backward()
+            optimizer.step()
+        total, losses = observed[0]
+        self.assertAlmostEqual(total, 8.2, places=5)
+        self.assertEqual(losses, {"extraction": 1.0, "registration": 2.0, "segmentation": 3.0, "classification": 4.0})
+
     def test_completion_needs_all_updates_validation_and_finite_checkpoint(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory)

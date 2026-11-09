@@ -9,12 +9,19 @@ STAGES = [
     ("normalization", "Intensity normalization", "optional", ["none", "M04", "M05"]),
     ("registration", "Registration", "main", ["unibrain", "M06", "M07", "M03"]),
     ("segmentation", "Tissue segmentation", "auxiliary", ["unibrain", "M08", "M04"]),
-    ("parcellation", "Brain parcellation", "main", ["soft_atlas", "M09", "M10"]),
-    ("graph", "Network generation", "main", ["continuous", "M11"]),
+    ("parcellation", "Brain parcellation", "main", ["unibrain", "soft_atlas", "M09", "M10"]),
+    ("graph", "Network generation", "main", ["unibrain", "continuous", "M11"]),
     ("classification", "Classification", "main", ["unibrain", "M12", "M13"]),
     ("surface", "Cortical surface", "optional branch", ["none", "M15"]),
 ]
 DEFAULTS = {stage: choices[0] for stage, _, _, choices in STAGES}
+ADAPTER_DEFAULTS = {**DEFAULTS, "parcellation": "soft_atlas", "graph": "continuous"}
+
+
+def original_selection(selection):
+    return selection == DEFAULTS
+
+
 SOURCES = {
     "M01": ["DeepN4"], "M02": ["freesurfer_synthstrip"], "M03": ["reg_ernet"],
     "M04": ["deepNormalize"], "M05": ["HarmonizingFlows"], "M06": ["reg_voxelmorph_master"],
@@ -51,12 +58,20 @@ def catalog():
             record = lookup.get(choice)
             label = {"none": "Skip this optional stage", "unibrain": "UniBrain original core",
                      "soft_atlas": "UniBrain soft atlas transfer", "continuous": "UniBrain continuous cosine graph"}.get(choice)
+            if choice == "unibrain" and key == "parcellation":
+                label = "UniBrain atlas transfer (nearest labels)"
+            elif choice == "unibrain" and key == "graph":
+                label = "UniBrain cosine graph (original edge augmentation)"
+            description = {"none": "This optional stage is skipped.",
+                           "unibrain": "Original upstream component in the full UniBrain profile. Custom compositions use its declared compact adapter.",
+                           "soft_atlas": "Differentiable atlas probability sampling for custom compositions.",
+                           "continuous": "Continuous cosine adjacency without the original discrete edge perturbation."}
             options.append({"id": choice, "label": label or record["publication"], "research": record,
-                            "adaptation": ADAPTATIONS.get(choice, "Existing UniBrain adapter"),
+                            "adaptation": ADAPTATIONS.get(choice, description.get(choice)),
                             "status": "requires_inputs" if choice == "M15" else "build_validation_required",
                             "selectable": True})
         stages.append({"id": key, "name": title, "route": route, "options": options})
-    return {"stages": stages, "defaults": DEFAULTS, "workbook": research["source"],
+    return {"stages": stages, "defaults": DEFAULTS, "adapter_defaults": ADAPTER_DEFAULTS, "workbook": research["source"],
             "workbook_sha256": research["sha256"], "method_count": len(lookup), "pending": research["pending"]}
 
 

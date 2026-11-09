@@ -14,6 +14,8 @@ import traceback
 from pathlib import Path
 
 COMMIT = "f9f8d906b1725046d532f862a28876482aca2cfa"
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 
 def digest(path):
@@ -24,16 +26,32 @@ def digest(path):
     return value.hexdigest()
 
 
-def audit_results(source, record):
+def training_values():
+    frame = inspect.currentframe().f_back
+    try:
+        while frame and "loss_train" not in frame.f_locals:
+            frame = frame.f_back
+        if frame is None:
+            raise RuntimeError("Original training scalars were not found in the optimizer call stack")
+        losses = {key: float(frame.f_locals[name].detach()) for key, name in
+                  {"extraction": "ext_loss", "registration": "sim_loss_train", "segmentation": "seg_loss_train",
+                   "classification": "classifier_loss_train"}.items()}
+        return float(frame.f_locals["loss_train"].detach()), losses
+    finally:
+        del frame
+
+
+def audit_results(source, record, data_dir=None, work_dir=None):
     import numpy as np
     import torch
 
-    counts = {split: len(np.load(source / "dataset" / f"adhd_{split}_sample.npy", allow_pickle=True))
+    data_dir, work_dir = data_dir or source / "dataset", work_dir or source
+    counts = {split: len(np.load(data_dir / f"adhd_{split}_sample.npy", mmap_mode="r", allow_pickle=False))
               for split in ("train", "val", "test")}
-    validation_lines = [line for path in source.glob("result/loss_log/*_val.txt")
+    validation_lines = [line for path in work_dir.glob("result/loss_log/*_val.txt")
                         for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("Epoch[")]
     checkpoints = []
-    for path in source.glob("result/model/*.pth"):
+    for path in work_dir.glob("result/model/*.pth"):
         state = torch.load(path, map_location="cpu", weights_only=True)
         finite = all(bool(torch.isfinite(value).all()) for value in state.values() if value.is_floating_point())
         checkpoints.append({"file": path.name, "bytes": path.stat().st_size, "sha256": digest(path),
@@ -49,36 +67,60 @@ def audit_results(source, record):
               "checkpoint_saved": bool(checkpoints), "checkpoint_finite": bool(checkpoints) and all(item["finite"] for item in checkpoints)}
     return {"passed": all(checks.values()), "checks": checks, "sample_counts": counts,
             "expected_updates": expected, "validation_epochs": len(validation_lines), "checkpoints": checkpoints,
-            "dataset_sha256": {path.name: digest(path) for path in sorted((source / "dataset").glob("*.npy"))}}
+            "dataset_sha256": {path.name: digest(path) for path in sorted(data_dir.glob("*.npy"))}}
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
     parser.add_argument("--epochs", type=int, default=2)
+    parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--telemetry", action="store_true")
+    parser.add_argument("--threads", type=int, default=4)
     args = parser.parse_args()
     source = args.source.resolve()
     if args.epochs < 2:
         parser.error("Use at least two epochs to exercise upstream checkpoint saving")
-    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
-    if commit != COMMIT or subprocess.check_output(["git", "diff", "HEAD", "--", "*.py"], cwd=source):
-        raise RuntimeError("Expected the clean pinned UniBrain source")
-    os.chdir(source)
+    manifest = json.loads((ROOT / "catalog/sources.json").read_text(encoding="utf-8"))
+    pinned = next(item for item in manifest["repositories"] if item["directory"] == "reg_unibrain")
+    for item in pinned["files"]:
+        if item["path"] in {"main.py", "model.py", "train.py", "utils.py"}:
+            actual = hashlib.sha256((source / item["path"]).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+            if actual != item["sha256"]:
+                raise RuntimeError("Pinned UniBrain source changed: " + item["path"])
+    data_dir = (args.data_dir or source / "dataset").resolve()
+    work_dir = args.output_dir.resolve() if args.output_dir else source
+    work_dir.mkdir(parents=True, exist_ok=True)
+    os.chdir(work_dir)
     sys.path.insert(0, str(source))
     import torch
     import torchvision
     import torch_geometric
     import train
+    import numpy as np
+    import psutil
 
-    torch.set_num_threads(4)
+    torch.set_num_threads(args.threads)
     if not torch.cuda.is_available():
         raise RuntimeError("Upstream uses CUDA tensors directly; use a CUDA environment")
-    record = {"commit": commit, "status": "running", "epochs": args.epochs,
+    record = {"commit": COMMIT, "status": "running", "epochs": args.epochs,
               "runtime": {"python": sys.version, "torch": torch.__version__, "torchvision": torchvision.__version__,
                           "torch_geometric": torch_geometric.__version__, "gpu": torch.cuda.get_device_name()},
               "source_sha256": {name: digest(source / name) for name in ("main.py", "model.py", "train.py", "utils.py")},
               "changes": ["Epoch budget only", "Read-only optimizer observations"], "updates": []}
-    output = source.parent / "verification.json"
+    output = (work_dir if args.output_dir else source.parent) / "verification.json"
+    process = psutil.Process()
+    process.cpu_percent()
+    from unibrain_agent.data import OriginalDataset
+    counts = {split: len(OriginalDataset(data_dir / f"adhd_{split}_sample.npy")) for split in ("train", "val", "test")}
+    if args.data_dir or args.output_dir:
+        from types import SimpleNamespace
+        train.load_data_no_fix_v2 = lambda name, size, ifshuffle=True: torch.utils.data.DataLoader(
+            OriginalDataset(data_dir / name), batch_size=size, shuffle=ifshuffle)
+        train.np = SimpleNamespace(**{name: getattr(np, name) for name in dir(np)})
+        train.np.load = lambda path, *a, **k: np.load(data_dir / Path(path).name, *a, **k)
+        record["changes"].append("External data and output paths with memory mapped input; original training equations unchanged")
 
     def save():
         output.write_text(json.dumps(record, indent=2, allow_nan=False), encoding="utf-8")
@@ -87,8 +129,51 @@ def main():
     original_step = torch.optim.Adam.step
     model = None
     started = time.perf_counter()
+    current_phase = None
+    validation_count = 0
+    handles = []
+
+    def emit(kind, message, **extra):
+        if not args.telemetry:
+            return
+        resources = {"cpu_percent": round(process.cpu_percent() / (psutil.cpu_count() or 1), 1),
+                     "rss_mb": round(process.memory_info().rss / 1024 ** 2, 1), "device": "CUDA",
+                     "threads": args.threads, "gpu_name": torch.cuda.get_device_name(),
+                     "gpu_allocated_mb": round(torch.cuda.memory_allocated() / 1024 ** 2, 1),
+                     "gpu_reserved_mb": round(torch.cuda.memory_reserved() / 1024 ** 2, 1),
+                     "scope": "Original UniBrain worker process"}
+        event = {"kind": kind, "message": message, "seconds": round(time.perf_counter() - started, 3), **extra,
+                 "resources": resources}
+        print("UNIBRAIN_EVENT " + json.dumps(event, allow_nan=False), flush=True)
+
+    def before_forward(module, values, options):
+        nonlocal current_phase
+        phase = "training" if torch.is_grad_enabled() else "validation"
+        current_phase = phase
+        emit("phase", "Original UniBrain model is running" if phase == "training" else "Validating original UniBrain", phase=phase)
+
+    def after_forward(module, values, output):
+        nonlocal validation_count
+        if current_phase == "validation":
+            validation_count += 1
+            emit("validation_progress", f"Validation sample {validation_count}/{counts['val'] * args.epochs}",
+                 completed=validation_count, total=counts["val"] * args.epochs)
+            if args.telemetry:
+                np.savez_compressed(work_dir / "candidate_preview.npz", input=values[1].detach().cpu().numpy(),
+                                    mask=output[1][-1].detach().cpu().numpy(), extracted=output[0][-1].detach().cpu().numpy(),
+                                    warped=output[2][-1].detach().cpu().numpy(), edges=output[9].detach().cpu().numpy())
+
+    def attach(name, module):
+        tick = [0.0]
+        def before(module, values):
+            tick[0] = time.perf_counter()
+            emit("module", name + " is running", module=name, label=name, action="started")
+        def after(module, values, output):
+            emit("module", name + " finished", module=name, label=name, action="completed", duration=time.perf_counter() - tick[0])
+        handles.extend([module.register_forward_pre_hook(before), module.register_forward_hook(after)])
 
     def observe_step(optimizer, *values, **options):
+        total_loss, losses = training_values()
         before = {name: parameter.detach().flatten()[::max(1, parameter.numel() // 32)][:32].clone()
                   for name, parameter in model.named_parameters() if parameter.grad is not None}
         norms = [float(parameter.grad.norm()) for parameter in model.parameters() if parameter.grad is not None]
@@ -100,6 +185,10 @@ def main():
                   "modules_with_observed_updates": sorted({name.split(".")[0] for name in changed}),
                   "cuda_peak_allocated_bytes": torch.cuda.max_memory_allocated()}
         record["updates"].append(update)
+        if total_loss is not None:
+            update.update(weighted_loss=total_loss, losses=losses,
+                          weights={"extraction": 1.0, "registration": 0.1, "segmentation": 1.0, "classification": 1.0})
+            emit("training", f"Original UniBrain: update {update['step']}/{counts['train'] * args.epochs}", **update)
         save()
         print(json.dumps(update), flush=True)
         return result
@@ -113,7 +202,12 @@ def main():
         record["training_arguments"] = {key: value for key, value in bound.arguments.items() if key != "model_name"}
         record["parameters"] = sum(p.numel() for p in model.parameters())
         record["parameters_by_module"] = {name: sum(p.numel() for p in module.parameters()) for name, module in model.named_children()}
-        (source.parent / "model.txt").write_text(str(model), encoding="utf-8")
+        output.with_name("model.txt").write_text(str(model), encoding="utf-8")
+        if args.telemetry:
+            handles.extend([model.register_forward_pre_hook(before_forward, with_kwargs=True), model.register_forward_hook(after_forward)])
+            for name, module in model.named_children():
+                attach(name, module)
+        emit("budget", "Original UniBrain loaded: full widths, five registration stages", steps=counts["train"] * args.epochs)
         save()
         print(json.dumps({"parameters": record["parameters"], "epochs": args.epochs, "gpu": record["runtime"]["gpu"]}), flush=True)
         return original_train(*bound.args, **bound.kwargs)
@@ -130,10 +224,13 @@ def main():
     finally:
         record["elapsed_seconds"] = time.perf_counter() - started
         record["source_unchanged"] = all(digest(source / name) == value for name, value in record["source_sha256"].items())
-        record["checkpoints"] = [str(path.relative_to(source)) for path in source.glob("result/model/*.pth")]
+        record["checkpoints"] = [str(path.relative_to(work_dir)) for path in work_dir.glob("result/model/*.pth")]
+        for handle in handles:
+            handle.remove()
         if record["status"] == "completed":
             try:
-                record["audit"] = audit_results(source, record)
+                emit("phase", "Verifying original checkpoints and parameter updates", phase="saving")
+                record["audit"] = audit_results(source, record, data_dir, work_dir)
             except Exception as error:
                 record["audit"] = {"passed": False, "error": str(error)}
         save()

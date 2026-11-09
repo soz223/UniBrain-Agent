@@ -8,6 +8,25 @@ FIELDS = ("id", "label", "raw_img_np", "raw_img_brain_mask_np",
           "raw_img_gm_mask_np", "raw_img_aal_mask_np")
 
 
+class OriginalDataset(torch.utils.data.Dataset):
+    def __init__(self, path):
+        self.path = str(path)
+        self.array = np.load(path, mmap_mode="r", allow_pickle=False)
+        if self.array.ndim != 1 or self.array.dtype.names != FIELDS or not len(self.array):
+            raise ValueError("Expected a nonempty UniBrain structured array")
+        if any(self.array.dtype[name].shape != (96, 96, 96) for name in FIELDS[2:]):
+            raise ValueError("Original UniBrain requires 96 cubed images")
+
+    def __len__(self):
+        return len(self.array)
+
+    def __getitem__(self, index):
+        row = self.array[index]
+        if row["label"] not in (0, 1) or any(not np.isfinite(row[name]).all() for name in FIELDS[2:]):
+            raise ValueError("Invalid diagnosis label or nonfinite image values")
+        return tuple(np.array(row[name], copy=True) if name in FIELDS[2:] else row[name] for name in FIELDS)
+
+
 def digest(path):
     result = hashlib.sha256()
     with Path(path).open("rb") as handle:
@@ -21,14 +40,16 @@ def load_split(folder, split):
     data = np.load(path, mmap_mode="r", allow_pickle=False)
     if data.dtype.names != FIELDS or data.ndim != 1 or len(data) == 0:
         raise ValueError(f"Expected a nonempty UniBrain structured array: {path}")
-    for name in FIELDS[2:]:
-        value = data[name]
-        if value.shape[1:] != (96, 96, 96) or not np.isfinite(value).all():
-            raise ValueError(f"Invalid shape or nonfinite values: {name}")
-    for name, maximum in [(FIELDS[3], 1), (FIELDS[4], 3), (FIELDS[5], 100000)]:
-        labels = data[name]
-        if np.any(labels != np.rint(labels)) or labels.min() < 0 or labels.max() > maximum:
-            raise ValueError(f"Invalid label values: {name}")
+    for start in range(0, len(data), 8):
+        chunk = data[start:start + 8]
+        for name in FIELDS[2:]:
+            value = chunk[name]
+            if value.shape[1:] != (96, 96, 96) or not np.isfinite(value).all():
+                raise ValueError(f"Invalid shape or nonfinite values: {name}")
+        for name, maximum in [(FIELDS[3], 1), (FIELDS[4], 3), (FIELDS[5], 100000)]:
+            labels = chunk[name]
+            if np.any(labels != np.rint(labels)) or labels.min() < 0 or labels.max() > maximum:
+                raise ValueError(f"Invalid label values: {name}")
     if not set(data["label"].tolist()) <= {0, 1}:
         raise ValueError("This prototype expects binary diagnosis labels")
     if len(set(data["id"].tolist())) != len(data):
@@ -69,8 +90,9 @@ def templates(folder, device="cpu"):
 def inspect_data(folder, train, val):
     atlas_values = np.unique(np.load(Path(folder) / "template_img_aal_mask_orig_96.npy", allow_pickle=False))
     for array in (train, val):
-        if not np.isin(np.unique(array["raw_img_aal_mask_np"]), atlas_values).all():
-            raise ValueError("Sample atlas labels are not in the template label vocabulary")
+        for start in range(0, len(array), 8):
+            if not np.isin(np.unique(array["raw_img_aal_mask_np"][start:start + 8]), atlas_values).all():
+                raise ValueError("Sample atlas labels are not in the template label vocabulary")
     overlap = sorted(set(train["id"].tolist()) & set(val["id"].tolist()))
     if overlap:
         raise ValueError(f"Training and validation identifiers overlap: {overlap}")

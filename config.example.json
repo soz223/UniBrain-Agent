@@ -1,0 +1,9 @@
+{
+  "sources": "sources",
+  "data": "sources/reg_unibrain/dataset",
+  "runs": "runs",
+  "builds": "builds",
+  "original_source": "sources/reg_unibrain",
+  "device": "auto",
+  "threads": 4
+}

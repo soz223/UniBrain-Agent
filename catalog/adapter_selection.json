@@ -1,0 +1,12 @@
+{
+  "denoising": "none",
+  "bias": "none",
+  "extraction": "unibrain",
+  "normalization": "none",
+  "registration": "unibrain",
+  "segmentation": "unibrain",
+  "parcellation": "soft_atlas",
+  "graph": "continuous",
+  "classification": "unibrain",
+  "surface": "none"
+}

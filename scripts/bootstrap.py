@@ -37,7 +37,7 @@ def main():
         for item in spec["files"]:
             fetch(base + item["path"], SOURCES / spec["directory"] / item["path"], item["sha256"])
         if args.samples and spec["directory"] == "reg_unibrain":
-            for name in ["adhd_train_sample.npy", "adhd_val_sample.npy", "template_img_orig_96.npy",
+            for name in ["adhd_train_sample.npy", "adhd_val_sample.npy", "adhd_test_sample.npy", "template_img_orig_96.npy",
                          "template_img_gm_mask_orig_96.npy", "template_img_aal_mask_orig_96.npy"]:
                 fetch(base + "dataset/" + name, SOURCES / "reg_unibrain/dataset" / name)
     print("Sources ready. Upstream licenses remain in their source folders.")

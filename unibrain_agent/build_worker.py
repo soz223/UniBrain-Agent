@@ -12,6 +12,7 @@ from .paths import UPSTREAM
 from .pipeline import MODULES, loss_terms
 from .runner import REFERENCE_WEIGHTS, seed_everything, write_json
 from .validation import gradients, spatial_checks
+from .runtime import device_for, move_model
 
 
 def validate(folder):
@@ -24,12 +25,15 @@ def validate(folder):
 
     progress("training", "Loading models and the GitHub training sample")
     record = json.loads((folder / "build.json").read_text(encoding="utf-8"))
-    torch.set_num_threads(4)
+    runtime = record.get("runtime", {})
+    torch.set_num_threads(runtime.get("threads", 4))
+    device = device_for(runtime.get("device"))
+    data_dir = Path(runtime.get("data", UPSTREAM / "dataset"))
     seed_everything(17)
-    model = load_pipeline(folder, ready=False)
-    sample = batch(load_split(UPSTREAM / "dataset", "train")[0])
+    model = move_model(load_pipeline(folder, ready=False), device)
+    sample = batch(load_split(data_dir, "train")[0], device)
     sample["raw_img_np"].requires_grad_()
-    template = templates(UPSTREAM / "dataset")
+    template = templates(data_dir, device)
     optimizer = torch.optim.Adam((p for p in model.parameters() if p.requires_grad), lr=1e-4)
     named = {key: p for key, p in model.named_parameters() if p.requires_grad}
     before = {key: p.detach().clone() for key, p in named.items()}

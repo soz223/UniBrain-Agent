@@ -71,13 +71,14 @@ function renderLive(value) {
   const position = finished ? phases.length : value.phase === "coordination" ? 1 : Math.max(0, phases.indexOf(value.phase));
   byId("runPhases").innerHTML = ["Load pipeline", "Train", "Check gradients", "Validate", "Save"].map((label, i) => '<li class="' + (i < position ? "done" : i === position && !failed ? "current" : "") + '">' + (i < position ? "✓ " : "") + label + '</li>').join("");
   const stats = value.resources || {};
+  const gpuNote = Number.isFinite(stats.gpu_allocated_mb) ? " · GPU allocated " + format(stats.gpu_allocated_mb / 1024, 2) + " GB" : "";
   const history = value.history || [];
   byId("stepCount").textContent = history.length + " / " + value.steps + " updates";
   byId("runtimeStats").innerHTML = [["Device", stats.device || "Pending", stats.threads ? stats.threads + " threads" : ""], ["Worker CPU", Number.isFinite(stats.cpu_percent) ? format(stats.cpu_percent, 1) + "%" : "…", "of total CPU"], ["Worker memory", Number.isFinite(stats.rss_mb) ? format(stats.rss_mb / 1024, 2) : "…", "GB resident"], ["Updates", history.length + " / " + value.steps, finished ? "completed" : "optimizer steps"]].map(([label, number, unit]) => '<div class="runtime-stat"><span>' + label + '</span><strong>' + number + '</strong><br><small>' + unit + '</small></div>').join("");
   const current = value.modules?.find(item => item.module === value.current_module);
   const agent = runBusy && value.agents?.find(item => item.status === "running");
-  let activity = current ? current.label + " is running" : agent ? titleCase(agent.role) + " agent is thinking" : value.phase === "training" ? "Computing gradients and updating weights" : value.phase === "validation" ? "Validation " + value.validation?.completed + " / " + value.validation?.total : finished ? "Checkpoint and outputs saved" : failed ? "Execution stopped" : "Waiting for the next stage";
-  byId("currentActivity").innerHTML = escapeHtml(activity) + '<small>' + (finished ? "Resources: last observed worker sample." : "Live worker metrics · refreshed every second.") + '</small>';
+  let activity = current ? (modules[current.label] || current.label) + " is running" : agent ? titleCase(agent.role) + " agent is thinking" : value.phase === "training" ? "Computing gradients and updating weights" : value.phase === "validation" ? "Validation " + value.validation?.completed + " / " + value.validation?.total : finished ? "Checkpoint and outputs saved" : failed ? "Execution stopped" : "Waiting for the next stage";
+  byId("currentActivity").innerHTML = escapeHtml(activity) + '<small>' + (finished ? "Resources: last observed worker sample." : "Last reported worker metrics · status polled every second.") + escapeHtml(gpuNote) + '</small>';
   renderLoss();
   renderCalls(value);
   renderJournal(value.events || []);
@@ -85,10 +86,11 @@ function renderLive(value) {
 
 function renderLoss() {
   const key = byId("lossKind").value;
-  const history = liveRun?.history || [];
+  const history = (liveRun?.history || []).filter(step => Number.isFinite(key === "weighted_loss" ? step.weighted_loss : step.losses?.[key]));
   if (!history.length) {
-    byId("lossChart").innerHTML = '<div class="chart-empty"><span>Waiting for the first update</span><small>The curve appears as optimizer steps finish.</small></div>';
-    byId("lossSummary").textContent = "No completed updates yet";
+    const finished = ["complete", "failed"].includes(liveRun?.phase);
+    byId("lossChart").innerHTML = finished ? '<div class="chart-empty"><span>Loss series unavailable</span><small>This saved run did not record the selected training scalar.</small></div>' : '<div class="chart-empty"><span>Waiting for a loss measurement</span><small>The curve appears as recorded optimizer steps arrive.</small></div>';
+    byId("lossSummary").textContent = finished ? "No recorded loss values" : "Waiting for training telemetry";
     return;
   }
   const values = history.map(step => key === "weighted_loss" ? step.weighted_loss : step.losses[key]);
@@ -110,7 +112,7 @@ function renderCalls(value) {
   const calls = value.modules || [];
   const agentCount = (value.agents || []).length;
   byId("callSummary").textContent = calls.length + " modules · " + agentCount + (agentCount === 1 ? " agent" : " agents");
-  byId("modelCalls").innerHTML = calls.length ? table(["Module", "Forward calls", "Total time", "State"], calls.map(item => [escapeHtml(item.label), item.calls, format(item.seconds, 2) + "s", item.status === "started" ? runBusy ? "Running" : "Interrupted" : "Completed"])) : '<p class="disclosure-note">Model calls will appear as the pipeline starts.</p>';
+  byId("modelCalls").innerHTML = calls.length ? table(["Module", "Forward calls", "Total time", "State"], calls.map(item => [escapeHtml(modules[item.label] ? "UniBrain " + modules[item.label] : item.label), item.calls, format(item.seconds, 2) + "s", item.status === "started" ? runBusy ? "Running" : "Interrupted" : "Completed"])) : '<p class="disclosure-note">Model calls will appear as the pipeline starts.</p>';
   byId("agentCalls").innerHTML = (value.agents || []).map(item => {
     const usage = item.usage || {};
     const tokens = usage.input_tokens != null || usage.output_tokens != null ? (usage.input_tokens || 0).toLocaleString() + " input · " + (usage.output_tokens || 0).toLocaleString() + " output tokens" : "Usage not reported";
@@ -214,6 +216,16 @@ async function renderVolume() {
 }
 
 function renderGradients() {
+  if (report.profile === "original") {
+    byId("gradientTask").hidden = true;
+    byId("gradientDisclosure").textContent = "Original gradient boundaries";
+    byId("gradientMeasurementNote").textContent = "Module updates are sampled during Adam steps. Loss by module connectivity is measured separately for custom adapter runs.";
+    const updates = report.native.updates;
+    byId("gradientExplanation").textContent = "Original training preserved. These modules had observed parameter updates; this is not a loss by module connectivity audit.";
+    byId("learningPaths").innerHTML = Object.entries(modules).filter(([key]) => updates.some(step => step.modules_with_observed_updates.includes(key))).map(([key, label]) => '<div class="learning-chip active"><strong>' + label + '</strong><span>Updated in ' + updates.filter(step => step.modules_with_observed_updates.includes(key)).length + ' optimizer steps</span></div>').join("");
+    byId("gradientMatrix").innerHTML = '<p class="disclosure-note">The original graph retains nearest label sampling and discrete edge augmentation. Classification gradients to upstream image modules are not asserted. The unused predicted parcellation head is preserved.</p>';
+    return;
+  }
   const task = byId("gradientTask").value;
   const matrix = report.candidate.gradients.matrix;
   const connected = Object.values(matrix[task]).filter(cell => cell.state === "active").length;
@@ -250,7 +262,7 @@ function renderMethods() {
 }
 
 function savedTelemetry() {
-  if (report.live) return report.live;
+  if (report.live) return { ...report.live, history: report.candidate.history, steps: report.candidate.steps };
   const model = report.candidate;
   const events = report.events || [];
   const observed = new Map();
@@ -271,17 +283,28 @@ function renderResults() {
   renderVolume();
   renderGradients();
   const control = model.coordination;
-  byId("trainingControl").innerHTML = control ? '<div><strong>Agent training decision</strong><span>Step ' + control.step + ' · ' + (control.action === "keep_weights" ? "Kept loss weights" : "Balanced gradient magnitudes") + '</span></div><button id="coordinationDetails" class="text-button">Inspect decision ↗</button>' : '<span>No coordination decision recorded.</span>';
+  byId("trainingControl").innerHTML = control ? '<div><strong>Agent training decision</strong><span>Step ' + control.step + ' · ' + (control.action === "keep_weights" ? "Kept loss weights" : "Balanced gradient magnitudes") + '</span></div><button id="coordinationDetails" class="text-button">Inspect decision ↗</button>' : '<span>Original loss weights and Adam optimizer preserved.</span>';
   if (control) byId("coordinationDetails").onclick = coordinationDetails;
-  byId("validationMetrics").innerHTML = [["Extraction Dice", validation.extraction_dice], ["Tissue Dice", validation.tissue_dice], ["Classification accuracy", validation.accuracy], ["Reference loss", validation.reference_loss]].map(([label, value]) => '<div class="metric"><span>' + label + '</span><strong>' + format(value) + '</strong></div>').join("");
-  byId("dataCaveat").textContent = validation.count + " validation samples. Smoke test only: the training sample contains one class. These metrics do not establish diagnostic performance.";
+  byId("validationMetrics").innerHTML = [["Extraction Dice", validation.extraction_dice], ["Tissue Dice", validation.tissue_dice], ["Classification accuracy", validation.accuracy], report.profile === "original" ? ["Final training loss", model.history.at(-1)?.weighted_loss] : ["Reference loss", validation.reference_loss]].map(([label, value]) => '<div class="metric"><span>' + label + '</span><strong>' + format(value) + '</strong></div>').join("");
+  byId("dataCaveat").textContent = validation.count + " validation samples. These execution checks do not establish diagnostic performance.";
   const splits = report.data.splits;
-  byId("modelFacts").innerHTML = '<p class="facts">Compact research adapters · ' + model.steps + ' optimizer updates · seed ' + report.seed + '<br>' + splits.train.count + ' training samples · ' + splits.val.count + ' validation samples<br>Original UniBrain source: ' + escapeHtml(report.upstream_commit.slice(0, 12)) + '<br>Checkpoint: ' + escapeHtml(model.checkpoint) + '<br>Run: ' + escapeHtml(report.run_dir.split(/[\\/]/).at(-1)) + '</p><p class="disclosure-note">This workspace runs compact stage adapters. The verified full original UniBrain workflow is available through scripts/run_upstream.py.</p>';
+  if (report.profile === "original") {
+    byId("modelFacts").innerHTML = '<p class="facts">Original UniBrain · ' + report.native.parameters.toLocaleString() + ' parameters · ' + report.epochs + ' epochs<br>' + splits.train.count + ' training samples · ' + splits.val.count + ' validation samples<br>Full widths · five registration stages · original losses, augmentation and Adam<br>Source files unchanged: ' + escapeHtml(report.upstream_commit) + '</p><p class="disclosure-note">Execution and checkpoint verification do not establish the paper accuracy. Dataset reads use memory mapping. Original trainer behavior, including mode handling, is preserved.</p>';
+    byId("geometry").innerHTML = table(["Original workflow check", "Result"], Object.entries(report.native.audit.checks).map(([key, value]) => [titleCase(key), value ? "Passed" : "Failed"]));
+    byId("checksTitle").textContent = "Execution checks";
+    byId("footerMeta").textContent = "Original UniBrain " + report.upstream_commit.slice(0, 8);
+    return;
+  }
+  byId("modelFacts").innerHTML = '<p class="facts">Compact research adapters · ' + model.steps + ' optimizer updates · seed ' + report.seed + '<br>' + splits.train.count + ' training samples · ' + splits.val.count + ' validation samples<br>Original UniBrain source: ' + escapeHtml(report.upstream_commit.slice(0, 12)) + '<br>Checkpoint: ' + escapeHtml(model.checkpoint) + '<br>Run: ' + escapeHtml(report.run_dir.split(/[\\/]/).at(-1)) + '</p><p class="disclosure-note">This saved experiment used compact stage adapters. Select New UniBrain run to restore the full original workflow.</p>';
   byId("geometry").innerHTML = table(["Check", "Measured result"], Object.entries(model.spatial).map(([key, value]) => [escapeHtml(titleCase(key)), typeof value === "number" ? format(value, 5) : value === true ? "Passed" : key === "physical_coordinates_verified" ? "Not checked: physical affine unavailable" : "Failed"]));
   byId("footerMeta").textContent = "UniBrain " + report.upstream_commit.slice(0, 8) + " · seed " + report.seed;
 }
 
 function initialize() {
+  document.querySelectorAll('.sidebar nav a').forEach(link => link.onclick = () => {
+    const target = document.querySelector(link.getAttribute('href'));
+    if (target?.tagName === 'DETAILS') target.open = true;
+  });
   byId("closeDialog").onclick = () => byId("detailDialog").close();
   byId("detailDialog").addEventListener("click", event => {
     if (event.target !== byId("detailDialog")) return;

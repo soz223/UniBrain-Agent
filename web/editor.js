@@ -8,6 +8,12 @@ let buildPoll = null;
 let activityStarted = null;
 const mainStages = ["denoising", "bias", "extraction", "normalization", "registration", "parcellation", "graph", "classification"];
 const stageNames = { extraction: "Extraction", normalization: "Normalization", parcellation: "Parcellation", graph: "Network generation" };
+const draftKey = "unibrainDraftV2";
+const buildKey = "unibrainBuildV2";
+
+function isOriginal() {
+  return library && draft && library.stages.every(stage => draft[stage.id] === library.defaults[stage.id]);
+}
 
 function chosenOption(stage, selection = draft) {
   return stage.options.find(option => option.id === selection[stage.id]);
@@ -18,6 +24,10 @@ function toolName(option) {
 }
 
 function renderChoices() {
+  byId("profileLabel").innerHTML = isOriginal() ? 'Original UniBrain<br><small>Full architecture</small>' : 'Custom pipeline<br><small>Compact adapters</small>';
+  byId("budgetLabel").textContent = isOriginal() ? "Epochs" : "Steps";
+  byId("prepareBuild").textContent = isOriginal() ? "Prepare UniBrain" : "Apply changes";
+  byId("resetPipeline").disabled = buildBusy;
   const button = (stage, index) => {
     const option = chosenOption(stage);
     const optional = stage.options.some(item => item.id === "none");
@@ -48,7 +58,7 @@ function chooseTool(stageId) {
       return '<button class="tool-option ' + (selected ? "selected" : "") + '" data-tool="' + option.id +
         '" aria-pressed="' + selected + '"' + (blocked ? ' disabled title="Requires a mesh and physical image coordinates"' : "") +
         '><span><strong>' + escapeHtml(toolName(option)) + '</strong><small>' + escapeHtml(blocked ? "Unavailable · mesh inputs required" :
-          option.id === "none" ? "Bypass this optional step" : option.research ? option.label : "Current compact adapter") +
+          option.id === "none" ? "Bypass this optional step" : option.label) +
         '</small></span><span class="tool-mark">' + (selected ? "✓ Selected" : blocked ? "Unavailable" : "Select") + '</span></button>';
     }).join("") : '<p class="no-tools">No matching tools.</p>';
     byId("toolOptions").querySelectorAll("[data-tool]").forEach(node => node.onclick = () => selectTool(stageId, node.dataset.tool));
@@ -68,6 +78,7 @@ function chooseTool(stageId) {
 
 function selectTool(stageId, choice) {
   if (draft[stageId] === choice) { byId("detailDialog").close(); return; }
+  const wasOriginal = isOriginal();
   draft[stageId] = choice;
   let note = "Selection updated. Apply changes to generate and validate the pipeline.";
   if (choice === "M03") {
@@ -76,9 +87,15 @@ function selectTool(stageId, choice) {
     note = "ERNet links extraction and registration. Normalization is skipped to preserve that connection.";
   } else if (stageId === "extraction" && draft.registration === "M03") draft.registration = "unibrain";
   else if (stageId === "registration" && draft.extraction === "M03") draft.extraction = "unibrain";
+  if (wasOriginal && !isOriginal()) {
+    if (draft.parcellation === "unibrain") draft.parcellation = "soft_atlas";
+    if (draft.graph === "unibrain") draft.graph = "continuous";
+    byId("buildSteps").value = "5";
+    note = "Custom adapter profile. Soft atlas transfer and continuous graph connections are enabled for gradient checks. Review the generated changes before running.";
+  }
   activeBuild = null;
-  sessionStorage.removeItem("unibrainBuild");
-  sessionStorage.setItem("unibrainDraft", JSON.stringify(draft));
+  sessionStorage.removeItem(buildKey);
+  sessionStorage.setItem(draftKey, JSON.stringify(draft));
   byId("detailDialog").close();
   renderChoices();
   byId("activityPanel").hidden = true;
@@ -91,8 +108,9 @@ function selectTool(stageId, choice) {
 }
 
 function showActivity(record) {
-  const phases = ["contracts", "planning", "training", "audit", "ready"];
-  const labels = ["Check tools", "Agent plan", "Train × 2", "Audit", "Ready"];
+  const original = record.profile === "original" || isOriginal();
+  const phases = original ? ["contracts", "audit", "planning", "ready"] : ["contracts", "planning", "training", "audit", "ready"];
+  const labels = original ? ["Source files", "CUDA & data", "Original settings", "Ready"] : ["Check tools", "Agent plan", "Train × 2", "Audit", "Ready"];
   const latestPhase = record.events?.filter(event => event.phase).at(-1)?.phase || "contracts";
   const phase = record.status === "ready" ? "ready" : record.progress?.phase || latestPhase;
   const position = phases.indexOf(phase);
@@ -119,9 +137,10 @@ function showBuild(record) {
   const matches = library.stages.every(stage => record.selection[stage.id] === draft[stage.id]);
   const titles = { queued: "Starting checks", preparing: "Agent is building your pipeline", validating: "Validating the training graph",
     ready: "Ready to run", failed: "Build needs attention" };
+  if (record.profile === "original") titles.preparing = "Checking original UniBrain";
   byId("buildStatus").textContent = titles[record.status] || record.status;
   byId("buildStatus").className = record.status === "ready" ? "build-ready" : record.status === "failed" ? "build-failed" : "";
-  byId("buildMessage").textContent = record.error || (record.status === "ready" ? "Gradient, parameter update and spatial checks passed on one sample." :
+  byId("buildMessage").textContent = record.error || (record.status === "ready" ? record.profile === "original" ? "Original sources and CUDA runtime checked. Training verification runs after confirmation." : "Gradient, parameter update and spatial checks passed on one sample." :
     record.progress?.message || record.events?.at(-1)?.message || "Preparing selected stages");
   byId("prepareBuild").disabled = buildBusy;
   byId("prepareBuild").hidden = record.status === "ready" && matches;
@@ -173,8 +192,8 @@ async function prepareSelection() {
   showBuild({ status: "queued", selection: { ...draft }, created: new Date().toISOString(), events: [] });
   try {
     const value = await requestJson("/api/prepare", { selection: draft, backend: "codex" });
-    sessionStorage.setItem("unibrainBuild", value.build_id);
-    sessionStorage.removeItem("unibrainDraft");
+    sessionStorage.setItem(buildKey, value.build_id);
+    sessionStorage.removeItem(draftKey);
     await pollBuild(value.build_id);
   } catch (error) { buildError(error); }
 }
@@ -208,6 +227,23 @@ async function runBuild() {
 }
 
 async function initializeEditor() {
+  byId("resetPipeline").onclick = () => {
+    if (buildBusy) return;
+    draft = { ...library.defaults }; activeBuild = null;
+    sessionStorage.removeItem(draftKey); sessionStorage.removeItem(buildKey);
+    byId("buildSteps").value = "2";
+    byId("buildStatus").textContent = "Original UniBrain";
+    byId("buildMessage").textContent = "Full original architecture, atlas transfer, cosine graph and GCN. Optional stages are skipped.";
+    byId("prepareBuild").hidden = false; byId("confirmBuild").hidden = true;
+    byId("viewBuild").hidden = true; byId("activityPanel").hidden = true;
+    renderChoices();
+  };
+  byId("runtimeDetails").onclick = async () => {
+    try {
+      const runtime = await requestJson("/api/runtime");
+      showDetails("Runtime", table(["Setting", "Value"], Object.entries(runtime).map(([key, value]) => [titleCase(key), escapeHtml(value)])) + '<p>Use UNIBRAIN_CONFIG or environment variables to move this workspace to another machine. Remote access uses an SSH port forward. Original training uses one visible CUDA GPU.</p>', "PORTABLE CONFIGURATION");
+    } catch (error) { showDetails("Runtime unavailable", '<p>' + escapeHtml(error.message) + '</p>'); }
+  };
   byId("prepareBuild").onclick = prepareSelection;
   byId("viewBuild").onclick = reviewBuild;
   byId("confirmBuild").onclick = runBuild;
@@ -226,25 +262,25 @@ async function initializeEditor() {
   }
   try {
     library = await requestJson("/api/catalog");
-    draft = { ...library.defaults, ...(report?.build?.selection || {}) };
-    const saved = sessionStorage.getItem("unibrainDraft");
+    draft = { ...library.defaults };
+    const saved = sessionStorage.getItem(draftKey);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (library.stages.every(stage => stage.options.some(option => option.id === parsed[stage.id]))) draft = parsed;
-      } catch (_) { sessionStorage.removeItem("unibrainDraft"); }
+      } catch (_) { sessionStorage.removeItem(draftKey); }
     }
     renderChoices();
     if (report) renderMethods();
     const status = await requestJson("/api/status");
-    const previous = status.running ? status.build_id : saved ? null : sessionStorage.getItem("unibrainBuild");
+    const previous = status.running ? status.build_id : null;
     if (previous) {
       try {
         const record = await requestJson("/api/builds/" + previous);
         draft = { ...record.selection };
         showBuild(record);
         if (buildBusy) pollBuild(previous);
-      } catch (_) { sessionStorage.removeItem("unibrainBuild"); }
+      } catch (_) { sessionStorage.removeItem(buildKey); }
     }
     if (status.running && status.job === "run") {
       buildBusy = true;
@@ -254,6 +290,7 @@ async function initializeEditor() {
       byId("confirmBuild").textContent = "Running…";
       byId("buildStatus").textContent = "Running, please wait";
       byId("buildMessage").textContent = "Your selected pipeline is running. Follow its progress below.";
+      byId("buildSteps").value = String(status.live?.epochs || (isOriginal() ? 2 : status.live?.steps || 5));
       byId("activityPanel").hidden = true;
       renderChoices();
       poll();

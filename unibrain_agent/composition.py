@@ -13,7 +13,8 @@ class ComposedPipeline(Pipeline):
     def __init__(self, selection):
         choices = validate_selection(selection)
         super().__init__(PipelineConfig(extraction="synthstrip" if choices["extraction"] == "M02" else "unibrain",
-                                        soft_atlas=True, continuous_edges=True, stages=choices))
+                                        soft_atlas=choices["parcellation"] != "unibrain",
+                                        continuous_edges=choices["graph"] != "unibrain", stages=choices))
         for stage, name in [("denoising", "denoise_net"), ("bias", "bias_net"), ("normalization", "norm_net")]:
             if choices[stage] != "none":
                 setattr(self, name, ImageAdapter(choices[stage]))
@@ -25,7 +26,7 @@ class ComposedPipeline(Pipeline):
             self.reg_net = DenseRegistration(choices["registration"], self.reg_net)
         if choices["segmentation"] != "unibrain":
             self.seg_net = TissueAdapter(choices["segmentation"])
-        if choices["parcellation"] != "soft_atlas":
+        if choices["parcellation"] in {"M09", "M10"}:
             self.par_net = ParcellationAdapter(choices["parcellation"])
         if choices["graph"] == "M11":
             self.graph_gen = PairGraph()
@@ -65,17 +66,18 @@ class ComposedPipeline(Pipeline):
             target = F.interpolate(aligned_labels, size=par_logits.shape[2:], mode="nearest")[:, 0].long()
             parcellation_loss = F.cross_entropy(par_logits, target)
         else:
-            atlas = atlas_probabilities(template["atlas"], grid, True)
+            atlas = atlas_probabilities(template["atlas"], grid, self.config.soft_atlas)
         roi_images = (atlas * image)[0, 1:]
         features = self.feature_net(roi_images).unsqueeze(0)
         if augment:
             features = unibrain_core().feature_perturbation(features, 0.05)
-        edges = self.graph_gen(features)
+        raw_edges = self.graph_gen(features)
+        edges = unibrain_core().edge_perturbation(raw_edges, features.size(1), 0.05) if augment and not self.config.continuous_edges else raw_edges
         prediction = self.gnn_pred(edges, features)
         return {"mask": masks[-1], "extracted": extracted[-1], "warped": warped, "affine": affine,
                 "inverse_grid": grid, "forward_grid": forward_grid, "tissue_logits": tissue_outputs[0],
                 "tissue_aux": tissue_outputs[1:], "tissue_target": tissue_target, "atlas": atlas,
-                "features": features, "raw_edges": edges, "edges": edges, "logits": prediction,
+                "features": features, "raw_edges": raw_edges, "edges": edges, "logits": prediction,
                 "regularization": regularization, "parcellation_loss": parcellation_loss}
 
     def description(self):

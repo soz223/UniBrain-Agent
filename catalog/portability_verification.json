@@ -1,0 +1,106 @@
+{
+  "date": "2026-11-09",
+  "upstream_commit": "f9f8d906b1725046d532f862a28876482aca2cfa",
+  "unit_tests": {
+    "Windows Python 3.12": {
+      "passed": 25
+    },
+    "Ubuntu WSL Python 3.12": {
+      "passed": 25
+    }
+  },
+  "windows_original": {
+    "status": "complete",
+    "run_id": "20261109_145405_751161",
+    "runtime": {
+      "python": "3.10.18 | packaged by Anaconda, Inc. | (main, Jun  5 2025, 13:08:55) [MSC v.1929 64 bit (AMD64)]",
+      "torch": "2.5.1+cu121",
+      "torchvision": "0.20.1+cu121",
+      "torch_geometric": "2.4.0",
+      "gpu": "NVIDIA GeForce RTX 3060 Ti"
+    },
+    "parameters": 305812248,
+    "epochs": 2,
+    "optimizer_updates": 10,
+    "elapsed_seconds": 1234.91,
+    "audit": {
+      "passed": true,
+      "checks": {
+        "source_unchanged": true,
+        "training_completed": true,
+        "all_training_updates": true,
+        "finite_gradient_norms": true,
+        "active_modules_updated": true,
+        "all_validation_epochs": true,
+        "checkpoint_saved": true,
+        "checkpoint_finite": true
+      },
+      "sample_counts": {
+        "train": 5,
+        "val": 5,
+        "test": 5
+      },
+      "expected_updates": 10,
+      "validation_epochs": 2,
+      "checkpoints": [
+        {
+          "file": "UniBrain_1_5_1e-05_1e-06_adhd_train_sample_True_False_1_1_0.1_1_1_1.pth",
+          "bytes": 1223405454,
+          "sha256": "1c860c720642d5f51ffbd1126c9b7b88e01692f47988b3610675c8c0c3a90616",
+          "state_tensors": 274,
+          "finite": true
+        }
+      ],
+      "dataset_sha256": {
+        "adhd_test_sample.npy": "6ec393bb7060546607561c590d6a86cd3b41e275623b116e96074502a3a7b367",
+        "adhd_train_sample.npy": "f35b1ed143ef81c4d5286bbf55fde3f1b224eca3d030127fb13d4be6e185a562",
+        "adhd_val_sample.npy": "c8d3e28b8cc0999ebd76c01aed38d44e2eff8a7506723eb76bdadd28baa800b7",
+        "template_img_aal_mask_orig_96.npy": "1005826c84c23ff95fbefcd6b2c8b20707fb0e61b4b604de6941aa5f4489a1ad",
+        "template_img_gm_mask_orig_96.npy": "d49e401cd35acfa08b06a075da32dc4621d9c886fa067638bce0f9842d2ba22e",
+        "template_img_orig_96.npy": "9f7cbef2016a83418ed3438f28f166e0fe77c62b0bba32f043cdc41e00889b28"
+      }
+    },
+    "recorded_loss_values": 0,
+    "telemetry_note": "This run started before the optimizer wrapper scalar capture fix. Module calls and parameter updates were recorded; loss values were not. The corrected scalar reader passed a real Adam wrapper unit test on Windows and Ubuntu."
+  },
+  "linux_adapter": {
+    "status": "complete",
+    "run_id": "20261109_150256_813773",
+    "profile": "compact adapter",
+    "backend": "rules",
+    "environment": {
+      "torch": "2.5.1+cpu",
+      "device": "cpu",
+      "threads": 4
+    },
+    "optimizer_updates": 2,
+    "recorded_loss_values": 2,
+    "validation_samples": 5,
+    "spatial_checks_passed": true,
+    "physical_coordinates_verified": false,
+    "elapsed_seconds": 26.847
+  },
+  "windows_cuda_adapter": {
+    "status": "complete",
+    "run_id": "20261109_151508_501938",
+    "profile": "compact adapter",
+    "backend": "rules",
+    "environment": {
+      "torch": "2.5.1+cu121",
+      "device": "cuda:0",
+      "threads": 4
+    },
+    "optimizer_updates": 2,
+    "recorded_loss_values": 2,
+    "validation_samples": 5,
+    "spatial_checks_passed": true,
+    "physical_coordinates_verified": false,
+    "elapsed_seconds": 3.338
+  },
+  "limits": [
+    "Linux full original CUDA training has not been executed in this verification.",
+    "Each experiment uses one visible GPU. Distributed training and checkpoint resume are not implemented.",
+    "Large cohort throughput has not been benchmarked. Data retain the original structured 96 cubed NPY interface.",
+    "Sample runs verify execution, not paper accuracy or clinical performance."
+  ]
+}
