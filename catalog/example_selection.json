@@ -1,0 +1,12 @@
+{
+  "denoising": "none",
+  "bias": "none",
+  "extraction": "M02",
+  "normalization": "none",
+  "registration": "M06",
+  "segmentation": "M08",
+  "parcellation": "soft_atlas",
+  "graph": "M11",
+  "classification": "M12",
+  "surface": "none"
+}

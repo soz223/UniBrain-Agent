@@ -1,0 +1,61 @@
+import base64
+import json
+import struct
+import zlib
+from pathlib import Path
+
+import numpy as np
+
+from .paths import PROJECT
+
+
+def png(array):
+    pixels = np.clip(array * 255, 0, 255).astype(np.uint8)
+    if pixels.ndim == 2:
+        pixels = np.repeat(pixels[..., None], 3, axis=2)
+    height, width = pixels.shape[:2]
+    def chunk(kind, content):
+        return struct.pack("!I", len(content)) + kind + content + struct.pack("!I", zlib.crc32(kind + content) & 0xffffffff)
+    raw = b"".join(b"\x00" + row.tobytes() for row in pixels)
+    value = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack("!2I5B", width, height, 8, 2, 0, 0, 0)) +
+             chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    return "data:image/png;base64," + base64.b64encode(value).decode()
+
+
+def previews(folder):
+    result = {}
+    for name in ("baseline", "candidate"):
+        with np.load(folder / f"{name}_preview.npz", allow_pickle=False) as arrays:
+            images = {}
+            for key in ("input", "mask", "extracted", "warped"):
+                volume = arrays[key][0, 0]
+                images[key] = png(np.rot90(volume[:, :, 48]))
+            images["slice_indices"] = [16, 32, 48, 64, 80]
+            images["planes"] = {}
+            for key in ("input", "mask", "extracted", "warped"):
+                volume = arrays[key][0, 0]
+                images["planes"][key] = [[png(np.rot90(np.take(volume, index, axis=axis)))
+                                          for index in images["slice_indices"]] for axis in range(3)]
+            adjacency = np.clip((arrays["edges"][0] + 1) / 2, 0, 1)
+            images["edges"] = png(np.stack((0.1 + 0.12 * adjacency, 0.15 + 0.65 * adjacency, 0.2 + 0.45 * adjacency), -1))
+            images["graph_values"] = arrays["edges"][0].round(5).tolist()
+            result[name] = images
+    return result
+
+
+def document(payload):
+    template = (PROJECT / "web" / "dashboard.html").read_text(encoding="utf-8")
+    encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).replace("<", "\\u003c")
+    css = (PROJECT / "web" / "dashboard.css").read_text(encoding="utf-8")
+    script = (PROJECT / "web" / "dashboard.js").read_text(encoding="utf-8")
+    editor = (PROJECT / "web" / "editor.js").read_text(encoding="utf-8")
+    return template.replace("__STYLE__", css).replace("__SCRIPT__", script).replace("__EDITOR_SCRIPT__", editor).replace("__REPORT_JSON__", encoded)
+
+
+def render(report, folder):
+    payload = {**report, "previews": previews(folder)}
+    (folder / "index.html").write_text(document(payload), encoding="utf-8")
+
+
+def landing():
+    return document(None)

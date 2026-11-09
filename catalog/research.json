@@ -1,0 +1,332 @@
+{
+  "source": "sMRI_Trainable_Stage_Matrix.xlsx",
+  "sha256": "aa69bc5d7aa7539bbd2ae61c4ef486356aef977ac9c310ff71528c7bf689a51c",
+  "records": [
+    {
+      "id": "M01",
+      "stages": [
+        "Bias Field Correction"
+      ],
+      "publication": "DeepN4 (2024, Neuroinformatics)",
+      "interface": "Synbo_UNet3D\nT1 volume [B,1,D,H,W] → log bias field → corrected volume",
+      "prior_check": "Finite nonzero gradients in 22/22 parameter tensors. Input gradient check passed.\n22/22 parameter tensors updated in all three cases.",
+      "adaptation": "Call the original network directly and use tensor exp and division. SciPy smoothing and resampling in the official CLI are excluded.",
+      "limitations": "Random 16³ input. Realistic dimensions, pretrained weights and boundary smoothing remain unverified.",
+      "prior_evidence": "smri_strict_bias_normalization_graph.json",
+      "paper": "https://pubmed.ncbi.nlm.nih.gov/38526701/",
+      "code": "https://github.com/MASILab/DeepN4/blob/df251bfb59b1bce3036e336f9872e3b948b88422/src/model_all.py#L56"
+    },
+    {
+      "id": "M02",
+      "stages": [
+        "Brain Extraction"
+      ],
+      "publication": "SynthStrip (2022, NeuroImage)",
+      "interface": "StripModel / ConvBlock\nT1 volume → signed distance field → sigmoid soft brain mask and brain weighted volume",
+      "prior_check": "Finite nonzero gradients in 54/54 parameter tensors. Input gradient check passed.\n47/54, 45/54 and 47/54 parameter tensors updated across three cases.",
+      "adaptation": "Original network with default settings. image × sigmoid(−SDT) replaces CLI hard thresholding and largest component selection.",
+      "limitations": "64³ input. Soft mask temperature and boundaries require calibration. Accuracy reported for the full CLI cannot be assumed for this adapter.",
+      "prior_evidence": "smri_strict_extraction_segmentation.json",
+      "paper": "https://arxiv.org/abs/2203.09974",
+      "code": "https://github.com/freesurfer/freesurfer/blob/4f8728e5132e8d39a8f1bf3d24d15fed62f4fc9d/mri_synthstrip/mri_synthstrip#L199"
+    },
+    {
+      "id": "M03",
+      "stages": [
+        "Brain Extraction",
+        "Registration"
+      ],
+      "publication": "ERNet (2022, KDD)",
+      "interface": "ERNet / multi_stage_ext / multi_stage_reg\nMoving and fixed volumes → softly extracted volume, affine sampling grid and registered volume",
+      "prior_check": "70/70 finite gradients. 44/70 nonzero at step 1, then 70/70 after updating the original zero initialized affine head.\nAll 70/70 tensors updated at SGD step 2 in each of three cases.",
+      "adaptation": "Original forward and modules retained with if_train=True. Two CUDA constants moved to CPU. Network width explicitly reduced.",
+      "limitations": "96³ input with one extraction and one registration stage. Both stages form one joint candidate, so two copies need not be connected in series.",
+      "prior_evidence": "smri_strict_registration.json",
+      "paper": "https://arxiv.org/abs/2212.03306",
+      "code": "https://github.com/ERNetERNet/ERNet/blob/f0708bbf13de32ef7e977afd2468f1597477c08e/model.py#L216"
+    },
+    {
+      "id": "M04",
+      "stages": [
+        "Intensity Normalization and Harmonization",
+        "Tissue Segmentation"
+      ],
+      "publication": "deepNormalize (2021, Medical Image Analysis)",
+      "interface": "UNet(is_preprocessor=True) / DeepNormalize\nSingle channel T1 → normalized single channel volume. Original two channel MRI → normalized volume and four tissue probability classes.",
+      "prior_check": "Finite nonzero gradients in 64/64 tensors for normalization and 128/128 for the original joint module. Input checks passed.\nAll 64/64 and 128/128 tensors updated, respectively, in each of three cases.",
+      "adaptation": "Standalone normalization uses the original UNet with one input and one output channel. The original joint class retains its fixed two channel configuration.",
+      "limitations": "Single T1 normalization requires retraining. Joint segmentation was tested with two channels, so a single T1 segmenter is not verified. GAN training was not tested.",
+      "prior_evidence": "smri_strict_bias_normalization_graph.json",
+      "paper": "https://pubmed.ncbi.nlm.nih.gov/34509168/",
+      "code": "https://github.com/pldelisle/deepNormalize/blob/b17509aa1cc8029b7de702971a7ad3a9dcd3c7f4/DeepNormalize/model/DeepNormalize/deepNormalize.py#L22"
+    },
+    {
+      "id": "M05",
+      "stages": [
+        "Intensity Normalization and Harmonization"
+      ],
+      "publication": "Harmonizing Flows (2023, IPMI; extended version: 2025, Medical Image Analysis)",
+      "interface": "Harmonizer / ConcatELU / double_conv\nT1 volume → slices packed as tensors → harmonized slices → volume of the original size",
+      "prior_check": "Finite nonzero gradients in 38/38 parameter tensors. 3D input gradient check passed.\n38/38 parameter tensors updated in all three cases.",
+      "adaptation": "Original 2D network unchanged. Tensor reshape and permute alone organize volumetric inputs and outputs.",
+      "limitations": "Two 224×224 slices tested. No modeling across slices. Full normalizing flow supervision and test time adaptation were not run.",
+      "prior_evidence": "smri_strict_harmonizer.json",
+      "paper": "https://espace2.etsmtl.ca/id/eprint/30581/",
+      "code": "https://github.com/farzad-bz/Harmonizing-Flows/blob/b61611586ccd184c5a1fa1211f951808f66ea28f/step3_Adapting_Harmonizer_using_NF/harmonizer_model.py#L21"
+    },
+    {
+      "id": "M06",
+      "stages": [
+        "Registration"
+      ],
+      "publication": "VoxelMorph (2018, CVPR; 2019, IEEE TMI)",
+      "interface": "VxmDense / SpatialTransformer / VecInt\nMoving and fixed volumes [B,1,D,H,W] → registered volume and displacement field [B,3,D,H,W]",
+      "prior_check": "Both configurations: finite nonzero gradients in 12/12 tensors on each check. Both input checks passed.\nThree cases and two SGD steps per configuration. All 12/12 tensors updated at step 2.",
+      "adaptation": "Original core from the official master branch. Replace legacy getargspec with getfullargspec for Python compatibility. Explicitly reduce channel widths.",
+      "limitations": "16³ input. Dense and SVF configurations tested separately. The newer dev version was not tested.",
+      "prior_evidence": "smri_strict_registration.json",
+      "paper": "https://arxiv.org/abs/1809.05231",
+      "code": "https://github.com/voxelmorph/voxelmorph/blob/9bde7a270edfc19ad1c61115cb5ebd82124ee3af/voxelmorph/torch/networks.py#L98"
+    },
+    {
+      "id": "M07",
+      "stages": [
+        "Registration"
+      ],
+      "publication": "LapIRN (2020, MICCAI)",
+      "interface": "Miccai2020_LDR_laplacian_unit_add_lvl1\nMoving and fixed 32³ volumes → 8³ registered volume and 8³ displacement field",
+      "prior_check": "Finite nonzero gradients in 16/16 parameter tensors. Both input gradient checks passed.\nThree cases with two SGD steps each. All 16/16 parameter tensors updated.",
+      "adaptation": "Original first scale network and seven integration steps. Three .cuda calls changed to CPU. Compact channel configuration via the original constructor.",
+      "limitations": "First scale only. Output dimensions are one quarter of the input dimensions. The full three scale model and subsequent resolution adaptation remain untested.",
+      "prior_evidence": "smri_strict_registration.json",
+      "paper": "https://arxiv.org/abs/2006.16148",
+      "code": "https://github.com/cwmok/LapIRN/blob/c17fb7564ca752d37e97baf12cafff44e01da668/Code/miccai2020_model_stage.py#L10"
+    },
+    {
+      "id": "M08",
+      "stages": [
+        "Tissue Segmentation"
+      ],
+      "publication": "nnU Net (2021, Nature Methods)",
+      "interface": "dynamic_network_architectures.PlainConvUNet\n24³ T1 volume → four tissue probability classes at 24³ and 12³ resolutions",
+      "prior_check": "Finite nonzero gradients in 48/48 parameter tensors. Input gradient check passed.\n44/48, 42/48 and 45/48 parameter tensors updated across three cases.",
+      "adaptation": "Native deep_supervision=True with both outputs in the loss. Tensor softmax converts logits to probabilities.",
+      "limitations": "Four class configuration only. Brain tissue labels are needed for training. Retain auxiliary losses or freeze unused heads during integration. nnUNetPredictor was not tested.",
+      "prior_evidence": "smri_strict_extraction_segmentation.json",
+      "paper": "https://doi.org/10.1038/s41592-020-01008-z",
+      "code": "https://github.com/MIC-DKFZ/dynamic-network-architectures/blob/7bf2053613e2ec3e76ccac8a5fdc51dd72668287/dynamic_network_architectures/architectures/unet.py#L92"
+    },
+    {
+      "id": "M09",
+      "stages": [
+        "Brain Parcellation"
+      ],
+      "publication": "FastSurferCNN (2020, NeuroImage)",
+      "interface": "FastSurferCNN / FastSurferCNNBase\nT1 volume [B,1,D,H,W] → original network predicts each slice using seven neighboring slices → probability volume [B,95,D,H,W]",
+      "prior_check": "Finite nonzero gradients in 157/157 parameter tensors. Input gradient check passed.\n157/157 parameter tensors updated in all three cases.",
+      "adaptation": "Original network with 64 channels. Tensor index_select assembles seven neighboring slices with replicated boundaries. Softmax outputs are stacked into a volume.",
+      "limitations": "3×32×32 volume. Gradients checked at every depth. Official multiview fusion, VINN and actual parcellation quality remain unverified. The 95 classes are not simply GM/WM/CSF.",
+      "prior_evidence": "smri_strict_fastsurfer_volume.json",
+      "paper": "https://arxiv.org/abs/1910.03866",
+      "code": "https://github.com/Deep-MI/FastSurfer/blob/6dcd0e949a2dc13ef7e940f33b2842a2ebec1477/FastSurferCNN/models/networks.py#L28"
+    },
+    {
+      "id": "M10",
+      "stages": [
+        "Brain Parcellation"
+      ],
+      "publication": "HighRes3DNet (2017, IPMI)",
+      "interface": "Nobrainer HighResNet\nT1 volume [B,1,D,H,W] → 155 anatomical probability classes [B,155,D,H,W]",
+      "prior_check": "Finite nonzero gradients in 61/61 parameter tensors. Input gradient check passed.\n61/61 parameter tensors updated in all three cases.",
+      "adaptation": "Currently maintained PyTorch implementation with softmax added to its core. The original NiftyNet implementation was not run.",
+      "limitations": "Random 16³ input and a head configured for 155 classes. Pretrained weights and target atlas label ordering still require alignment.",
+      "prior_evidence": "smri_strict_extraction_segmentation.json",
+      "paper": "https://arxiv.org/abs/1707.01992",
+      "code": "https://github.com/neuronets/nobrainer/blob/3109460d048bfa60d8c4e056e86deadd47568f68/nobrainer/models/highresnet.py#L18"
+    },
+    {
+      "id": "M11",
+      "stages": [
+        "Network Generation"
+      ],
+      "publication": "FBNetGen (2022, MIDL)",
+      "interface": "Embed2GraphByLinear\nROI features [B,N,F] → continuous adjacency matrix [B,N,N,1]",
+      "prior_check": "Finite nonzero gradients in 4/4 graph generator and 18/18 test classifier tensors. ROI input check passed.\n21/22, 21/22 and 22/22 tensors updated across three joint tests.",
+      "adaptation": "Official pair MLP. Two constant CUDA allocations changed to CPU. Backpropagation checked using a downstream BrainNetCNN classification loss.",
+      "limitations": "Originally for fMRI. sMRI requires ROI features and retraining. This branch does not guarantee symmetry, which must match the intended graph definition. The Gram branch has no parameters of its own.",
+      "prior_evidence": "smri_strict_bias_normalization_graph.json",
+      "paper": "https://proceedings.mlr.press/v172/kan22a.html",
+      "code": "https://github.com/Wayfear/FBNETGEN/blob/3ed6c813920966a40fca9ffca41f90a6384e333c/model/model.py#L181"
+    },
+    {
+      "id": "M12",
+      "stages": [
+        "Classification"
+      ],
+      "publication": "BrainNetCNN (2017, NeuroImage)",
+      "interface": "BrainNetCNN / E2EBlock\nContinuous connectivity matrix [B,N,N] → class outputs [B,2]",
+      "prior_check": "Finite nonzero gradients in 18/18 parameter tensors. Connectivity input gradient check passed.\n18/18 parameter tensors updated in all three cases.",
+      "adaptation": "Unmodified third party core. The authors' original Caffe implementation was not run.",
+      "limitations": "Small example with 6 fixed ROIs. Match the actual atlas node count. F.dropout remains active in eval mode in this implementation and requires handling for deployment.",
+      "prior_evidence": "smri_strict_bias_normalization_graph.json",
+      "paper": "https://pubmed.ncbi.nlm.nih.gov/27693612/",
+      "code": "https://github.com/Wayfear/FBNETGEN/blob/3ed6c813920966a40fca9ffca41f90a6384e333c/model/model.py#L338"
+    },
+    {
+      "id": "M13",
+      "stages": [
+        "Classification"
+      ],
+      "publication": "Brain Network Transformer (2022, NeurIPS)",
+      "interface": "BrainNetworkTransformer / TransPoolingEncoder / DEC\nROI connectivity features [B,N,N] → class logits [B,2]. The time_series argument is unused.",
+      "prior_check": "Finite nonzero gradients in 38/38 trainable tensors. Input check passed. One fixed center requires no gradient.\n38/38 tensors updated in all three cases. The fixed center remained unchanged.",
+      "adaptation": "Two adaptations for newer PyTorch APIs: device/dtype keyword binding and the is_causal argument. Original noncausal computation retained.",
+      "limitations": "16 ROIs pooled to 4 nodes in layer 2. The cluster center remains fixed as originally configured. Other parameters are trainable. sMRI graph features require retraining.",
+      "prior_evidence": "smri_strict_bnt.json",
+      "paper": "https://proceedings.neurips.cc/paper_files/paper/2022/hash/a408234a9b80604a9cf6ca518e474550-Abstract-Conference.html",
+      "code": "https://github.com/Wayfear/BrainNetworkTransformer/blob/8a588aadad0166209269fa114e5df4e42209e207/source/models/BNT/bnt.py#L101"
+    },
+    {
+      "id": "M14",
+      "stages": [
+        "Optional: Denoising"
+      ],
+      "publication": "RED WGAN (2019, Medical Image Analysis)",
+      "interface": "GeneratorNet\nNoisy MRI volume [B,1,D,H,W] → predicted denoised volume of the same size",
+      "prior_check": "Finite nonzero gradients in 30/30 parameter tensors. Input gradient check passed.\nObservable updates in 23/30 tensors in all three cases. Remaining gradients were near floating point precision.",
+      "adaptation": "Original generator unchanged. The GAN discriminator is not required in the downstream forward pass.",
+      "limitations": "Small 4³ volume. Original GAN training and patch fusion across a full volume were not run. Applicability to real noise remains untested.",
+      "prior_evidence": "smri_strict_denoise_surface.json",
+      "paper": "https://pubmed.ncbi.nlm.nih.gov/31085444/",
+      "code": "https://github.com/Deep-Imaging-Group/RED-WGAN/blob/79718eb9df8b70f66a3a15a76ed371fd1bad5573/model5.py#L35"
+    },
+    {
+      "id": "M15",
+      "stages": [
+        "Optional: Cortical Surface"
+      ],
+      "publication": "CorticalFlow (2021, NeurIPS)",
+      "interface": "CorticalFlow / DeformationBlock / DiffeoMeshDeformer\nMRI volume, affine transform and fixed template vertices → deformed vertices [B,V,3]. Faces remain fixed.",
+      "prior_check": "Finite nonzero gradients in 36/36 parameter tensors. Gradient passed from final vertex loss to MRI input.\n27/36, 28/36 and 30/36 parameter tensors updated across three cases.",
+      "adaptation": "One constant device changed to the input device. Original three deformation blocks and Euler integration retained, with explicit compact channels and two integration steps.",
+      "limitations": "8³ image and template with 4 vertices. Template generation, topology changes and official FreeSurfer/NiftyReg preprocessing remain unverified. Output is not a voxel parcellation map.",
+      "prior_evidence": "smri_strict_denoise_surface.json",
+      "paper": "https://proceedings.neurips.cc/paper/2021/hash/f6b5f8c32c65fee991049a55dc97d1ce-Abstract.html",
+      "code": "https://github.com/lebrat/CorticalFlow/blob/fac0ec74b6dcb2969148dc7c108a2b6c85a9287f/src/models.py#L29"
+    }
+  ],
+  "pending": [
+    {
+      "stage": "Brain Extraction",
+      "publication": "HD BET (2019, Human Brain Mapping)",
+      "status": "Runtime validation pending",
+      "reason": "The internal network associated with the actual checkpoint has not been verified. Passing tests on generic nnU Net cannot substitute for HD BET validation.",
+      "paper": "https://arxiv.org/abs/1901.11341"
+    },
+    {
+      "stage": "Tissue Segmentation and Brain Parcellation",
+      "publication": "SynthSeg (2023, Medical Image Analysis)",
+      "status": "Base core execution pending",
+      "reason": "The TensorFlow implementation was not run. The robust and parcellation cascades contain argmax and require reconnection and validation of individual submodules.",
+      "paper": "https://arxiv.org/abs/2107.09559"
+    },
+    {
+      "stage": "Brain Parcellation",
+      "publication": "QuickNAT (2019, NeuroImage)",
+      "status": "Dependency validation pending",
+      "reason": "Legacy dependencies and execution of the actual network remain unverified. A softmax output alone does not establish successful integration.",
+      "paper": "https://arxiv.org/abs/1801.04161"
+    },
+    {
+      "stage": "Brain Parcellation",
+      "publication": "SLANT (2019, NeuroImage)",
+      "status": "Tested implementation failed",
+      "reason": "The tested Unet3D uses BatchNorm2d after Conv3d and fails on a 5D input. This finding applies only to the reviewed source file, not to every SLANT implementation.",
+      "paper": "https://arxiv.org/abs/1903.12152"
+    },
+    {
+      "stage": "Registration",
+      "publication": "SynthMorph (2022, IEEE TMI; 2024, Imaging Neuroscience)",
+      "status": "Runtime validation pending",
+      "reason": "The authors' TensorFlow core was reviewed statically. Input gradient and parameter update checks on the original network remain incomplete.",
+      "paper": "https://arxiv.org/abs/2004.10282"
+    },
+    {
+      "stage": "Registration",
+      "publication": "HyperMorph (2021, IPMI; 2022, MELBA)",
+      "status": "Runtime validation pending",
+      "reason": "The hypernetwork and registration core were reviewed statically. Parameter updates in the actual network remain unverified.",
+      "paper": "https://arxiv.org/abs/2101.01035"
+    },
+    {
+      "stage": "Registration",
+      "publication": "TransMorph (2022, Medical Image Analysis)",
+      "status": "Runtime validation pending",
+      "reason": "Static code review supports continuous sampling. Model execution and parameter update checks were not completed in this audit.",
+      "paper": "https://arxiv.org/abs/2111.10480"
+    },
+    {
+      "stage": "Registration",
+      "publication": "ICON (2021, ICCV); GradICON (2023, CVPR)",
+      "status": "Runtime validation pending",
+      "reason": "The native core and ITK wrapper require separate assessments. Parameter updates in the original core were not verified in this audit.",
+      "paper": "https://arxiv.org/abs/2206.05897"
+    },
+    {
+      "stage": "Registration",
+      "publication": "uniGradICON (2024, MICCAI)",
+      "status": "Runtime validation pending",
+      "reason": "The pretrained core remains a candidate. Instance optimization and the complete ITK wrapper were not tested as a composable training graph.",
+      "paper": "https://arxiv.org/abs/2403.05780"
+    },
+    {
+      "stage": "Registration",
+      "publication": "EasyReg (2023, Scientific Reports)",
+      "status": "Existing pipeline breaks gradients",
+      "reason": "detach, NumPy and predict introduce graph boundaries. Internal networks may be extracted and reconnected, but the current complete pipeline is excluded from the main table.",
+      "paper": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10126156/"
+    },
+    {
+      "stage": "Joint Pipeline",
+      "publication": "UniBrain (2025, AAAI Spring Symposium Series)",
+      "status": "Full pipeline requires revision and testing",
+      "reason": "The public snapshot contains nearest neighbor label transfer, hard parcellation and binary graph perturbation. Trainable auxiliary losses do not establish that classification loss reaches every upstream module.",
+      "paper": "https://ojs.aaai.org/index.php/AAAI-SS/article/view/35548"
+    },
+    {
+      "stage": "Surface Reconstruction",
+      "publication": "CortexODE (2022, MICCAI)",
+      "status": "MRI input gradient blocked in tests",
+      "reason": "Network parameters are trainable, but no_grad around local image sampling blocks MRI input gradients in the tested deformation core.",
+      "paper": "https://arxiv.org/abs/2202.08329"
+    },
+    {
+      "stage": "Surface Reconstruction",
+      "publication": "Vox2Cortex (2022, CVPR)",
+      "status": "Runtime validation pending",
+      "reason": "Static evidence supports a continuous path from MRI features to a mesh. Parameter updates in the original module remain unverified.",
+      "paper": "https://arxiv.org/abs/2203.09446"
+    },
+    {
+      "stage": "Surface Reconstruction",
+      "publication": "DeepCSR (2021, WACV); FastCSR (2022, Brain Informatics)",
+      "status": "Output interfaces require distinction",
+      "reason": "A trainable implicit field does not establish a differentiable explicit mesh. Marching cubes and topology correction require separate treatment.",
+      "paper": "https://arxiv.org/abs/2010.11423"
+    },
+    {
+      "stage": "Intensity Normalization and Network Generation",
+      "publication": "Fixed z score normalization and Gram matrices (no single corresponding paper)",
+      "status": "Not counted as trainable models",
+      "reason": "They can serve as differentiable connecting operators but have no trainable parameters of their own. The main table uses the parameterized pair MLP branch of FBNetGen.",
+      "paper": null
+    },
+    {
+      "stage": "Other Candidates",
+      "publication": "See the retained detailed report for the full list",
+      "status": "Retained despite not being tested in this audit",
+      "reason": "YADO, Self2Self AM, SurfNet, TopoFit and other bias field methods retain their original evidence and limitations. They cannot inherit a passing status from similar models.",
+      "paper": null
+    }
+  ]
+}

@@ -1,0 +1,940 @@
+{
+  "scope": "One public UniBrain training sample per configuration, two optimizer steps, random weights, CPU. Individual substitutions in a complete pipeline; arbitrary combinations require a new check.",
+  "backend": "rules",
+  "date": "2026-11-09",
+  "cases": [
+    {
+      "stage": "default",
+      "method": "default",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.756295680999756,
+          "parameter_tensors": 124,
+          "finite_gradient_tensors": 124,
+          "input_gradient_norm": 0.0005714751896448433
+        },
+        {
+          "step": 2,
+          "loss": 2.7358510494232178,
+          "parameter_tensors": 124,
+          "finite_gradient_tensors": 124,
+          "input_gradient_norm": 0.004754906985908747
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0003618001937866,
+        "out_of_bounds_fraction": 0.025772659108042717,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 3.5762786865234375e-07,
+        "minimum_grid_jacobian": 1.0003544092178345
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "denoising",
+      "method": "M14",
+      "passed": true,
+      "parameter_updates": {
+        "denoise_net": {
+          "parameter_tensors": 30,
+          "updated_tensors": 30
+        },
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.790883779525757,
+          "parameter_tensors": 154,
+          "finite_gradient_tensors": 154,
+          "input_gradient_norm": 0.022149935364723206
+        },
+        {
+          "step": 2,
+          "loss": 2.7288503646850586,
+          "parameter_tensors": 154,
+          "finite_gradient_tensors": 154,
+          "input_gradient_norm": 0.009926390834152699
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0008273124694824,
+        "out_of_bounds_fraction": 0.017579255625605583,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 4.172325134277344e-07,
+        "minimum_grid_jacobian": 1.000818133354187
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "bias",
+      "method": "M01",
+      "passed": true,
+      "parameter_updates": {
+        "bias_net": {
+          "parameter_tensors": 22,
+          "updated_tensors": 22
+        },
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.7556440830230713,
+          "parameter_tensors": 146,
+          "finite_gradient_tensors": 146,
+          "input_gradient_norm": 0.0034791301004588604
+        },
+        {
+          "step": 2,
+          "loss": 2.7334067821502686,
+          "parameter_tensors": 146,
+          "finite_gradient_tensors": 146,
+          "input_gradient_norm": 0.0044585661962628365
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.000340461730957,
+        "out_of_bounds_fraction": 0.025718405842781067,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 3.5762786865234375e-07,
+        "minimum_grid_jacobian": 1.0003303289413452
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "extraction",
+      "method": "M02",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 38,
+          "updated_tensors": 38
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.778110980987549,
+          "parameter_tensors": 120,
+          "finite_gradient_tensors": 120,
+          "input_gradient_norm": 0.0005708460812456906
+        },
+        {
+          "step": 2,
+          "loss": 2.760854721069336,
+          "parameter_tensors": 120,
+          "finite_gradient_tensors": 120,
+          "input_gradient_norm": 0.0021433935035020113
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0002557039260864,
+        "out_of_bounds_fraction": 0.0258043073117733,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 4.172325134277344e-07,
+        "minimum_grid_jacobian": 1.0002484321594238
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "extraction",
+      "method": "M03",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.7562355995178223,
+          "parameter_tensors": 124,
+          "finite_gradient_tensors": 124,
+          "input_gradient_norm": 0.0005975794629193842
+        },
+        {
+          "step": 2,
+          "loss": 2.7345893383026123,
+          "parameter_tensors": 124,
+          "finite_gradient_tensors": 124,
+          "input_gradient_norm": 0.012381216511130333
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0002496242523193,
+        "out_of_bounds_fraction": 0.0258755162358284,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 4.172325134277344e-07,
+        "minimum_grid_jacobian": 1.0002411603927612
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "normalization",
+      "method": "M04",
+      "passed": true,
+      "parameter_updates": {
+        "norm_net": {
+          "parameter_tensors": 64,
+          "updated_tensors": 64
+        },
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.7864575386047363,
+          "parameter_tensors": 188,
+          "finite_gradient_tensors": 188,
+          "input_gradient_norm": 0.01682404614984989
+        },
+        {
+          "step": 2,
+          "loss": 2.7629404067993164,
+          "parameter_tensors": 188,
+          "finite_gradient_tensors": 188,
+          "input_gradient_norm": 0.01725311577320099
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0007635354995728,
+        "out_of_bounds_fraction": 0.015350341796875,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 4.172325134277344e-07,
+        "minimum_grid_jacobian": 1.0007543563842773
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "normalization",
+      "method": "M05",
+      "passed": true,
+      "parameter_updates": {
+        "norm_net": {
+          "parameter_tensors": 38,
+          "updated_tensors": 38
+        },
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.8933520317077637,
+          "parameter_tensors": 162,
+          "finite_gradient_tensors": 162,
+          "input_gradient_norm": 0.001283796038478613
+        },
+        {
+          "step": 2,
+          "loss": 2.8700854778289795,
+          "parameter_tensors": 162,
+          "finite_gradient_tensors": 162,
+          "input_gradient_norm": 0.004564606584608555
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 0.9994139075279236,
+        "out_of_bounds_fraction": 0.0518900565803051,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 3.5762786865234375e-07,
+        "minimum_grid_jacobian": 0.9994063973426819
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "registration",
+      "method": "M06",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 40,
+          "updated_tensors": 40
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.7562952041625977,
+          "parameter_tensors": 136,
+          "finite_gradient_tensors": 136,
+          "input_gradient_norm": 0.0005714708240702748
+        },
+        {
+          "step": 2,
+          "loss": 2.735983371734619,
+          "parameter_tensors": 136,
+          "finite_gradient_tensors": 136,
+          "input_gradient_norm": 0.004692842718213797
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0003465414047241,
+        "out_of_bounds_fraction": 0.0263231061398983,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 3.5762786865234375e-07,
+        "minimum_grid_jacobian": 0.9992464780807495
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "registration",
+      "method": "M07",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 44,
+          "updated_tensors": 44
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.7554433345794678,
+          "parameter_tensors": 140,
+          "finite_gradient_tensors": 140,
+          "input_gradient_norm": 0.0005622312892228365
+        },
+        {
+          "step": 2,
+          "loss": 2.7350881099700928,
+          "parameter_tensors": 140,
+          "finite_gradient_tensors": 140,
+          "input_gradient_norm": 0.004682534374296665
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0003725290298462,
+        "out_of_bounds_fraction": 0.026388661935925484,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 6.364285945892334e-05,
+        "minimum_grid_jacobian": 0.9768115878105164
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "segmentation",
+      "method": "M08",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 48,
+          "updated_tensors": 48
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 3.1978158950805664,
+          "parameter_tensors": 130,
+          "finite_gradient_tensors": 130,
+          "input_gradient_norm": 0.024193953722715378
+        },
+        {
+          "step": 2,
+          "loss": 3.176262617111206,
+          "parameter_tensors": 130,
+          "finite_gradient_tensors": 130,
+          "input_gradient_norm": 0.024522332474589348
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0003618001937866,
+        "out_of_bounds_fraction": 0.025772659108042717,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 4.172325134277344e-07,
+        "minimum_grid_jacobian": 1.000353217124939
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "segmentation",
+      "method": "M04",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 64,
+          "updated_tensors": 64
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.923757553100586,
+          "parameter_tensors": 146,
+          "finite_gradient_tensors": 146,
+          "input_gradient_norm": 0.020925046876072884
+        },
+        {
+          "step": 2,
+          "loss": 2.898961305618286,
+          "parameter_tensors": 146,
+          "finite_gradient_tensors": 146,
+          "input_gradient_norm": 0.021542657166719437
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0003618001937866,
+        "out_of_bounds_fraction": 0.025772659108042717,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 4.172325134277344e-07,
+        "minimum_grid_jacobian": 1.0003544092178345
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "parcellation",
+      "method": "M09",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "par_net": {
+          "parameter_tensors": 157,
+          "updated_tensors": 157
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 3.756274461746216,
+          "parameter_tensors": 281,
+          "finite_gradient_tensors": 281,
+          "input_gradient_norm": 0.008997919037938118
+        },
+        {
+          "step": 2,
+          "loss": 3.733391761779785,
+          "parameter_tensors": 281,
+          "finite_gradient_tensors": 281,
+          "input_gradient_norm": 0.009344307705760002
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.000361442565918,
+        "out_of_bounds_fraction": 0.025848388671875,
+        "atlas_probability_sum_error": 3.5762786865234375e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 3.5762786865234375e-07,
+        "minimum_grid_jacobian": 1.0003515481948853
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "parcellation",
+      "method": "M10",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "par_net": {
+          "parameter_tensors": 61,
+          "updated_tensors": 61
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 3.686453104019165,
+          "parameter_tensors": 185,
+          "finite_gradient_tensors": 185,
+          "input_gradient_norm": 0.017969967797398567
+        },
+        {
+          "step": 2,
+          "loss": 3.649233102798462,
+          "parameter_tensors": 185,
+          "finite_gradient_tensors": 185,
+          "input_gradient_norm": 0.015392347238957882
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 0.9997214078903198,
+        "out_of_bounds_fraction": 0.0346238873898983,
+        "atlas_probability_sum_error": 3.5762786865234375e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 3.5762786865234375e-07,
+        "minimum_grid_jacobian": 0.9997126460075378
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "graph",
+      "method": "M11",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "graph_gen": {
+          "parameter_tensors": 4,
+          "updated_tensors": 4
+        },
+        "gnn_pred": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.7562928199768066,
+          "parameter_tensors": 128,
+          "finite_gradient_tensors": 128,
+          "input_gradient_norm": 0.0005715217557735741
+        },
+        {
+          "step": 2,
+          "loss": 2.735849142074585,
+          "parameter_tensors": 128,
+          "finite_gradient_tensors": 128,
+          "input_gradient_norm": 0.004754855763167143
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0003618001937866,
+        "out_of_bounds_fraction": 0.025772659108042717,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 3.5762786865234375e-07,
+        "minimum_grid_jacobian": 1.0003546476364136
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "classification",
+      "method": "M12",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 18,
+          "updated_tensors": 18
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.878232479095459,
+          "parameter_tensors": 136,
+          "finite_gradient_tensors": 136,
+          "input_gradient_norm": 0.0005708630196750164
+        },
+        {
+          "step": 2,
+          "loss": 2.8737921714782715,
+          "parameter_tensors": 136,
+          "finite_gradient_tensors": 136,
+          "input_gradient_norm": 0.00475683156400919
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0003594160079956,
+        "out_of_bounds_fraction": 0.025772659108042717,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 4.172325134277344e-07,
+        "minimum_grid_jacobian": 1.0003509521484375
+      },
+      "implementation_hashes": {}
+    },
+    {
+      "stage": "classification",
+      "method": "M13",
+      "passed": true,
+      "parameter_updates": {
+        "ext_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "reg_net": {
+          "parameter_tensors": 28,
+          "updated_tensors": 28
+        },
+        "seg_net": {
+          "parameter_tensors": 42,
+          "updated_tensors": 42
+        },
+        "feature_net": {
+          "parameter_tensors": 6,
+          "updated_tensors": 6
+        },
+        "gnn_pred": {
+          "parameter_tensors": 38,
+          "updated_tensors": 38
+        }
+      },
+      "passes": [
+        {
+          "step": 1,
+          "loss": 2.7417078018188477,
+          "parameter_tensors": 156,
+          "finite_gradient_tensors": 156,
+          "input_gradient_norm": 0.0005708581302314997
+        },
+        {
+          "step": 2,
+          "loss": 2.725292682647705,
+          "parameter_tensors": 156,
+          "finite_gradient_tensors": 156,
+          "input_gradient_norm": 0.004756966605782509
+        }
+      ],
+      "spatial": {
+        "finite": true,
+        "affine_determinant": 1.0003619194030762,
+        "out_of_bounds_fraction": 0.025772659108042717,
+        "atlas_probability_sum_error": 1.1920928955078125e-07,
+        "shape_preserved": true,
+        "passed": true,
+        "physical_coordinates_verified": false,
+        "folding_fraction": 0.0,
+        "inverse_cycle_max_error": 4.172325134277344e-07,
+        "minimum_grid_jacobian": 1.000354528427124
+      },
+      "implementation_hashes": {}
+    }
+  ],
+  "blocked": [
+    {
+      "method": "M15",
+      "reason": "Sample format has no mesh, physical affine or surface target."
+    }
+  ],
+  "fixes": [
+    "Scoped the functional dropout compatibility patch to F.dropout; HighResNet module calls remain unchanged."
+  ]
+}

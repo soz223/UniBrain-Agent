@@ -1,0 +1,505 @@
+{
+  "repositories": [
+    {
+      "directory": "BrainNetworkTransformer",
+      "repository": "https://github.com/Wayfear/BrainNetworkTransformer",
+      "commit": "8a588aadad0166209269fa114e5df4e42209e207",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "2a118c39d0a998b187e29980104da859b2c1ae5fff08c522d089a7831d357fc4"
+        },
+        {
+          "path": "source/models/base.py",
+          "sha256": "566c3a07991a269b92b1a7d70c51d5ffc24003363d7a1e70ecb6a3398a5e5ac2"
+        },
+        {
+          "path": "source/models/BNT/__init__.py",
+          "sha256": "17abafe12957ad4d9ba17f0ff125c301c6d59d6a5c664ed130e07b1d2cf52c18"
+        },
+        {
+          "path": "source/models/BNT/bnt.py",
+          "sha256": "ed4f0e289661077aef3dbb8089c5347c32d2dc080da35479997f7f1e63ff2a9f"
+        },
+        {
+          "path": "source/models/BNT/components/__init__.py",
+          "sha256": "fbe3a5f6d5ffc130c235a1e4796d6b3d9420d764e90c15e525dfcf322b491135"
+        },
+        {
+          "path": "source/models/BNT/components/transformer_encoder.py",
+          "sha256": "883ff1f46a1ca58ca4639926cbb233b031af259f95967696450150d2ea800612"
+        },
+        {
+          "path": "source/models/BNT/ptdec/__init__.py",
+          "sha256": "3fa50be8499372df409eeb50fb9a66131b35049bca3291db971c189d97366b61"
+        },
+        {
+          "path": "source/models/BNT/ptdec/cluster.py",
+          "sha256": "218c73f6edecda5e49d0045ffd22dc15fc4d05372d0ae289c86a17c81dd63c9d"
+        },
+        {
+          "path": "source/models/BNT/ptdec/dec.py",
+          "sha256": "283e41edad502a4a4f366a596a649ce328d732391cdcfd52ff2716ca8549f5e1"
+        }
+      ]
+    },
+    {
+      "directory": "DeepN4",
+      "repository": "https://github.com/MASILab/DeepN4",
+      "commit": "df251bfb59b1bce3036e336f9872e3b948b88422",
+      "files": [
+        {
+          "path": "src/model_all.py",
+          "sha256": "d06a5309819b333f143f4d83b83425446f12b1effe3ef2b78271f5f5e4e68512"
+        }
+      ]
+    },
+    {
+      "directory": "deepNormalize",
+      "repository": "https://github.com/pldelisle/deepNormalize",
+      "commit": "b17509aa1cc8029b7de702971a7ad3a9dcd3c7f4",
+      "files": [
+        {
+          "path": "config.json",
+          "sha256": "5f4dc0aeb381b28c786367130a223ee8ccf2b3300acd6194b6b401f2d02bae90"
+        },
+        {
+          "path": "DeepNormalize/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/blocks/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/blocks/ResNet/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/blocks/ResNet/basic.py",
+          "sha256": "d9778693ef09137ce33df009dfb580c6ff57c9a2414c04dbbdbeaf51e7643b45"
+        },
+        {
+          "path": "DeepNormalize/blocks/ResNet/bottleneck.py",
+          "sha256": "609f01387c41b270e7ddad7b1cfad2c21b6341f7b3acbbdffb6edf22644dd979"
+        },
+        {
+          "path": "DeepNormalize/blocks/UNet/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/blocks/UNet/unet_block.py",
+          "sha256": "6870857fced6f7afcf65d0016d446180f87e2e8bc690306ab3c1b7b8f013c4dc"
+        },
+        {
+          "path": "DeepNormalize/io/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/io/data_provider.py",
+          "sha256": "3b64a5f93c4db864582df239207691b9d7e9c4c3d9b87ca09dc51075ea003664"
+        },
+        {
+          "path": "DeepNormalize/io/dataset.py",
+          "sha256": "5c9adb30f6e2671b016ceee36dc157d9e70b10c9134421ec935a77114aca32ff"
+        },
+        {
+          "path": "DeepNormalize/io/histogram.py",
+          "sha256": "fec11da2338ddf132c9555415126f25ce552afd08261ca172e2487e00ab858e0"
+        },
+        {
+          "path": "DeepNormalize/io/transforms.py",
+          "sha256": "1b083fe6221cf8f72318854c2e36500c641e93294c5032fc83ad6d80c92d6a21"
+        },
+        {
+          "path": "DeepNormalize/layers/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/layers/layer_util.py",
+          "sha256": "b059e27f1d9b928ab75f56fe93b0b03cc051cf27ad1fa596ce601595d6e30e3b"
+        },
+        {
+          "path": "DeepNormalize/layers/loss.py",
+          "sha256": "af403c676b4e804a559e7ad483a3a04fcb004b88134a1bbf5fd799c9c74687ac"
+        },
+        {
+          "path": "DeepNormalize/layers/tversky_loss.py",
+          "sha256": "a8a4a63b57dc68070413dc16b1fba60012fcb1d1a5a695739a72f9647251c447"
+        },
+        {
+          "path": "DeepNormalize/layers/UNet/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/layers/UNet/convolution.py",
+          "sha256": "04b4396991980ac05adbe089dda97d62b5aeb825dd1235a4a1c471ec538d30b1"
+        },
+        {
+          "path": "DeepNormalize/layers/UNet/downsample.py",
+          "sha256": "580fb2704f82df2bf135c86eb01c7eb142263ad81c8d46316c80848c95040546"
+        },
+        {
+          "path": "DeepNormalize/layers/UNet/elementwise.py",
+          "sha256": "73e4876117cd460bf8b9e3e51f41b44a76986040bdf7af8d2518f64e0927a001"
+        },
+        {
+          "path": "DeepNormalize/libs/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/libs/utils.py",
+          "sha256": "c529740eaadc3ac7ce22f4388d6dd438affa953eec907b08002c0aaf4f0131f7"
+        },
+        {
+          "path": "DeepNormalize/model/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/model/DeepNormalize/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/model/DeepNormalize/deepNormalize.py",
+          "sha256": "c17075ddfab2efb49c2a09387051ca1af120cc670b1aed3e5b9d98f0fd9ce438"
+        },
+        {
+          "path": "DeepNormalize/model/GAN/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/model/GAN/gan.py",
+          "sha256": "19205d66b7fb46e29b284c09105d9e8cc4f4a5c92d52fa290d10923d80fcc4ff"
+        },
+        {
+          "path": "DeepNormalize/model/ResNet/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/model/ResNet/ResNet.py",
+          "sha256": "3529defade4fc64cd42936a817ec730c9c697c24bca82517d26c6b8ff687e606"
+        },
+        {
+          "path": "DeepNormalize/model/UNet/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/model/UNet/unet.py",
+          "sha256": "59acd50c62db6c0bc69b597dc7a627a1c9b49aa59aa0fd3fd8f79f2add9fb3bb"
+        },
+        {
+          "path": "DeepNormalize/old/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/old/preprocessing.py",
+          "sha256": "bd626ae755edb5445d086944aa2cfa0172d2db3712fc949748a67dbb220a7db1"
+        },
+        {
+          "path": "DeepNormalize/old/sampler_deprecate.py",
+          "sha256": "9681a5eb538da6b8276a182c4b2d431a56aef8878015ef5fd0a25bffc8b00685"
+        },
+        {
+          "path": "DeepNormalize/old/utils.py",
+          "sha256": "64c29a7490cf86359afa439418c7ffbf0a48cbefa71d48acb25d6888d5f02155"
+        },
+        {
+          "path": "DeepNormalize/preprocessing/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/preprocessing/iSEG_preprocessor.py",
+          "sha256": "d5c79f29349f6415d6c90d14b0040eeba51bd41f4c960d61ecaf7ee697d6c1c0"
+        },
+        {
+          "path": "DeepNormalize/preprocessing/MRBrainS_preprocessor.py",
+          "sha256": "4d5cf372ca690d93c60d7bc2cf068f89152e4d87f2c972dc42ae472db52a2ad5"
+        },
+        {
+          "path": "DeepNormalize/training/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/training/callbacks.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/training/train.py",
+          "sha256": "2708e551d34cb6863eeb949c84a3e95e89e0dd79b7e2f15ec105f0db31117af1"
+        },
+        {
+          "path": "DeepNormalize/utils/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "DeepNormalize/utils/cuda.py",
+          "sha256": "2158b577df580cbc5b8b450d28ea4d2442ff2a5b707bd549d7008b23dfae9750"
+        },
+        {
+          "path": "DeepNormalize/utils/utils.py",
+          "sha256": "9761734f40483bf2bf1142df8b0642ab4a1569d453f7e6418035db2340f53396"
+        },
+        {
+          "path": "LICENSE.txt",
+          "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1"
+        }
+      ]
+    },
+    {
+      "directory": "denoise_redwgan",
+      "repository": "https://github.com/Deep-Imaging-Group/RED-WGAN",
+      "commit": "79718eb9df8b70f66a3a15a76ed371fd1bad5573",
+      "files": [
+        {
+          "path": "model5.py",
+          "sha256": "2b73d746830e47b5c47627536c0c5797b666e47d6efa3944f91b838bbf1b2f95"
+        }
+      ]
+    },
+    {
+      "directory": "dynamic-network-architectures",
+      "repository": "https://github.com/MIC-DKFZ/dynamic-network-architectures",
+      "commit": "7bf2053613e2ec3e76ccac8a5fdc51dd72668287",
+      "files": [
+        {
+          "path": "dynamic_network_architectures/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "dynamic_network_architectures/architectures/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "dynamic_network_architectures/architectures/abstract_arch.py",
+          "sha256": "5b2bb0d781217c9d11b71e69df3bcc3cfb0da8b27ae9582623dd8734477844c6"
+        },
+        {
+          "path": "dynamic_network_architectures/architectures/dinov2_eva.py",
+          "sha256": "368a6911b8d4680b3cdf886ad0140a1bcf6d26929f2b8ce78b5f336bccbd472b"
+        },
+        {
+          "path": "dynamic_network_architectures/architectures/primus.py",
+          "sha256": "5e0383ea285c787c0e6b54988ae3234d995296c93a0c859e637d56bcf2c5bbd3"
+        },
+        {
+          "path": "dynamic_network_architectures/architectures/resnet.py",
+          "sha256": "6c6cf643c3e618d824bebe602eb43a570ff91451e37092210e6a703945afc2ae"
+        },
+        {
+          "path": "dynamic_network_architectures/architectures/unet.py",
+          "sha256": "bfa12cc740055407462365fcd797c372f7efb351e33d56737f2f3c619b07c6ea"
+        },
+        {
+          "path": "dynamic_network_architectures/architectures/vgg.py",
+          "sha256": "d9c7fddb680b86b4616a9038e346c00ec71e8dcea98af3bd569270da5f9015c9"
+        },
+        {
+          "path": "dynamic_network_architectures/building_blocks/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "dynamic_network_architectures/building_blocks/eva.py",
+          "sha256": "9a19458c0ca278063739679e14beef0cc0447f7e8396df04eee595fd24f6cf69"
+        },
+        {
+          "path": "dynamic_network_architectures/building_blocks/helper.py",
+          "sha256": "0bf28761af078a3b46f273109717529afa921aedea419fcbbe6761bd66b9c833"
+        },
+        {
+          "path": "dynamic_network_architectures/building_blocks/patch_encode_decode.py",
+          "sha256": "548c216cd8351a95bfdea60a4ec93c9c574f05e927183bba476acfb59a14666e"
+        },
+        {
+          "path": "dynamic_network_architectures/building_blocks/plain_conv_encoder.py",
+          "sha256": "c1af990f1a613c8594234fbc185eb70da2e2b545ea7c933711e91618da2943c4"
+        },
+        {
+          "path": "dynamic_network_architectures/building_blocks/regularization.py",
+          "sha256": "bc7c48fa3d63f90eaf319e48effce6a35c6c0ac10a482cf8a6035b1b7ea25b95"
+        },
+        {
+          "path": "dynamic_network_architectures/building_blocks/residual.py",
+          "sha256": "bd6b68f6df17c23f4eaa81cacf461c7fd7d85b46cef628add43e5309533a047c"
+        },
+        {
+          "path": "dynamic_network_architectures/building_blocks/residual_encoders.py",
+          "sha256": "e4977f34c9cc43a6effa4a27f1fe8a769a8a600be4a05565432fc8c39f34ae04"
+        },
+        {
+          "path": "dynamic_network_architectures/building_blocks/simple_conv_blocks.py",
+          "sha256": "02a7c21bca3c0acc20923a10970f14e853510f32a1f7ea2ef068cf636559ba2e"
+        },
+        {
+          "path": "dynamic_network_architectures/building_blocks/unet_decoder.py",
+          "sha256": "5eec090b199daf154c8e0ab3d64c45a1b1621f5aac68c6dea6a7203b0ddcc999"
+        },
+        {
+          "path": "dynamic_network_architectures/building_blocks/unet_residual_decoder.py",
+          "sha256": "fa58585ceda5aad362e7adda73efd8e95eabacd30d484e9c83ad62beb4b04db1"
+        },
+        {
+          "path": "dynamic_network_architectures/initialization/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "dynamic_network_architectures/initialization/weight_init.py",
+          "sha256": "8a5734074107cad9bf1b3151a39630a039cf90844aa5c6e972aaeb95827c7403"
+        },
+        {
+          "path": "LICENSE",
+          "sha256": "7b26c3dffb131e8206336ecc7680a0d0080007cf49b7de7ad64ae936e78a1ce4"
+        }
+      ]
+    },
+    {
+      "directory": "FastSurfer",
+      "repository": "https://github.com/Deep-MI/FastSurfer",
+      "commit": "6dcd0e949a2dc13ef7e940f33b2842a2ebec1477",
+      "files": [
+        {
+          "path": "FastSurferCNN/models/networks.py",
+          "sha256": "255b74bb612deb3c73f3f922f33007bd6f91a2e6d7b366b44ccc3697508e4d8a"
+        },
+        {
+          "path": "FastSurferCNN/models/sub_module.py",
+          "sha256": "6a9de87bf311ed1a78ed837ecceec1d1155c106f26155b5bc6b952d0b6e06403"
+        },
+        {
+          "path": "LICENSE",
+          "sha256": "cc4d4de0920b0d3912203b5d9aa76728ac4a11087f55da9ea00576db7d1e34e2"
+        }
+      ]
+    },
+    {
+      "directory": "FBNETGEN",
+      "repository": "https://github.com/Wayfear/FBNETGEN",
+      "commit": "3ed6c813920966a40fca9ffca41f90a6384e333c",
+      "files": [
+        {
+          "path": "model/model.py",
+          "sha256": "afe18b37e41e1f56976910db958c5597140a191445a46aa0a9da75daff204f82"
+        }
+      ]
+    },
+    {
+      "directory": "freesurfer_synthstrip",
+      "repository": "https://github.com/freesurfer/freesurfer",
+      "commit": "4f8728e5132e8d39a8f1bf3d24d15fed62f4fc9d",
+      "files": [
+        {
+          "path": "mri_synthstrip/mri_synthstrip",
+          "sha256": "291c253ab2f7c0cbcb84afa769ae10909549537e727db5b92d268754b7cc7871"
+        }
+      ]
+    },
+    {
+      "directory": "HarmonizingFlows",
+      "repository": "https://github.com/farzad-bz/Harmonizing-Flows",
+      "commit": "b61611586ccd184c5a1fa1211f951808f66ea28f",
+      "files": [
+        {
+          "path": "step3_Adapting_Harmonizer_using_NF/harmonizer_model.py",
+          "sha256": "b0000914e66981d6abb741ac0c02cd21866989485a311e8f71bf72995efb2534"
+        }
+      ]
+    },
+    {
+      "directory": "nobrainer",
+      "repository": "https://github.com/neuronets/nobrainer",
+      "commit": "3109460d048bfa60d8c4e056e86deadd47568f68",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "5b288caa77754899c970b9ffbebd8368d9a5bc90aa0b6d6c4db0cbb7857fa364"
+        },
+        {
+          "path": "nobrainer/models/highresnet.py",
+          "sha256": "501d0750590236d3bfaa319c3ee757552e6d44d00aa21a03d3a6abe18d3c1d3e"
+        }
+      ]
+    },
+    {
+      "directory": "reg_ernet",
+      "repository": "https://github.com/ERNetERNet/ERNet",
+      "commit": "f0708bbf13de32ef7e977afd2468f1597477c08e",
+      "files": [
+        {
+          "path": "model.py",
+          "sha256": "72ea0498741f992852ff212697cda3c3cb57f903e7ed1f328030644a863252be"
+        }
+      ]
+    },
+    {
+      "directory": "reg_lapirn",
+      "repository": "https://github.com/cwmok/LapIRN",
+      "commit": "c17fb7564ca752d37e97baf12cafff44e01da668",
+      "files": [
+        {
+          "path": "Code/Functions.py",
+          "sha256": "2b25ccb5bd981dc13e7e15357037f6b176b92dcb748110c9e2560bed3f4c22d1"
+        },
+        {
+          "path": "Code/miccai2020_model_stage.py",
+          "sha256": "d4ec8d64fa2aefe1f9eebac94bd3c715169b84a8362b7d79434a70fb45e24e7e"
+        },
+        {
+          "path": "LICENSE.md",
+          "sha256": "2b2f52a07cf62669e42ca7dbe8c1ead65a27b2381b58d2cb9f10883bc08669e7"
+        }
+      ]
+    },
+    {
+      "directory": "reg_unibrain",
+      "repository": "https://github.com/Anonymous7852/UniBrain",
+      "commit": "f9f8d906b1725046d532f862a28876482aca2cfa",
+      "files": [
+        {
+          "path": "model.py",
+          "sha256": "de918d5bc3ef1a5943534f3b182a89123e7d434477a670fbfa7914d9744d9235"
+        }
+      ]
+    },
+    {
+      "directory": "reg_voxelmorph_master",
+      "repository": "https://github.com/voxelmorph/voxelmorph",
+      "commit": "9bde7a270edfc19ad1c61115cb5ebd82124ee3af",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        },
+        {
+          "path": "voxelmorph/py/utils.py",
+          "sha256": "596d5ffe80a6dd6073840f88244ae50d6b7a3a1fa8b597ccb820dc518aeb273f"
+        },
+        {
+          "path": "voxelmorph/torch/layers.py",
+          "sha256": "cba911dac4d421eb05a5853e05addd6c9d8f273c7f2ae6bc7aa511e7c1902954"
+        },
+        {
+          "path": "voxelmorph/torch/modelio.py",
+          "sha256": "d3dc69223313c59bf984b5c5394a58b450c587745244e0416224fadb9ead02ff"
+        },
+        {
+          "path": "voxelmorph/torch/networks.py",
+          "sha256": "a29715c830d5104e6ae313cd95cfb7a66f702ad4edefcad3639da9abc278f987"
+        }
+      ]
+    },
+    {
+      "directory": "surface_corticalflow",
+      "repository": "https://github.com/lebrat/CorticalFlow",
+      "commit": "fac0ec74b6dcb2969148dc7c108a2b6c85a9287f",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "c51fee3b0143c864abfe48bb96b46e28de7e54a96f5f974f8c4c9f7e5e9438df"
+        },
+        {
+          "path": "src/models.py",
+          "sha256": "33028d316279a2347a3f87fbd192c74b2c1e3a6a07836096585fb55c7738e6fb"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>UniBrain Agent · Research workspace</title>
+  <style>__STYLE__</style>
+</head>
+<body>
+  <a class="skip" href="#workspace">Skip to workspace</a>
+  <aside class="sidebar">
+    <a class="brand" href="#workspace" aria-label="UniBrain Agent home">
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 36 36"><path d="M17 7C10 3 5 9 7 14c-5 4-2 12 4 12 0 5 6 6 7 2V9m1-2c7-4 12 2 10 7 5 4 2 12-4 12 0 5-6 6-7 2M8 14l6 3-3 7m17-10-6 3 3 7M13 8l1 6m8-6-1 6"/></svg></span>
+      <span>UniBrain<span class="brand-sub">AGENT WORKSPACE</span></span>
+    </a>
+    <div class="nav-label">WORKSPACE</div>
+    <nav aria-label="Workspace navigation">
+      <a class="nav-link active" href="#workspace"><span data-icon="grid"></span>Overview</a>
+      <a class="nav-link" href="#builderPanel"><span data-icon="flow"></span>Pipeline builder</a>
+      <a class="nav-link" href="#gradientPanel"><span data-icon="pulse"></span>Gradient audit</a>
+      <a class="nav-link" href="#comparisonPanel"><span data-icon="chart"></span>Experiments</a>
+      <a class="nav-link" href="#agentPanel"><span data-icon="nodes"></span>Agent activity</a>
+    </nav>
+    <div class="nav-label library-label">LIBRARY</div>
+    <nav aria-label="Library navigation">
+      <a class="nav-link" href="#researchPanel"><span data-icon="book"></span>Methods & sources</a>
+      <button class="nav-link" id="dataDetails"><span data-icon="cube"></span>Data & provenance</button>
+    </nav>
+    <div class="sidebar-bottom"><span class="status-dot"></span>Local workspace<div>UniBrain / sMRI<span class="version">v0.2</span></div><div class="local-caption">Original code · verified adapters</div></div>
+  </aside>
+  <div class="app">
+    <header class="topbar">
+      <div class="breadcrumb">Research <span>/</span> <strong>Structural MRI</strong></div>
+      <div class="toolbar"><span class="snapshot-label" id="snapshotLabel"><i class="status-dot"></i>Saved experiment</span><select id="backend" aria-label="Agent backend"><option value="codex">Codex LLM</option><option value="rules">Rules demo</option></select><button class="primary" id="run"><span data-icon="flow"></span>Configure pipeline</button></div>
+    </header>
+    <main id="workspace">
+      <section class="heading-row">
+        <div><div class="eyebrow">UNIBRAIN AGENT / EXPERIMENT MONITOR</div><h1>Research workspace<span class="title-dot">.</span></h1><p class="subtitle">A view into the pipeline, the gradients, and every decision.</p></div>
+        <div class="run-meta"><span id="runId" class="mono">NO EXPERIMENT YET</span><span id="runDate">Local execution</span></div>
+      </section>
+      <div id="progress" class="progress" hidden role="status" aria-live="polite"><span class="spinner"></span><div><strong id="progressTitle">Experiment running</strong><p id="progressText">Starting</p><p id="error"></p></div></div>
+      <section class="panel builder-panel" id="builderPanel" aria-label="Pipeline builder">
+        <div class="panel-head"><div><span class="panel-index">BUILD</span><h2>Choose the pipeline</h2></div><span id="catalogCount" class="badge neutral">Loading catalog</span></div>
+        <p class="builder-intro">Choose a tool at each stage. The agent prepares the code and checks its training graph before you run it.</p>
+        <div class="builder-route"><span class="tiny-dot"></span>DRAFT COMPOSITION <span>Image stages → registration → soft regions → graph → classification</span></div>
+        <div id="stageChoices" class="stage-choices"></div>
+        <div class="builder-bottom">
+          <div class="build-summary"><strong id="buildStatus">Choose a stage to get started</strong><p id="buildMessage">Tissue segmentation is an auxiliary branch. Cortical surface requires additional mesh inputs.</p><div id="buildChecks" class="build-checks"></div></div>
+          <div class="build-controls"><label>STEPS PER BRANCH<select id="buildSteps" aria-label="Training steps per branch"><option value="2">2</option><option value="5" selected>5</option><option value="10">10</option><option value="20">20</option></select></label><button id="prepareBuild" class="secondary">Validate selection</button><button id="viewBuild" class="secondary" disabled>Review code</button><button id="confirmBuild" class="primary" disabled>Build and run</button></div>
+        </div>
+      </section>
+      <div id="empty" class="empty" hidden><h2>Your first experiment starts here.</h2><p>Select tools above, review the training checks, then build and run the sample comparison.</p><p class="muted">Choose Codex LLM for recorded model decisions, or Rules demo for an explicit offline test.</p></div>
+      <div id="results">
+        <section id="stats" class="stats" aria-label="Experiment statistics"></section>
+        <div class="workspace-bar"><div class="workspace-bar-label"><span class="tiny-dot"></span><strong>Experiment overview</strong><span id="statusPill" class="badge"></span></div><div class="branch-switch" role="group" aria-label="Inspect configuration"><button data-branch="baseline" aria-pressed="false">Baseline</button><button class="selected" data-branch="candidate" aria-pressed="true">Candidate</button></div></div>
+        <div class="dashboard">
+          <section class="panel pipeline-panel" id="pipelinePanel">
+            <div class="panel-head"><div><span class="panel-index">01</span><h2>Trainable pipeline</h2></div><span id="pipelineLabel" class="panel-meta"></span></div>
+            <div id="pipeline" class="pipeline"></div>
+            <div class="pipeline-footer"><span class="parallel-tag"><span data-icon="branch"></span>PARALLEL BRANCH</span><span>Input → Tissue U-Net → Segmentation loss</span><button class="text-button" id="pipelineDetails">Connection details <span>↗</span></button></div>
+          </section>
+          <section class="panel volume-panel" id="volumePanel">
+            <div class="panel-head"><div><span class="panel-index">02</span><h2>Volume inspector</h2></div><span class="badge neutral">96 × 96 × 96</span></div>
+            <div class="volume-toolbar"><div class="mini-tabs" role="group" aria-label="Image stage"><button class="selected" data-stage="input" aria-pressed="true">Input</button><button data-stage="mask" aria-pressed="false">Brain mask</button><button data-stage="extracted" aria-pressed="false">Extraction</button><button data-stage="warped" aria-pressed="false">Registration</button></div><span class="mono tiny" id="sampleId"></span></div>
+            <div id="volumeImages" class="volume-images"></div>
+            <div class="slice-controls"><label for="sliceIndex">SLICE</label><input id="sliceIndex" aria-label="Slice position" type="range" min="0" max="4" value="2" step="1"><output id="sliceValue" for="sliceIndex">48 / 95</output><label class="check"><input id="crosshair" type="checkbox" checked>Crosshair</label></div>
+            <div class="panel-foot">5 saved slices per array plane. Physical orientation and spacing are unavailable in the NPY samples.</div>
+          </section>
+          <section class="panel gradient-panel" id="gradientPanel">
+            <div class="panel-head"><div><span class="panel-index">03</span><h2>Gradient connectivity</h2></div><button class="icon-button" id="gradientHelp" aria-label="Explain gradient audit" title="Explain gradient audit">?</button></div>
+            <div class="panel-subtitle">Loss → module · measured after training</div>
+            <div id="gradientMatrix" class="matrix-wrap"></div>
+            <div class="gradient-legend"><span><i class="active-key"></i>Nonzero</span><span><i class="disconnected-key"></i>Disconnected</span><span><i class="zero-key"></i>Zero</span><span><i class="inactive-key"></i>Inactive</span></div>
+            <div id="gradientDetail" class="gradient-detail" aria-live="polite"></div>
+          </section>
+          <section class="panel loss-panel" id="lossPanel">
+            <div class="panel-head"><div><span class="panel-index">04</span><h2>Training dynamics</h2></div><select id="lossKind" aria-label="Loss to visualize"><option value="weighted_loss">Weighted total</option><option value="extraction">Extraction</option><option value="registration">Registration</option><option value="segmentation">Segmentation</option><option value="classification">Classification</option></select></div>
+            <div class="chart-legend"><span><i class="baseline-key"></i>Baseline</span><span><i class="candidate-key"></i>Candidate</span><span class="mono" id="lossSummary"></span></div>
+            <div id="lossChart" class="loss-chart"></div>
+            <div class="panel-foot">Training objectives can differ. Compare performance using the fixed validation objective below.</div>
+          </section>
+          <section class="panel agent-panel" id="agentPanel">
+            <div class="panel-head"><div><span class="panel-index">05</span><h2>Agent activity</h2></div><span id="agentBackend" class="badge neutral"></span></div>
+            <div id="agentFeed" class="agent-feed"></div>
+            <button class="panel-link" id="allDecisions">Inspect decision record <span>↗</span></button>
+          </section>
+          <section class="panel graph-panel" id="graphPanel">
+            <div class="panel-head"><div><span class="panel-index">06</span><h2>Brain graph</h2></div><span class="panel-meta">116 ROIs</span></div>
+            <div class="graph-frame"><canvas id="graphCanvas" width="348" height="348" aria-label="ROI adjacency heatmap"></canvas><span class="graph-axis-y">ROI INDEX</span><span class="graph-axis-x">ROI INDEX</span></div>
+            <div id="graphReadout" class="graph-readout mono" aria-live="polite"></div>
+            <div id="graphGradient" class="panel-foot"></div>
+          </section>
+          <section class="panel comparison-panel" id="comparisonPanel">
+            <div class="panel-head"><div><span class="panel-index">07</span><h2>Experiment comparison</h2></div><span class="badge neutral">SAME VALIDATION SET</span></div>
+            <div id="comparison" class="table-wrap"></div>
+            <div class="panel-foot" id="dataCaveat"></div>
+          </section>
+          <section class="panel gate-panel" id="gatePanel">
+            <div class="panel-head"><div><span class="panel-index">08</span><h2>Acceptance & control</h2></div><span id="gateBadge" class="badge"></span></div>
+            <div id="gateMeters" class="gate-meters"></div>
+            <div class="control-heading"><span>Loss weights</span><span class="mono" id="controlAction"></span></div>
+            <div id="weights" class="weights"></div>
+            <button id="reviewDetails" class="panel-link">Why this decision? <span>↗</span></button>
+          </section>
+          <section class="panel research-panel" id="researchPanel">
+            <div class="panel-head"><div><span class="panel-index">09</span><h2>Methods & evidence</h2></div><span class="panel-meta">SOURCE-PINNED CANDIDATES</span></div>
+            <div id="methodCards" class="method-cards"></div>
+            <button id="catalogDetails" class="panel-link">View research catalog <span>↗</span></button>
+          </section>
+          <section class="panel geometry-panel" id="geometryPanel">
+            <div class="panel-head"><div><span class="panel-index">10</span><h2>Spatial checks</h2></div><span id="geometryBadge" class="badge"></span></div>
+            <div id="geometry" class="geometry"></div>
+            <div class="panel-foot">Array-grid validation. Physical coordinate consistency remains unverified.</div>
+          </section>
+          <section class="panel event-panel" id="eventPanel">
+            <div class="panel-head"><div><span class="panel-index">11</span><h2>Execution log</h2></div><div class="event-actions"><select id="eventFilter" aria-label="Filter execution log"><option value="all">All events</option><option value="training">Training</option><option value="decision">Decisions</option><option value="validation">Validation</option></select><button id="download" class="text-button"><span data-icon="download"></span>Export JSON</button></div></div>
+            <div id="events" class="event-list"></div>
+          </section>
+        </div>
+      </div>
+      <footer><span>UniBrain Agent <span class="footer-separator">/</span> Local research prototype</span><span id="footerMeta">Original UniBrain code preserved</span></footer>
+    </main>
+  </div>
+  <dialog id="detailDialog"><div class="dialog-head"><div><div id="dialogEyebrow" class="eyebrow">EXPERIMENT DETAILS</div><h2 id="dialogTitle"></h2></div><button class="icon-button" id="closeDialog" aria-label="Close details">×</button></div><div id="dialogBody" class="dialog-body"></div></dialog>
+  <script id="reportData" type="application/json">__REPORT_JSON__</script>
+  <script>__SCRIPT__</script>
+  <script>__EDITOR_SCRIPT__</script>
+</body>
+</html>
