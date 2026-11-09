@@ -76,6 +76,8 @@ python -m unibrain_agent prepare catalog/example_selection.json --backend rules
 python -m unibrain_agent run --build-id BUILD_ID --backend rules --steps 2
 ```
 
+The recorded sample check in `catalog/integration_checks.json` covers 16 configurations and 14 research methods. `catalog/example_run.json` records a Codex driven five method composition: it trained successfully, then restored the baseline because validation loss and compute exceeded the configured limits.
+
 `check_adapters.py` executes each supported adapter in a complete sample pipeline. It requires downloaded sources and sample data and takes several minutes. GitHub Actions runs the smaller unit and API contract checks. A successful isolated or single adapter check does not certify arbitrary combinations; each selected combination is tested again.
 
 `catalog/research.json` preserves the English workbook entries, source workbook hash and excluded candidates. `scripts/import_workbook.py` updates it from an authorized workbook without editing that workbook. `catalog/sources.json` pins the upstream commits and normalized file hashes.

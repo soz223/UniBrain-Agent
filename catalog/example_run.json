@@ -1,0 +1,132 @@
+{
+  "date": "2026-11-09",
+  "scope": "Two training steps per branch and five validation examples. Public sample, random initialization, compact CPU profile.",
+  "backend": "codex",
+  "selection": {
+    "denoising": "none",
+    "bias": "none",
+    "extraction": "M02",
+    "normalization": "none",
+    "registration": "M06",
+    "segmentation": "M08",
+    "parcellation": "soft_atlas",
+    "graph": "M11",
+    "classification": "M12",
+    "surface": "none"
+  },
+  "gate": {
+    "decision": "revert",
+    "reasons": [
+      "Validation reference loss exceeds the prototype tolerance",
+      "Training time exceeds the prototype cost budget"
+    ],
+    "loss_ratio": 1.1664803444081457,
+    "cost_ratio": 4.931412243342128,
+    "thresholds": {
+      "max_loss_ratio": 1.1,
+      "max_cost_ratio": 4.0
+    },
+    "scope": "Provisional engineering decision on five validation examples, not evidence of generalization"
+  },
+  "active_parameter_updates": {
+    "ext_net": 91577,
+    "reg_net": 46588,
+    "seg_net": 21568,
+    "feature_net": 7078111,
+    "graph_gen": 545,
+    "gnn_pred": 556956
+  },
+  "spatial": {
+    "finite": true,
+    "affine_determinant": 1.0008172988891602,
+    "out_of_bounds_fraction": 0.017749927937984467,
+    "atlas_probability_sum_error": 1.1920928955078125e-07,
+    "shape_preserved": true,
+    "passed": true,
+    "physical_coordinates_verified": false,
+    "folding_fraction": 0.0,
+    "inverse_cycle_max_error": 4.76837158203125e-07,
+    "minimum_grid_jacobian": 0.9992058873176575
+  },
+  "agent_roles": [
+    "composition",
+    "coordination",
+    "review"
+  ],
+  "classification_gradients": {
+    "denoise_net": {
+      "state": "inactive",
+      "norm": 0.0,
+      "parameter_tensors": 0,
+      "connected_tensors": 0,
+      "nonzero_tensors": 0
+    },
+    "bias_net": {
+      "state": "inactive",
+      "norm": 0.0,
+      "parameter_tensors": 0,
+      "connected_tensors": 0,
+      "nonzero_tensors": 0
+    },
+    "norm_net": {
+      "state": "inactive",
+      "norm": 0.0,
+      "parameter_tensors": 0,
+      "connected_tensors": 0,
+      "nonzero_tensors": 0
+    },
+    "ext_net": {
+      "state": "active",
+      "norm": 4.3198044340057354e-09,
+      "parameter_tensors": 38,
+      "connected_tensors": 38,
+      "nonzero_tensors": 38
+    },
+    "reg_net": {
+      "state": "active",
+      "norm": 0.00018654409077331296,
+      "parameter_tensors": 40,
+      "connected_tensors": 40,
+      "nonzero_tensors": 40
+    },
+    "seg_net": {
+      "state": "disconnected",
+      "norm": 0.0,
+      "parameter_tensors": 48,
+      "connected_tensors": 0,
+      "nonzero_tensors": 0
+    },
+    "par_net": {
+      "state": "inactive",
+      "norm": 0.0,
+      "parameter_tensors": 0,
+      "connected_tensors": 0,
+      "nonzero_tensors": 0
+    },
+    "feature_net": {
+      "state": "active",
+      "norm": 0.003305552554781786,
+      "parameter_tensors": 6,
+      "connected_tensors": 6,
+      "nonzero_tensors": 6
+    },
+    "graph_gen": {
+      "state": "active",
+      "norm": 0.01507775383824489,
+      "parameter_tensors": 4,
+      "connected_tensors": 4,
+      "nonzero_tensors": 4
+    },
+    "gnn_pred": {
+      "state": "active",
+      "norm": 1.1169270776466778,
+      "parameter_tensors": 18,
+      "connected_tensors": 18,
+      "nonzero_tensors": 18
+    }
+  },
+  "edge_gradient": {
+    "connected": true,
+    "norm": 0.004870486445724964
+  }
+}

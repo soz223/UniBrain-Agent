@@ -936,5 +936,10 @@
   ],
   "fixes": [
     "Scoped the functional dropout compatibility patch to F.dropout; HighResNet module calls remain unchanged."
-  ]
+  ],
+  "environment": {
+    "python": "3.12.14",
+    "torch": "2.14.1+cpu",
+    "device": "cpu"
+  }
 }
