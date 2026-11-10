@@ -192,7 +192,7 @@ def _train_branch(model, train, val, template, steps, seed, folder, name, emit, 
     return result
 
 
-def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_event=None, build_dir=None, comparison=True, device=None, coordination="single"):
+def run(backend="configured", steps=5, seed=17, data_dir=None, output_dir=None, on_event=None, build_dir=None, comparison=True, device=None, coordination="single"):
     if coordination not in {"single", "roles"}:
         raise ValueError("Unknown training coordination mode")
     if steps < 2:

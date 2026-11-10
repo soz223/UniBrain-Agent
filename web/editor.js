@@ -196,7 +196,7 @@ async function prepareSelection() {
   if (buildBusy) return;
   showBuild({ status: "queued", selection: { ...draft }, created: new Date().toISOString(), events: [] });
   try {
-    const value = await requestJson("/api/prepare", { selection: draft, backend: "codex" });
+    const value = await requestJson("/api/prepare", { selection: draft, backend: "configured" });
     sessionStorage.setItem(buildKey, value.build_id);
     sessionStorage.removeItem(draftKey);
     await pollBuild(value.build_id);

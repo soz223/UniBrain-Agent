@@ -1,12 +1,11 @@
 import json
 import hashlib
 import math
-import shutil
-import subprocess
 import time
 from pathlib import Path
 
 from .pipeline import TASKS
+from .providers import invoke, provider_settings
 
 
 def object_schema(properties):
@@ -29,9 +28,10 @@ REVIEW_SCHEMA = object_schema({
 
 class Agent:
     def __init__(self, backend, folder, emit, coordination="single"):
-        if backend not in {"codex", "rules"}:
-            raise ValueError("Backend must be codex or rules")
+        if backend not in {"configured", "codex", "rules"}:
+            raise ValueError("Backend must be configured, codex or rules")
         self.backend, self.folder, self.emit = backend, Path(folder), emit
+        self.provider = provider_settings().snapshot(None if backend == "configured" else "codex") if backend != "rules" else None
         self.calls = []
         self.coordination = coordination
 
@@ -41,13 +41,7 @@ class Agent:
             elapsed = 0.0
             usage = None
         else:
-            executable = shutil.which("codex")
-            if not executable:
-                raise RuntimeError("Codex CLI is unavailable. Install/login or select the explicit rules backend.")
             self.folder.mkdir(parents=True, exist_ok=True)
-            schema_path = self.folder / f"{role}.schema.json"
-            output_path = self.folder / f"{role}.json"
-            schema_path.write_text(json.dumps(schema), encoding="utf-8")
             prompt = (
                 "You are the " + role + " component of a UniBrain Agent prototype. "
                 "Return only the requested JSON. All prose in JSON must be concise English. "
@@ -58,32 +52,18 @@ class Agent:
                 (instructions or "") + "\nEvidence and request:\n" + json.dumps(context)
             )
             (self.folder / f"{role}.prompt.txt").write_text(prompt, encoding="utf-8")
-            command = [executable, "exec", "--ignore-user-config", "--sandbox", "read-only", "--ephemeral",
-                       "--skip-git-repo-check", "--json", "--output-schema", str(schema_path.resolve()),
-                       "--output-last-message", str(output_path.resolve()), "-"]
             start = time.perf_counter()
-            self.emit("agent", f"{role.title()} agent is reviewing the experiment", role=role, backend=self.backend)
-            completed = subprocess.run(command, input=prompt, text=True, encoding="utf-8", errors="replace",
-                                       capture_output=True, timeout=240, cwd=self.folder,
-                                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            self.emit("agent", f"{role.title()} agent is reviewing the experiment", role=role,
+                      backend=self.provider["provider"], model=self.provider["model"] or "CLI default")
+            result, usage = invoke(self.provider, prompt, schema, self.folder, role)
             elapsed = time.perf_counter() - start
-            (self.folder / f"{role}.events.jsonl").write_text(completed.stdout, encoding="utf-8")
-            if completed.returncode or not output_path.exists():
-                raise RuntimeError(f"{role} failed; no silent rules fallback: {completed.stderr[-1200:]}")
-            result = json.loads(output_path.read_text(encoding="utf-8-sig"))
-            usage = None
-            for line in completed.stdout.splitlines():
-                try:
-                    event = json.loads(line)
-                    if event.get("type") == "turn.completed":
-                        usage = event.get("usage")
-                except json.JSONDecodeError:
-                    continue
         validate_decision(result, schema)
-        self.calls.append({"role": role, "backend": self.backend, "seconds": elapsed, "usage": usage,
+        actual = self.provider["provider"] if self.provider else "rules"
+        self.calls.append({"role": role, "backend": actual, "model": self.provider["model"] or "CLI default" if self.provider else None,
+                           "seconds": elapsed, "usage": usage,
                            "role_prompt_sha256": hashlib.sha256(instructions.encode()).hexdigest() if instructions else None,
                            "decision": result})
-        self.emit("decision", f"{role.title()} decision recorded", role=role, backend=self.backend,
+        self.emit("decision", f"{role.title()} decision recorded", role=role, backend=actual,
                   decision=result, duration=elapsed, usage=usage)
         return result
 

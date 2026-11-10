@@ -110,7 +110,7 @@ def save(path, value):
 
 
 class AssistantWorkspace:
-    def __init__(self, folder=ASSISTANT, backend="codex"):
+    def __init__(self, folder=ASSISTANT, backend="configured"):
         self.folder, self.backend = Path(folder), backend
         self.lock = threading.Lock()
         self.active = None

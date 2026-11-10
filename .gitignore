@@ -12,3 +12,5 @@ builds/
 .pytest_cache/
 qa/
 assistant_sessions/
+ai.local.json
+ai.local.tmp

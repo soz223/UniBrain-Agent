@@ -11,10 +11,12 @@ from .live import RunMonitor
 from .report import document, landing, previews, volume_slice
 
 
-def create_server(port=8773):
+def create_server(port=8775):
     from .assistant_workspace import AssistantWorkspace
+    from .providers import provider_settings, login_status
     assistant = AssistantWorkspace()
-    state = {"app": "unibrain_agent", "version": "0.6", "running": False, "completed": False,
+    ai = provider_settings()
+    state = {"app": "unibrain_agent", "version": "0.7", "running": False, "completed": False,
              "message": "Ready", "error": None, "job": None, "build_id": None}
     lock = threading.Lock()
     monitor = RunMonitor()
@@ -94,6 +96,11 @@ def create_server(port=8773):
                 elif path == "/api/runtime":
                     from .runtime import settings
                     self.respond(settings())
+                elif path == "/api/ai":
+                    self.respond(ai.public())
+                elif path == "/api/ai/login":
+                    query = parse_qs(urlsplit(self.path).query)
+                    self.respond(login_status(query.get("provider", [""])[0]))
                 elif path == "/api/assistant":
                     self.respond(assistant.state())
                 elif path.startswith("/api/assistant/jobs/"):
@@ -137,11 +144,21 @@ def create_server(port=8773):
                 body = json.loads(self.rfile.read(length))
                 if not isinstance(body, dict):
                     raise ValueError("Expected a JSON object")
+                if self.path in {"/api/ai/settings", "/api/ai/test"}:
+                    with lock, assistant.lock:
+                        if state["running"] or assistant.active:
+                            self.respond({"error": "Wait for the current build, run or assistant request to finish"}, 409)
+                            return
+                        self.respond(ai.update(body) if self.path.endswith("settings") else ai.start_test(),
+                                     200 if self.path.endswith("settings") else 202)
+                    return
                 if self.path == "/api/assistant":
+                    if ai.public()["test"]["status"] == "running":
+                        raise ValueError("Wait for the connection test to finish")
                     self.respond(assistant.submit(body), 202)
                     return
-                backend, steps = body.get("backend", "codex"), body.get("steps", 5)
-                if backend not in {"codex", "rules"} or type(steps) is not int or not 2 <= steps <= 20:
+                backend, steps = body.get("backend", "configured"), body.get("steps", 5)
+                if backend not in {"configured", "codex", "rules"} or type(steps) is not int or not 2 <= steps <= 20:
                     raise ValueError("Invalid backend or step budget")
                 folder = None
                 coordination = body.get("coordination", "single")
@@ -163,6 +180,8 @@ def create_server(port=8773):
                     self.respond({"error": "Not found"}, 404)
                     return
                 with lock:
+                    if ai.public()["test"]["status"] == "running":
+                        raise ValueError("Wait for the connection test to finish")
                     if state["running"]:
                         self.respond({"error": "A build or experiment is already running"}, 409)
                         return
@@ -189,7 +208,7 @@ def create_server(port=8773):
     return server
 
 
-def serve(port=8773, open_browser=False):
+def serve(port=8775, open_browser=False):
     server = create_server(port)
     print(f"UniBrain Agent: http://127.0.0.1:{server.server_port}", flush=True)
     if open_browser:

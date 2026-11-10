@@ -13,11 +13,13 @@ python -m venv .venv
 .venv/Scripts/python.exe -m unibrain_agent serve --open
 ```
 
-The dashboard opens at http://127.0.0.1:8773. Subsequent Windows launches can use `Launch UniBrain Agent.cmd`. Linux uses `.venv/bin/python` or `bash launch.sh`. See [deployment instructions](docs/deployment.md) for Linux setup, external cohorts, GPU selection, remote access and CPU development.
+The dashboard opens at http://127.0.0.1:8775. Subsequent Windows launches can use `Launch UniBrain Agent.cmd`. Linux uses `.venv/bin/python` or `bash launch.sh`. See [deployment instructions](docs/deployment.md) for Linux setup, external cohorts, GPU selection, remote access and CPU development.
 
 The bootstrap script downloads pinned source files and the original public UniBrain examples. It does not download pretrained weights. Upstream licenses remain with their source files. A partial source fetch can be requested with `--source reg_unibrain`.
 
-The original workflow does not require an agent login. Custom compositions use Codex CLI with an existing login; `--backend rules` is available through the CLI for an explicit offline test. A failed Codex invocation never silently falls back to rules. Prompts contain the catalog and aggregate diagnostics; MRI arrays and subject records stay local.
+The original workflow does not require an agent login. Custom compositions use the provider selected in **AI settings**, initially Codex CLI with its existing login. `--backend rules` is available through the CLI for an explicit offline test. A failed model invocation never silently falls back to rules. Prompts contain the catalog and aggregate diagnostics; MRI arrays and subject records stay local.
+
+**AI settings** supports Codex CLI, Claude Code, OpenAI API, Anthropic API and an OpenAI compatible endpoint. It includes official CLI sign-in instructions, login status, model selection and a real connection test. API keys entered in the page stay in backend memory; environment variables support persistent deployments. See [AI connections and deployment](docs/deployment.md). GitHub Pages alone cannot execute the Python backend or training; the supported private deployment runs the complete application on your computer or GPU server.
 
 ## Choose, validate, run
 
@@ -38,7 +40,7 @@ Open **Training roles** for extraction, registration, segmentation and classific
 
 For a custom pipeline, enable **Use training roles** before **Confirm & run**. The executor measures task gradients before optimizer update 2, calls the four specialists and coordinator, then either retains the weights or applies bounded gradient-norm balancing. The applied decision, before/after weights and role calls appear in the run record. Original reproduction keeps this switch disabled. This is prompt based coordination; a TaskForce reinforcement learning policy, gradient projection and performance improvement are not claimed.
 
-Prompts live in [`prompts`](prompts), and prepared builds pin their hashes. Conversations and execution transcripts stay in the ignored `assistant_sessions` directory, configurable through `UNIBRAIN_ASSISTANT`. The server uses the existing Codex CLI login and does not send MRI arrays or subject records to the role prompts. Public metadata queries contain stage terms and question keywords. No agent silently falls back to the rules backend.
+Prompts live in [`prompts`](prompts), and prepared builds pin their hashes. Conversations and execution transcripts stay in the ignored `assistant_sessions` directory, configurable through `UNIBRAIN_ASSISTANT`. The server uses the configured AI provider and does not send MRI arrays or subject records to the role prompts. Public metadata queries contain stage terms and question keywords. No agent silently falls back to the rules backend.
 
 The [assistant verification record](catalog/assistant_verification.json) documents a live literature search, follow-up conversation, advisory role review and CUDA sample run with five actual model calls. Integration follows [Codex structured execution](https://learn.chatgpt.com/docs/non-interactive-mode) and [Crossref metadata retrieval](https://www.crossref.org/documentation/retrieve-metadata/rest-api/tips-for-using-the-crossref-rest-api/).
 

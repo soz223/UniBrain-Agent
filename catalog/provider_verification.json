@@ -1,0 +1,40 @@
+{
+  "date": "2026-11-10",
+  "connection_test": {
+    "status": "complete",
+    "message": "Connected. The model returned valid structured output.",
+    "usage": {
+      "input_tokens": 17936,
+      "cached_input_tokens": 0,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 15,
+      "reasoning_output_tokens": 0
+    },
+    "provider": "codex",
+    "seconds": 5.67
+  },
+  "configured_build": {
+    "id": "20261110_121504_6ac530dc",
+    "status": "ready",
+    "backend": "configured",
+    "actual_provider": "codex",
+    "model": "CLI default",
+    "calls": 1,
+    "gradient_preflight_passed": true
+  },
+  "local_unit_tests": 44,
+  "ui_checks": [
+    "Provider selection",
+    "CLI login status",
+    "Official sign-in instructions",
+    "API fields",
+    "Save connection",
+    "Actual Codex connection test"
+  ],
+  "scope": [
+    "Codex tested with an existing login.",
+    "Claude Code and API transports have protocol tests; live accounts were not available.",
+    "No public site or multi-user authentication was deployed.",
+    "API keys stay in process memory or backend environment; preferences contain no keys."
+  ]
+}

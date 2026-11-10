@@ -1,0 +1,20 @@
+<section id="settingsView" data-workspace="settings" class="assistant-view" hidden>
+  <div class="heading-row"><div><h1>AI settings</h1><p class="muted">Your account. Your model. One connection for every role.</p></div></div>
+  <div id="aiCurrent" class="ai-current" role="status">Loading connection settings…</div>
+  <form id="aiSettingsForm" class="ai-form">
+    <label>Connection<select id="aiProvider" aria-label="AI provider"></select></label>
+    <div id="aiCliDetails" class="ai-login-card"><div><strong id="aiLoginTitle">Account connection</strong><p id="aiLoginStatus">Refresh to check the login on the backend machine.</p></div><div class="ai-buttons"><button type="button" id="aiLoginHelp" class="text-button">Sign-in instructions ↗</button><button type="button" id="aiRefreshLogin" class="text-button">Check login</button></div></div>
+    <label>Model ID<input id="aiModel" aria-label="Model ID" type="text" maxlength="160" autocomplete="off" placeholder="Leave empty to use the CLI default"></label>
+    <div id="aiApiFields" hidden>
+      <label>API base URL<input id="aiBaseUrl" aria-label="API base URL" type="url" maxlength="500" autocomplete="off"></label>
+      <label>API key<input id="aiKey" aria-label="API key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Leave empty to keep the current session key"></label>
+      <p id="aiKeyStatus" class="disclosure-note"></p>
+      <label class="check"><input id="aiClearKey" type="checkbox">Forget the saved session key</label>
+      <p class="disclosure-note">Keys entered here stay in backend memory until restart. For persistent setup, use the environment variable shown above. Keys are never returned to this page.</p>
+    </div>
+    <div class="ai-buttons"><button id="aiSave" class="primary" type="submit">Save connection</button><button id="aiTest" type="button">Test connection</button></div>
+    <p class="disclosure-note">A test sends a small request to the saved connection and may consume your provider quota.</p>
+  </form>
+  <div id="aiFeedback" class="assistant-progress" hidden role="status" aria-live="polite"></div>
+  <details class="disclosure ai-deployment"><summary>Where does this run?</summary><p>The browser displays the workspace. The Python backend handles research, model requests and training on your chosen computer or GPU server.</p><p>GitHub Pages can host a static frontend, but cannot run Python, Codex, Claude Code or GPU jobs. This version uses a private backend and SSH forwarding. A public multi-user service needs separate authentication, user isolation and an authenticated API.</p><p>CLI login belongs to the account running the backend. On a remote server, sign in there. This page does not embed a third-party OAuth login.</p></details>
+</section>

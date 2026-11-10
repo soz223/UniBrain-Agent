@@ -34,7 +34,7 @@ def read_build(identifier):
 
 
 def create_build(selection, backend):
-    if backend not in {"codex", "rules"}:
+    if backend not in {"configured", "codex", "rules"}:
         raise ValueError("Invalid agent backend")
     # A catalog choice may be incompatible with the current data; record the failure in prepare().
     identifier = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid4().hex[:8]

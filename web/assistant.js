@@ -160,7 +160,7 @@ async function initializeAssistant() {
   byId('researchPrompt').onclick = () => showDetails('Researcher prompt','<pre class="prompt-content">'+escapeHtml(assistantConfig?.research_prompt || 'Loading…')+'</pre>');
   byId('inspectRoleEvidence').onclick = () => showDetails('Measured context','<pre class="prompt-content">'+escapeHtml(JSON.stringify(rolesJob?.context || assistantConfig?.context,null,2))+'</pre>','AGGREGATE MEASUREMENTS');
   window.addEventListener('trainingtelemetry', event => updateTrainingTeam(event.detail));
-  openWorkspace(['#research','#roles'].includes(location.hash) ? location.hash.slice(1) : 'pipeline');
+  openWorkspace(['#research','#roles','#settings'].includes(location.hash) ? location.hash.slice(1) : 'pipeline');
   if (location.protocol === 'file:') return;
   try {
     [assistantConfig,assistantLibrary] = await Promise.all([requestJson('/api/assistant'),requestJson('/api/catalog')]);
