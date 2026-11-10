@@ -16,6 +16,9 @@ STAGES = [
 ]
 DEFAULTS = {stage: choices[0] for stage, _, _, choices in STAGES}
 ADAPTER_DEFAULTS = {**DEFAULTS, "parcellation": "soft_atlas", "graph": "continuous"}
+ORIGINAL_METHODS = {"extraction": "3D U Net mask", "registration": "CNN affine cascade",
+                    "segmentation": "3D U Net, 4 classes", "parcellation": "Nearest atlas transfer",
+                    "graph": "Cosine similarity graph", "classification": "Two layer GCN"}
 
 
 def original_selection(selection):
@@ -62,11 +65,14 @@ def catalog():
                 label = "UniBrain atlas transfer (nearest labels)"
             elif choice == "unibrain" and key == "graph":
                 label = "UniBrain cosine graph (original edge augmentation)"
+            if choice == "unibrain":
+                label = ORIGINAL_METHODS[key] + " (UniBrain original)"
             description = {"none": "This optional stage is skipped.",
                            "unibrain": "Original upstream component in the full UniBrain profile. Custom compositions use its declared compact adapter.",
                            "soft_atlas": "Differentiable atlas probability sampling for custom compositions.",
                            "continuous": "Continuous cosine adjacency without the original discrete edge perturbation."}
             options.append({"id": choice, "label": label or record["publication"], "research": record,
+                            "method": ORIGINAL_METHODS.get(key) if choice == "unibrain" else None,
                             "adaptation": ADAPTATIONS.get(choice, description.get(choice)),
                             "status": "requires_inputs" if choice == "M15" else "build_validation_required",
                             "selectable": True})

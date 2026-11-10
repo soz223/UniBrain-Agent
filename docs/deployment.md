@@ -6,7 +6,9 @@ The repository contains the application, pipeline compiler, execution workers, a
 
 The [public frontend](https://soz223.github.io/UniBrain-Agent/) is hosted on GitHub Pages. Python, the CLI agents, datasets and training run on your own backend. Open **AI settings**, enter the backend URL and access token, and click **Connect backend**. Changing the address moves the workspace to that backend. Disconnecting the browser does not cancel a running job.
 
-The backend address is remembered in browser local storage. The backend access token stays in that tab's session storage. AI API keys are sent only to the configured backend and are not stored in browser storage. Closing the tab can require entering the backend token again.
+The backend address is remembered in browser local storage. Public pages require a manual backend connection on every load; saved credentials do not reconnect automatically. The backend access token stays in tab session storage. AI API keys are sent only to the configured backend and are not stored in browser storage.
+
+AI access starts disconnected on every page load. After manually connecting the backend, save your own provider configuration and click **Connect my AI account**. This explicit action reads that backend's selected account and grants the page a temporary AI session. The session lives only in page memory and expires after eight hours at most. Reloading disconnects the page. Account identity queries and model calls require this session in addition to backend access. **Disconnect AI** revokes it without signing the backend CLI out.
 
 The public page includes the method catalog and role prompts. Before connecting, you can browse these choices; execution controls require a backend. Saved results, slices, conversations, account identity and job progress are retrieved through authenticated API calls. GitHub receives no backend token or AI key through this application.
 
@@ -20,7 +22,7 @@ Install the backend using the Linux instructions below. Generate a private token
 export UNIBRAIN_ACCESS_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(36))')"
 export UNIBRAIN_ALLOWED_ORIGINS=https://soz223.github.io
 export UNIBRAIN_PUBLIC_URL=https://gpu.example.edu
-python -m unibrain_agent serve --port 8776
+python -m unibrain_agent serve --port 8777
 ```
 
 Keep the token in your private service environment or secret manager. Enter the same token in **Backend access token**. An origin has no repository path: use `https://soz223.github.io`, not the full Pages project URL. Multiple permitted origins can be separated by commas. Wildcards are rejected. API calls require the bearer token whenever remote access is configured.
@@ -29,7 +31,7 @@ Put an HTTPS reverse proxy in front of the loopback Python service. For example,
 
 ```text
 gpu.example.edu {
-    reverse_proxy 127.0.0.1:8776
+    reverse_proxy 127.0.0.1:8777
 }
 ```
 
@@ -42,10 +44,10 @@ For a local Windows backend connected from Pages:
 ```powershell
 $env:UNIBRAIN_ACCESS_TOKEN = python -c 'import secrets; print(secrets.token_urlsafe(36))'
 $env:UNIBRAIN_ALLOWED_ORIGINS = 'https://soz223.github.io'
-python -m unibrain_agent serve --port 8776
+python -m unibrain_agent serve --port 8777
 ```
 
-Copy the generated value into the page's token field and use `http://127.0.0.1:8776`. Treat the token as a password. A strictly local combined UI and backend still works without these environment variables.
+Copy the generated value into the page's token field and use `http://127.0.0.1:8777`. Treat the token as a password. A strictly local combined UI and backend still works without these environment variables.
 
 ## Publish the frontend
 
@@ -60,7 +62,7 @@ For this local preview, also allow `http://127.0.0.1:8786` in the backend's `UNI
 
 ## Your AI connection
 
-Open **AI settings** in the sidebar. Select a provider card, optionally set a CLI model or enter an API model ID, save, then test. The account card automatically reads the official CLI's login status, email and plan when available. API providers show credential source instead of guessing an account identity. Research, role reviews and newly prepared custom builds use the selected connection. CLI `--backend configured` does the same; `--backend codex` explicitly selects Codex, and `--backend rules` is deterministic test mode.
+Open **AI settings** in the sidebar. Select a provider card, optionally set a CLI model or enter an API model ID, save, explicitly connect your account, then test. The account card reads the official CLI's login status, email and plan only after that connection. Saving different settings invalidates existing browser AI sessions. API providers show credential source instead of guessing an account identity. Research, data discussions, role reviews and newly prepared custom builds use the selected connection. CLI `--backend configured` does the same; `--backend codex` explicitly selects Codex, and `--backend rules` is deterministic test mode.
 
 * **Codex CLI:** install the official CLI on the backend machine, run `codex login`, and complete its official authentication flow. The page provides sign-in instructions and login checks. A headless host can use `codex login --device-auth` where available. The application uses that machine's login, not a bundled account. See [Codex authentication](https://learn.chatgpt.com/docs/auth?surface=cli).
 * **Claude Code:** install a current official CLI on the backend machine, run `claude auth login`, and complete sign-in. The adapter requires `--safe-mode`, `--json-schema` and `--no-session-persistence`; it disables built-in and MCP tools for evidence-only decisions. See the [CLI reference](https://code.claude.com/docs/en/cli-reference). The page reuses this login; it does not implement a separate OAuth application.
@@ -85,10 +87,10 @@ python3.10 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-upstream.txt -r requirements.txt
 python scripts/bootstrap.py --source reg_unibrain --samples
-python -m unibrain_agent serve --port 8776
+python -m unibrain_agent serve --port 8777
 ```
 
-Open `http://127.0.0.1:8776`. The initial pipeline uses the full original UniBrain: original extraction, five registration stages, segmentation, nearest atlas transfer, cosine graph with original edge perturbation, and GCN. Optional stages start skipped. The original architecture, loss equations, augmentation and optimizer are preserved. The default two epoch budget exercises training, validation and checkpoint saving; the upstream paper schedule is 1000 epochs.
+Open `http://127.0.0.1:8777`. The initial pipeline uses the full original UniBrain: original extraction, five registration stages, segmentation, nearest atlas transfer, cosine graph with original edge perturbation, and GCN. Optional stages start skipped. The original architecture, loss equations, augmentation and optimizer are preserved. The default two epoch budget exercises training, validation and checkpoint saving; the upstream paper schedule is 1000 epochs.
 
 The original CUDA workflow runs in a separate process. It never silently uses the compact adapters when CUDA or dependencies are missing. The original trainer's existing behavior, including its mode handling after validation, is retained.
 
@@ -133,7 +135,7 @@ Environment overrides: `UNIBRAIN_SOURCES`, `UNIBRAIN_ORIGINAL_SOURCE`, `UNIBRAIN
 The server binds to loopback by default. You can access the combined UI through an SSH tunnel instead of configuring a public HTTPS endpoint:
 
 ```bash
-ssh -L 8776:127.0.0.1:8776 user@server
+ssh -L 8777:127.0.0.1:8777 user@server
 ```
 
 Open the local forwarded URL. No publicly exposed service or web login is required. On clusters, use an allocated compute node and the institution's SSH routing.

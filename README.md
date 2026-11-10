@@ -13,7 +13,7 @@ python -m venv .venv
 .venv/Scripts/python.exe -m unibrain_agent serve --open
 ```
 
-The dashboard opens at http://127.0.0.1:8776. Subsequent Windows launches can use `Launch UniBrain Agent.cmd`. Linux uses `.venv/bin/python` or `bash launch.sh`. See [deployment instructions](docs/deployment.md) for Linux setup, external cohorts, GPU selection, remote access and CPU development.
+The dashboard opens at http://127.0.0.1:8777. Subsequent Windows launches can use `Launch UniBrain Agent.cmd`. Linux uses `.venv/bin/python` or `bash launch.sh`. See [deployment instructions](docs/deployment.md) for Linux setup, external cohorts, GPU selection, remote access and CPU development.
 
 The bootstrap script downloads pinned source files and the original public UniBrain examples. It does not download pretrained weights. Upstream licenses remain with their source files. A partial source fetch can be requested with `--source reg_unibrain`.
 
@@ -23,16 +23,24 @@ The original workflow does not require an agent login. Custom compositions use t
 
 The [GitHub Pages frontend](https://soz223.github.io/UniBrain-Agent/) runs independently of the Python backend. In **AI settings**, connect your workstation or HTTPS GPU server with its address and access token. All research, training, account and volume requests go to that server. The public frontend includes the application and method catalog; experiment data and credentials are loaded only after authentication. See [AI connections and deployment](docs/deployment.md) for setup.
 
+Public pages start disconnected on every load, even if an older backend address or token exists in browser storage. AI access starts disconnected in every page. After signing in through your own backend CLI or saving your API credentials, click **Connect my AI account**. The backend issues a separate temporary AI session; it rejects model calls and account identity queries without that session. **Disconnect AI** closes page access while keeping the backend CLI login intact.
+
+## Data build agent
+
+The main page now provides **Data build agent**. Inspect backend folders, discuss input and target requirements with the selected model, convert a declared NIfTI or DICOM manifest into UniBrain structured arrays, then attach the checked dataset to the pipeline. Source images remain unchanged. Conversion records physical geometry, label interpolation, exclusions and file hashes. Missing targets remain explicit blockers. See the [data agent guide](docs/data-agent.md) for its input contract, manifest and validation boundaries.
+
 ## Choose, validate, run
 
 1. A fresh workspace starts with UniBrain extraction, registration, segmentation, atlas transfer, cosine graph and GCN. Optional additions start skipped. Previous experiments do not become the default selection. **New UniBrain run** restores this configuration.
 2. **Prepare UniBrain** checks the pinned original source, CUDA environment and data paths. **Confirm & run** executes original `main.py` and `train.py` with the requested epoch budget. Full widths, five registration stages, original losses, augmentation and Adam are preserved. Original nearest label sampling, discrete edges and unused parcellation computations are also preserved.
 3. To modify the pipeline, select alternative tools and click **Apply changes**. This explicitly enters the compact adapter profile, enables the displayed soft atlas and continuous graph connections, generates `pipeline.py`, and tests two optimizer updates on one sample. Alternatives such as FBNetGen are optional. Run `python scripts/bootstrap.py` to fetch their pinned code.
-4. **Review code** shows the generated entry point, adapter changes and measured checks. Original prerequisite checks do not claim complete gradient connectivity.
+4. **Review Generated Code** is always visible and activates when code is generated. It shows the entry point, composition diff, actual registered implementations and source hashes, with a file download control. Original runs also expose the unchanged upstream model and training code. Original prerequisite checks do not claim complete gradient connectivity.
 5. **Confirm & run** immediately opens the live monitor. It shows optimizer progress, recorded losses, actual module calls, agent activity when applicable, CPU usage and memory. The original worker also reports allocated GPU memory. Resource metrics exclude separate agent processes and cloud inference.
 6. Inspect all 96 slices. **What is learning?** shows measured loss connectivity for adapters, or observed original parameter updates for native runs. Expand calls, the notebook, validation or source checks as needed. Completion does not imply improved performance.
 
 The original and custom adapter profiles are explicitly separate. The CLI retains paired adapter comparisons for explicit comparison work; the dashboard runs only the selected pipeline. The sidebar contains pipeline navigation, a reset to UniBrain and runtime information.
+
+The numeric training budget supports 2 through 1000. It means full epochs for the original trainer and optimizer steps for the compact adapter runner; the label changes accordingly. Defaults remain 2 original epochs or 5 adapter steps. Pending changes appear in amber, active work in blue with a spinner, validated builds in green and failures in red.
 
 ## Research conversations and training roles
 

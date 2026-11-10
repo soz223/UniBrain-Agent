@@ -122,6 +122,7 @@ async function pollAssistant(id, mode) {
 }
 
 async function submitAssistant(mode, role = 'all') {
+  if (!aiSession) {openWorkspace("settings");aiNotice("Connect your own AI account before starting an agent.");return;}
   if (assistantBusy) return;
   if (!backend.connected) {openWorkspace("settings");return;}
   const message = mode === 'research' ? byId('researchInput').value.trim() : 'Review the available task evidence and recommend the next training action.';

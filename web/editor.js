@@ -20,11 +20,11 @@ function chosenOption(stage, selection = draft) {
 }
 
 function toolName(option) {
-  return { none: "Skip", unibrain: "UniBrain", soft_atlas: "Soft atlas", continuous: "Cosine graph" }[option.id] || option.label.split(" (")[0];
+  return option.method || { none: "Skip", soft_atlas: "Soft atlas", continuous: "Cosine graph" }[option.id] || option.label.split(" (")[0];
 }
 
 function renderChoices() {
-  byId("profileLabel").innerHTML = isOriginal() ? 'Original UniBrain<br><small>Full architecture</small>' : 'Custom pipeline<br><small>Compact adapters</small>';
+  byId("profileLabel").textContent = '⚙ Customizable pipeline';
   byId("budgetLabel").textContent = isOriginal() ? "Epochs" : "Steps";
   byId("prepareBuild").textContent = isOriginal() ? "Prepare UniBrain" : "Apply changes";
   byId("resetPipeline").disabled = buildBusy;
@@ -41,7 +41,7 @@ function renderChoices() {
       '" aria-label="' + escapeHtml(stage.name + ": " + toolName(option) + ". Change tool") + '"' + (buildBusy ? " disabled" : "") +
       '><span class="stage-top"><span class="stage-number">' + (index === null ? "↳" : String(index + 1).padStart(2, "0")) +
       '</span><strong>' + escapeHtml(stageNames[stage.id] || stage.name) + '</strong>' + (optional ? '<small>optional</small>' : "") +
-      '</span><span class="stage-tool"><span>' + (skipped ? "○ " : "✓ ") + escapeHtml(toolName(option)) + '</span><span>⌄</span></span></button>';
+      '</span><span class="stage-tool"><span>' + (skipped ? "○ " : "✓ ") + escapeHtml(toolName(option)) + (option.id === "unibrain" ? '<small class="method-origin">(UniBrain original)</small>' : "") + '</span><span>⌄</span></span></button>';
   };
   byId("stageChoices").innerHTML = mainStages.map((id, index) => button(library.stages.find(stage => stage.id === id), index)).join("");
   byId("branchChoices").innerHTML = ["segmentation", "surface"].map(id => button(library.stages.find(stage => stage.id === id), null)).join("");
@@ -104,12 +104,11 @@ function selectTool(stageId, choice) {
   byId("detailDialog").close();
   renderChoices();
   byId("activityPanel").hidden = true;
-  byId("buildStatus").textContent = "Unapplied changes";
-  byId("buildStatus").className = "";
+  setBuildState("dirty", "Unapplied changes");
   byId("buildMessage").textContent = note;
   byId("confirmBuild").hidden = true;
   byId("prepareBuild").hidden = false;
-  byId("viewBuild").hidden = true;
+  byId("viewBuild").disabled = true;
 }
 
 function showActivity(record) {
@@ -143,20 +142,19 @@ function showBuild(record) {
   const titles = { queued: "Starting checks", preparing: "Agent is building your pipeline", validating: "Validating the training graph",
     ready: "Ready to run", failed: "Build needs attention" };
   if (record.profile === "original") titles.preparing = "Checking original UniBrain";
-  byId("buildStatus").textContent = titles[record.status] || record.status;
-  byId("buildStatus").className = record.status === "ready" ? "build-ready" : record.status === "failed" ? "build-failed" : "";
+  setBuildState(record.status === "ready" ? "ready" : record.status === "failed" ? "failed" : "working", titles[record.status] || record.status);
   byId("buildMessage").textContent = record.error || (record.status === "ready" ? record.profile === "original" ? "Original sources and CUDA runtime checked. Training verification runs after confirmation." : "Gradient, parameter update and spatial checks passed on one sample." :
     record.progress?.message || record.events?.at(-1)?.message || "Preparing selected stages");
   byId("prepareBuild").disabled = buildBusy;
   byId("prepareBuild").hidden = record.status === "ready" && matches;
   byId("confirmBuild").hidden = record.status !== "ready" || !matches;
   byId("confirmBuild").disabled = buildBusy || record.status !== "ready" || !matches;
-  byId("viewBuild").hidden = !record.code;
+  byId("viewBuild").hidden = false;
   byId("viewBuild").disabled = !record.code;
   showActivity(record);
   if (record.status === "ready" && report?.build?.id === record.id && report.status === "complete") {
     byId("activityPanel").hidden = true;
-    byId("buildStatus").textContent = "Ready for another run";
+    setBuildState("ready", "Ready for another run");
     byId("buildMessage").textContent = "Last run completed. Adjust the tools or run this pipeline again.";
   }
   renderChoices();
@@ -166,9 +164,9 @@ function showBuild(record) {
 function buildError(error) {
   buildBusy = false;
   activityStarted = null;
-  byId("buildStatus").textContent = "Build needs attention";
+  setBuildState("failed", "Build needs attention");
   byId("buildMessage").textContent = error.message;
-  byId("buildStatus").className = "build-failed";
+
   byId("activityPanel").classList.remove("is-working");
   byId("activityIcon").className = "activity-result";
   byId("activityIcon").textContent = "!";
@@ -189,6 +187,7 @@ async function pollBuild(identifier) {
 async function prepareSelection() {
   if (buildBusy) return;
   if (!backend.connected) {openWorkspace("settings");return;}
+  if (!isOriginal() && !aiSession) {openWorkspace("settings");aiNotice("Connect your AI account before generating a custom pipeline.");return;}
   showBuild({ status: "queued", selection: { ...draft }, created: new Date().toISOString(), events: [] });
   try {
     const value = await requestJson("/api/prepare", { selection: draft, backend: "configured" });
@@ -198,25 +197,29 @@ async function prepareSelection() {
   } catch (error) { buildError(error); }
 }
 
-function reviewBuild() {
-  if (!activeBuild) return;
-  const validation = activeBuild.validation;
-  let body = '<p>' + escapeHtml(activeBuild.plan?.rationale || "") + '</p><h3>Generated pipeline.py</h3><pre class="code-preview">' +
-    escapeHtml(activeBuild.code) + '</pre><h3>Changes from baseline</h3><pre class="code-preview">' + escapeHtml(activeBuild.diff) + '</pre>';
-  if (validation?.updates) body += '<h3>Measured parameter updates</h3>' + table(["Module", "Parameter tensors", "Updated tensors"],
-    Object.entries(validation.updates).map(([name, info]) => [escapeHtml(name), info.parameter_tensors, info.updated_tensors]));
-  body += '<p class="muted">' + escapeHtml(validation?.scope || activeBuild.error || "Validation in progress") + '</p>';
-  showDetails("Review the build", body, "BUILD " + activeBuild.id);
+async function reviewBuild() {
+  if (!activeBuild?.code) return;
+  showDetails('Review Generated Code','<p><span class="spinner"></span> Loading generated code and registered implementations…</p>','BUILD '+activeBuild.id);
+  try {
+    const review=await requestJson('/api/builds/'+activeBuild.id+'/code');
+    const files=[...review.files,{name:'Changes.diff',code:review.diff,kind:'Composition changes',sha256:''}];
+    byId('dialogBody').innerHTML='<p>'+escapeHtml(review.scope)+'</p><label class="code-file-label">File<select id="reviewFile" aria-label="Code file">'+files.map((file,i)=>'<option value="'+i+'">'+escapeHtml(file.name)+'</option>').join('')+'</select></label><p id="codeKind" class="muted"></p><pre id="reviewCode" class="code-preview"></pre><button id="downloadCode" class="text-button">Download this file ↧</button>';
+    const paint=()=>{const file=files[Number(byId('reviewFile').value)];byId('reviewCode').textContent=file.code;byId('codeKind').textContent=file.kind+(file.sha256?' · SHA256 '+file.sha256.slice(0,12):'');};
+    byId('reviewFile').onchange=paint;paint();
+    byId('downloadCode').onclick=()=>{const file=files[Number(byId('reviewFile').value)],url=URL.createObjectURL(new Blob([file.code],{type:'text/plain'})),link=document.createElement('a');link.href=url;link.download=file.name.split('/').at(-1);link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+  } catch(error) {byId('dialogBody').innerHTML='<p>'+escapeHtml(error.message)+'</p>';}
 }
 
 async function runBuild() {
   if (!activeBuild || activeBuild.status !== "ready" || buildBusy) return;
+  if (!byId("buildSteps").reportValidity()) return;
+  if (activeBuild.profile!=="original" && !aiSession) {openWorkspace("settings");aiNotice("Connect your AI account before running a custom pipeline.");return;}
   buildBusy = true;
   byId("confirmBuild").disabled = true;
   byId("prepareBuild").disabled = true;
   byId("buildSteps").disabled = true;
   byId("confirmBuild").textContent = "Running…";
-  byId("buildStatus").textContent = "Running, please wait";
+  setBuildState("working", "Running, please wait");
   byId("buildMessage").textContent = "Your selected pipeline is starting. Follow its progress below.";
   startLiveRun(Number(byId("buildSteps").value));
   renderChoices();
@@ -227,16 +230,28 @@ async function runBuild() {
   } catch (error) { setFailure(error); }
 }
 
+function setBuildState(state, label) {
+  const node=byId("buildStatus");
+  node.className="build-state "+state;
+  node.innerHTML=(state==='working'?'<span class="spinner"></span>': '<span aria-hidden="true">'+({dirty:'●',ready:'✓',failed:'!',idle:'○'}[state]||'○')+'</span>')+' '+escapeHtml(label);
+}
+
 async function initializeEditor() {
+  window.addEventListener('datasetchanged',()=>{
+    activeBuild=null;sessionStorage.removeItem(buildKey);
+    byId('confirmBuild').hidden=true;byId('viewBuild').disabled=true;byId('prepareBuild').hidden=false;
+    setBuildState('dirty','Dataset changed');
+    byId('buildMessage').textContent='Prepare the pipeline again to validate it with the attached dataset.';
+  });
   byId("resetPipeline").onclick = () => {
     if (buildBusy) return;
     draft = { ...library.defaults }; activeBuild = null;
     sessionStorage.removeItem(draftKey); sessionStorage.removeItem(buildKey);
     byId("buildSteps").value = "2";
-    byId("buildStatus").textContent = "Original UniBrain";
+    setBuildState("idle", "Ready to configure");
     byId("buildMessage").textContent = "Full original architecture, atlas transfer, cosine graph and GCN. Optional stages are skipped.";
     byId("prepareBuild").hidden = false; byId("confirmBuild").hidden = true;
-    byId("viewBuild").hidden = true; byId("activityPanel").hidden = true;
+    byId("viewBuild").disabled = true; byId("activityPanel").hidden = true;
     renderChoices();
   };
   byId("runtimeDetails").onclick = async () => {
@@ -275,7 +290,7 @@ async function initializeEditor() {
     renderChoices();
     if (report) renderMethods();
     const status = await requestJson("/api/status");
-    const previous = status.running ? status.build_id : null;
+    const previous = status.running ? status.build_id : sessionStorage.getItem(buildKey);
     if (previous) {
       try {
         const record = await requestJson("/api/builds/" + previous);
@@ -290,7 +305,7 @@ async function initializeEditor() {
       byId("prepareBuild").disabled = true;
       byId("buildSteps").disabled = true;
       byId("confirmBuild").textContent = "Running…";
-      byId("buildStatus").textContent = "Running, please wait";
+      setBuildState("working", "Running, please wait");
       byId("buildMessage").textContent = "Your selected pipeline is running. Follow its progress below.";
       byId("buildSteps").value = String(status.live?.epochs || (isOriginal() ? 2 : status.live?.steps || 5));
       byId("activityPanel").hidden = true;

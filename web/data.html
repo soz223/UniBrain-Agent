@@ -1,0 +1,15 @@
+<section id="dataPanel" class="panel data-panel" aria-label="Data build agent">
+  <div class="panel-head"><div><span class="settings-eyebrow">DATA → MODEL</span><h2>Data build agent</h2></div><span id="dataBadge" class="connection-pill">○ Not checked</span></div>
+  <p class="data-intro">Inspect your imaging sources, discuss the model requirements, and build a traceable training dataset.</p>
+  <div class="data-contract"><span>◫ 3D T1w</span><span>96 × 96 × 96</span><span>Brain · Tissue · AAL116</span><span>Binary target</span><button id="viewDataContract" class="text-button">View input contract ↗</button></div>
+  <details id="dataSetup" class="disclosure"><summary>Sources & conversion <span>Folders and manifests on your backend</span></summary>
+    <label class="data-field">Source folders<textarea id="dataSources" rows="2" placeholder="One backend folder per line. Leave empty to inspect the configured sample data." aria-label="Data source folders"></textarea></label>
+    <label class="data-field">Conversion manifest<input id="dataManifest" type="text" placeholder="/datasets/cohort/manifest.json" aria-label="Data manifest path"></label>
+    <p class="settings-note">NIfTI volumes and supplied annotations are resampled in physical coordinates. A selected DICOM series requires dcm2niix. Missing targets block conversion into the supervised training format.</p>
+    <div class="data-actions"><button id="inspectData" class="secondary">⌕ Inspect sources</button><button id="buildData" class="secondary">⚒ Build dataset</button><button id="dataExample" class="text-button">Manifest example ↗</button></div>
+  </details>
+  <form id="dataChatForm" class="data-chat-form"><label for="dataQuestion">Discuss data with the model</label><div class="data-input-row"><textarea id="dataQuestion" rows="2" maxlength="4000" placeholder="I have T1w scans from several sites. Which targets are missing, and how should I prepare them?" required></textarea><button id="askData" class="primary" type="submit">Ask data agent ↗</button></div><p class="settings-note">Only your question, aggregate checks and stage requirements go to the AI. Images, file paths and subject records stay on the backend.</p></form>
+  <div id="dataProgress" class="assistant-progress" role="status" aria-live="polite" hidden></div>
+  <div id="dataResult"></div>
+  <div id="selectedDataset" class="selected-dataset">○ Using the configured data source</div>
+</section>

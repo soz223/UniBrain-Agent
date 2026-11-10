@@ -87,12 +87,14 @@ class AssistantTests(unittest.TestCase):
     def test_async_http_endpoint_returns_a_saved_result(self):
         with tempfile.TemporaryDirectory() as folder:
             workspace=AssistantWorkspace(folder,"rules")
-            with patch("unibrain_agent.assistant_workspace.AssistantWorkspace",return_value=workspace):
+            with patch("unibrain_agent.assistant_workspace.AssistantWorkspace",return_value=workspace), patch("unibrain_agent.accounts.login_status",return_value={"authenticated":True}):
                 server=create_server(0)
             thread=threading.Thread(target=server.serve_forever,daemon=True); thread.start()
             base=f"http://127.0.0.1:{server.server_port}"
             try:
-                request=Request(base+'/api/assistant',data=json.dumps({"mode":"research","message":"Explain extraction","online":False}).encode(),headers={"Content-Type":"application/json"})
+                with urlopen(Request(base+'/api/ai/connect',data=b'{"confirm":true}',headers={"Content-Type":"application/json"})) as response:
+                    session=json.load(response)['session']
+                request=Request(base+'/api/assistant',data=json.dumps({"mode":"research","message":"Explain extraction","online":False}).encode(),headers={"Content-Type":"application/json","X-UniBrain-AI-Session":session})
                 with urlopen(request) as response:
                     self.assertEqual(response.status,202)
                     identifier=json.load(response)["id"]

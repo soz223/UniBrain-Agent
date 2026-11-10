@@ -15,3 +15,4 @@ assistant_sessions/
 ai.local.json
 ai.local.tmp
 dist/
+data_jobs/

@@ -33,7 +33,7 @@ def read_build(identifier):
     return record
 
 
-def create_build(selection, backend):
+def create_build(selection, backend, dataset=None):
     if backend not in {"configured", "codex", "rules"}:
         raise ValueError("Invalid agent backend")
     # A catalog choice may be incompatible with the current data; record the failure in prepare().
@@ -42,7 +42,7 @@ def create_build(selection, backend):
     folder.mkdir(parents=True)
     record = {"id": identifier, "status": "queued", "selection": selection, "backend": backend,
               "profile": "original" if original_selection(selection) else "composed",
-              "created": datetime.now(timezone.utc).isoformat(), "events": [], "error": None}
+              "created": datetime.now(timezone.utc).isoformat(), "events": [], "error": None, "dataset": dataset}
     write_json(folder / "build.json", record)
     return record
 
@@ -52,6 +52,31 @@ def generated_code(selection):
         return "from unibrain_agent.native import run_original\n\ndef run_pipeline(epochs=2):\n    return run_original(epochs=epochs)\n"
     return ("from unibrain_agent.composition import ComposedPipeline\n\n"
             "SELECTION = " + repr(selection) + "\n\n\ndef build_pipeline():\n    return ComposedPipeline(SELECTION)\n")
+
+
+def review_code(identifier):
+    record = read_build(identifier)
+    if not record.get("code"):
+        raise ValueError("Generate a pipeline before reviewing its code")
+    if digest(build_path(identifier) / "pipeline.py") != record["code_sha256"]:
+        raise ValueError("Generated file changed after preparation")
+    files = [{"name": "pipeline.py", "code": record["code"], "kind": "Generated entry point", "sha256": record["code_sha256"]}]
+    names = ["unibrain_agent/native.py", "scripts/run_upstream.py"] if record["profile"] == "original" else ["unibrain_agent/composition.py", "unibrain_agent/adapters.py", "unibrain_agent/pipeline.py"]
+    for name in names:
+        path = PROJECT / name
+        hashes = {key.replace("\\", "/"): value for key, value in record["implementation_hashes"].items()}
+        if digest(path) != hashes.get(name):
+            raise ValueError("Implementation changed; generate a new build before reviewing execution code")
+        files.append({"name": name, "code": path.read_text(encoding="utf-8"), "kind": "Registered execution code", "sha256": digest(path)})
+    if record["profile"] == "original":
+        from .native import verify_original
+        source = Path(record["runtime"]["original_source"])
+        verify_original(source)
+        for name in ("model.py", "train.py"):
+            path = source / name
+            files.append({"name": "upstream/" + name, "code": path.read_text(encoding="utf-8"), "kind": "Unchanged original source", "sha256": digest(path)})
+    return {"id": identifier, "files": files, "diff": record["diff"], "selection": record["selection"],
+            "scope": "Generated entry point and its actual registered implementations. Upstream source is unchanged."}
 
 
 def prepare(identifier, on_event=None):
@@ -71,6 +96,13 @@ def prepare(identifier, on_event=None):
         selection = validate_selection(record["selection"])
         from .runtime import settings
         record["runtime"] = settings()
+        if record.get("dataset"):
+            from .data_builder import audit_dataset
+            emit("data", "Rechecking the selected dataset and pinning its file hashes", phase="contracts")
+            audit = audit_dataset(record["dataset"]["path"])
+            if audit["files"] != record["dataset"]["audit"]["files"]:
+                raise ValueError("Dataset changed after the data checks. Inspect and attach it again.")
+            record["runtime"]["data"] = record["dataset"]["path"]
         if original_selection(selection):
             from .native import check_original_runtime, verify_original
             record["sources"] = verify_original(record["runtime"]["original_source"])
@@ -135,6 +167,10 @@ def verify_build(folder, ready=True):
         raise ValueError("Generated code differs from the registered composition")
     if digest(folder / "pipeline.py") != record["code_sha256"]:
         raise ValueError("Build code changed after preparation")
+    if record.get("dataset"):
+        for name, expected in record["dataset"]["audit"]["files"].items():
+            if digest(Path(record["runtime"]["data"]) / name) != expected:
+                raise ValueError("Training data changed after preparation. Build the pipeline again.")
     for name, expected in record["implementation_hashes"].items():
         if digest(PROJECT / name) != expected:
             raise ValueError("Implementation changed. Prepare the selection again before running.")

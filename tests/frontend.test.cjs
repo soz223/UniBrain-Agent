@@ -4,12 +4,12 @@ const {readFileSync}=require('node:fs');
 const vm=require('node:vm');
 const script=readFileSync('web/connection.js','utf8');
 
-function context(saved='',token='') {
+function context(saved='',token='',manual=false) {
   const calls=[];
   const sandbox={URL,Headers,AbortSignal,location:{protocol:'https:',origin:'https://soz223.github.io'},
     document:{getElementById:()=>({textContent:'{"standalone":true}'})},
-    localStorage:{getItem:()=>saved},sessionStorage:{getItem:()=>token},
-    fetch:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({app:'unibrain_agent',api_version:1})};}};
+    localStorage:{getItem:()=>saved},sessionStorage:{getItem:key=>key==='unibrainManualConnect'?(manual?saved:''):token,removeItem:()=>{}},
+    fetch:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({app:'unibrain_agent',api_version:2})};}};
   vm.createContext(sandbox);vm.runInContext(script,sandbox);return {sandbox,calls};
 }
 
@@ -17,7 +17,7 @@ test('a public frontend makes no backend request before configuration',async()=>
   const {sandbox,calls}=context();assert.equal(await vm.runInContext('backendReady',sandbox),false);assert.equal(calls.length,0);
 });
 test('configured requests use the backend prefix and bearer token, without cookies or redirects',async()=>{
-  const {sandbox,calls}=context('https://gpu.example/workspace','test-token');
+  const {sandbox,calls}=context('https://gpu.example/workspace','test-token',true);
   assert.equal(await vm.runInContext('backendReady',sandbox),true);
   assert.equal(calls[0].url,'https://gpu.example/workspace/api/status');
   assert.equal(calls[0].options.headers.get('Authorization'),'Bearer test-token');
@@ -28,4 +28,10 @@ test('credentials cannot be sent to an arbitrary URL or an insecure remote endpo
   assert.throws(()=>vm.runInContext("normalizeBackend('http://gpu.example')",sandbox));
   assert.throws(()=>vm.runInContext("normalizeBackend('https://key@gpu.example')",sandbox));
   await assert.rejects(vm.runInContext("backendFetch('https://other.example',{},{address:'https://gpu.example',token:'secret'})",sandbox));
+});
+
+test('public pages ignore old backend credentials until a manual connection',async()=>{
+  const {sandbox,calls}=context('https://gpu.example','previous-session-token');
+  assert.equal(await vm.runInContext('backendReady',sandbox),false);
+  assert.equal(calls.length,0);assert.equal(vm.runInContext('aiSession',sandbox),'');
 });

@@ -66,7 +66,7 @@ function renderLive(value) {
   byId("runTitle").textContent = titles[value.phase] || "Running, please wait";
   byId("runMessage").textContent = value.message || "Waiting for execution feedback";
   byId("runElapsed").textContent = duration(value.elapsed_seconds);
-  byId("snapshotLabel").textContent = runBusy ? "Live experiment" : failed ? "Run interrupted" : "Saved experiment";
+  byId("snapshotLabel").textContent = runBusy ? "◉ Training in progress" : failed ? "! Run interrupted" : "✓ Last run completed";
   const phases = ["preparing", "training", "audit", "validation", "saving"];
   const position = finished ? phases.length : value.phase === "coordination" ? 1 : Math.max(0, phases.indexOf(value.phase));
   byId("runPhases").innerHTML = ["Load pipeline", "Train", "Check gradients", "Validate", "Save"].map((label, i) => '<li class="' + (i < position ? "done" : i === position && !failed ? "current" : "") + '">' + (i < position ? "✓ " : "") + label + '</li>').join("");

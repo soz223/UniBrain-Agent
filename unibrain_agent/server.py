@@ -1,6 +1,8 @@
 import json
 import re
 import threading
+import secrets
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -12,16 +14,19 @@ from .report import document, landing, previews, volume_slice
 from .access import AccessPolicy
 
 
-def create_server(port=8776, host="127.0.0.1", access=None):
+def create_server(port=8777, host="127.0.0.1", access=None):
     from .assistant_workspace import AssistantWorkspace
     from .providers import provider_settings
     from .accounts import login_status, logout
+    from .data_workspace import DataWorkspace
     policy = access or AccessPolicy(host)
     assistant = AssistantWorkspace()
     ai = provider_settings()
-    state = {"app": "unibrain_agent", "version": "0.8", "api_version": 1, "running": False, "completed": False,
+    data_workspace = DataWorkspace()
+    ai_sessions = {}
+    state = {"app": "unibrain_agent", "version": "0.9", "api_version": 2, "running": False, "completed": False,
              "message": "Ready", "error": None, "job": None, "build_id": None}
-    lock = threading.Lock()
+    lock = threading.RLock()
     monitor = RunMonitor()
 
     def execute(backend, steps, folder=None, coordination="single"):
@@ -72,7 +77,7 @@ def create_server(port=8776, host="127.0.0.1", access=None):
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Vary", "Origin")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+                self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-UniBrain-AI-Session")
                 if self.headers.get("Access-Control-Request-Private-Network") == "true":
                     self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
@@ -95,6 +100,12 @@ def create_server(port=8776, host="127.0.0.1", access=None):
         def do_OPTIONS(self):
             if self.local_request(preflight=True):
                 self.respond({"allowed": True})
+
+        def require_ai(self):
+            with lock:
+                grant = ai_sessions.get(self.headers.get("X-UniBrain-AI-Session"))
+                if not grant or grant["expires"] < time.monotonic() or grant["provider"] != ai.selected:
+                    raise PermissionError("Connect your AI account in AI settings for this browser session")
 
         def do_GET(self):
             if not self.local_request():
@@ -126,8 +137,13 @@ def create_server(port=8776, host="127.0.0.1", access=None):
                 elif path == "/api/ai":
                     self.respond(ai.public())
                 elif path == "/api/ai/login":
+                    self.require_ai()
                     query = parse_qs(urlsplit(self.path).query)
                     self.respond(login_status(query.get("provider", [""])[0]))
+                elif path == "/api/data":
+                    self.respond(data_workspace.state())
+                elif path.startswith("/api/data/jobs/"):
+                    self.respond(data_workspace.read(path.removeprefix("/api/data/jobs/")))
                 elif path == "/api/assistant":
                     self.respond(assistant.state())
                 elif path.startswith("/api/assistant/jobs/"):
@@ -144,12 +160,15 @@ def create_server(port=8776, host="127.0.0.1", access=None):
                         raise ValueError("Invalid run directory")
                     self.respond(volume_slice(folder, query["branch"][0], query["stage"][0], int(query["index"][0])))
                 elif path.startswith("/api/builds/"):
-                    from .builds import read_build
-                    self.respond(read_build(path.removeprefix("/api/builds/")))
+                    from .builds import read_build, review_code
+                    identifier = path.removeprefix("/api/builds/")
+                    self.respond(review_code(identifier[:-5]) if identifier.endswith("/code") else read_build(identifier))
                 elif path == "/":
                     self.respond(landing(), kind="text/html")
                 else:
                     self.respond({"error": "Not found"}, 404)
+            except PermissionError as error:
+                self.respond({"error": str(error)}, 403)
             except (ValueError, FileNotFoundError) as error:
                 self.respond({"error": str(error)}, 404)
 
@@ -165,28 +184,65 @@ def create_server(port=8776, host="127.0.0.1", access=None):
                 body = json.loads(self.rfile.read(length))
                 if not isinstance(body, dict):
                     raise ValueError("Expected a JSON object")
-                if self.path in {"/api/ai/settings", "/api/ai/test", "/api/ai/logout"}:
+                if self.path in {"/api/ai/settings", "/api/ai/test", "/api/ai/logout", "/api/ai/connect", "/api/ai/disconnect"}:
                     with lock, assistant.lock:
-                        if state["running"] or assistant.active:
+                        if state["running"] or assistant.active or data_workspace.active:
                             self.respond({"error": "Wait for the current build, run or assistant request to finish"}, 409)
                             return
-                        if self.path.endswith("logout"):
+                        if self.path.endswith("connect") and not self.path.endswith("disconnect"):
+                            if body.get("confirm") is not True:
+                                raise ValueError("Confirm using the selected account on this backend")
+                            provider = ai.selected
+                            account = login_status(provider) if provider in {"codex", "claude"} else {"authenticated": bool(ai.snapshot()["api_key"])}
+                            if not account["authenticated"]:
+                                raise ValueError("Sign in with the official CLI on your backend or configure your own API key first")
+                            now = time.monotonic()
+                            for key in list(ai_sessions):
+                                if ai_sessions[key]["expires"] < now:
+                                    del ai_sessions[key]
+                            if len(ai_sessions) >= 64:
+                                raise ValueError("Too many connected AI sessions; disconnect an existing session")
+                            token = secrets.token_urlsafe(32)
+                            ai_sessions[token] = {"provider": provider, "expires": now + 8 * 3600}
+                            self.respond({"session": token, "provider": provider, "account": account})
+                        elif self.path.endswith("disconnect"):
+                            ai_sessions.pop(self.headers.get("X-UniBrain-AI-Session"), None)
+                            self.respond({"disconnected": True})
+                        elif self.path.endswith("logout"):
                             if ai.public()["test"]["status"] == "running":
                                 raise ValueError("Wait for the connection test to finish")
                             if body.get("confirm") is not True:
                                 raise ValueError("Confirm signing out of the backend CLI account")
+                            self.require_ai()
                             self.respond(logout(body.get("provider")))
+                            ai_sessions.clear()
                         else:
+                            if self.path.endswith("test"):
+                                self.require_ai()
                             self.respond(ai.update(body) if self.path.endswith("settings") else ai.start_test(),
                                          200 if self.path.endswith("settings") else 202)
+                            if self.path.endswith("settings"):
+                                ai_sessions.clear()
+                    return
+                if self.path in {"/api/data/jobs", "/api/data/use"}:
+                    if self.path.endswith("jobs") and body.get("mode") == "discuss":
+                        self.require_ai()
+                    with lock, assistant.lock:
+                        if state["running"] or assistant.active or ai.public()["test"]["status"] == "running":
+                            raise ValueError("Wait for the active workspace operation to finish")
+                        if self.path.endswith("use"):
+                            self.respond(data_workspace.use(body.get("id"), body.get("dataset")))
+                        else:
+                            self.respond(data_workspace.submit(body), 202)
                     return
                 if self.path == "/api/assistant":
+                    self.require_ai()
                     if ai.public()["test"]["status"] == "running":
                         raise ValueError("Wait for the connection test to finish")
                     self.respond(assistant.submit(body), 202)
                     return
                 backend, steps = body.get("backend", "configured"), body.get("steps", 5)
-                if backend not in {"configured", "codex", "rules"} or type(steps) is not int or not 2 <= steps <= 20:
+                if backend not in {"configured", "codex", "rules"} or type(steps) is not int or not 2 <= steps <= 1000:
                     raise ValueError("Invalid backend or step budget")
                 folder = None
                 coordination = body.get("coordination", "single")
@@ -197,6 +253,8 @@ def create_server(port=8776, host="127.0.0.1", access=None):
                     folder = build_path(self.path[len("/api/builds/"):-len("/run")])
                     record = verify_build(folder)
                     backend = record["backend"]
+                    if record.get("profile") != "original" and backend != "rules":
+                        self.require_ai()
                     if record.get("profile") == "original" and coordination == "roles":
                         raise ValueError("Original reproduction preserves its optimizer. Use a custom pipeline for role coordination.")
                 elif self.path == "/api/prepare":
@@ -204,18 +262,22 @@ def create_server(port=8776, host="127.0.0.1", access=None):
                     selection = body.get("selection")
                     if not isinstance(selection, dict) or set(selection) != set(DEFAULTS):
                         raise ValueError("Select every stage before preparation")
+                    if selection != DEFAULTS and backend != "rules":
+                        self.require_ai()
                 elif self.path != "/api/run":
                     self.respond({"error": "Not found"}, 404)
                     return
+                elif backend != "rules":
+                    self.require_ai()
                 with lock:
                     if ai.public()["test"]["status"] == "running":
                         raise ValueError("Wait for the connection test to finish")
-                    if state["running"]:
+                    if state["running"] or data_workspace.active:
                         self.respond({"error": "A build or experiment is already running"}, 409)
                         return
                     if self.path == "/api/prepare":
                         from .builds import create_build
-                        record = create_build(selection, backend)
+                        record = create_build(selection, backend, dataset=data_workspace.selected)
                         state.update(job="prepare", build_id=record["id"])
                         target, args = prepare_build, (record["id"],)
                     else:
@@ -225,6 +287,8 @@ def create_server(port=8776, host="127.0.0.1", access=None):
                     state.update(running=True, completed=False, message="Starting", error=None, run_dir=None)
                 threading.Thread(target=target, args=args, daemon=True).start()
                 self.respond({"started": True, "build_id": state["build_id"]}, 202)
+            except PermissionError as error:
+                self.respond({"error": str(error)}, 403)
             except (ValueError, FileNotFoundError, json.JSONDecodeError) as error:
                 self.respond({"error": str(error)}, 400)
 
@@ -236,7 +300,7 @@ def create_server(port=8776, host="127.0.0.1", access=None):
     return server
 
 
-def serve(port=8776, open_browser=False, host="127.0.0.1"):
+def serve(port=8777, open_browser=False, host="127.0.0.1"):
     server = create_server(port, host)
     print(f"UniBrain Agent: http://127.0.0.1:{server.server_port}", flush=True)
     if open_browser:

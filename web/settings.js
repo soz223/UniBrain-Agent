@@ -9,7 +9,8 @@ function aiNotice(message,busy=false,error=false) {
 
 function aiControls(busy) {
   aiBusy=busy;
-  ['aiSave','aiTest','aiRefreshLogin','aiLogout'].forEach(id=>byId(id).disabled=busy||!backend.connected||!aiConfig);
+  ['aiSave','aiTest','aiRefreshLogin','aiLogout','aiConnect','aiDisconnect'].forEach(id=>byId(id).disabled=busy||!backend.connected||!aiConfig);
+  ['aiTest','aiRefreshLogin','aiLogout'].forEach(id=>byId(id).disabled=byId(id).disabled||!aiSession);
   document.querySelectorAll('[data-provider]').forEach(node=>node.disabled=busy);
 }
 
@@ -20,17 +21,20 @@ function paintProviderCards() {
     node.classList.toggle('selected',selected);node.setAttribute('aria-checked',String(selected));
     const status=node.querySelector('.provider-state');
     const verified=aiConfig?.test?.provider===id&&aiConfig.test.status==='complete';
-    status.textContent=!backend.connected?'Connect backend':cliProvider(id)?state?.authenticated?'Signed in':item?.installed===false?'Not installed':state?.authenticated===false?'Signed out':state?.authenticated===null?'Unavailable':'Checking…':verified?'Connected':item?.credential!=='not supplied'?'Key configured':'Add API key';
-    status.classList.toggle('online',!!state?.authenticated||verified);
+    status.textContent=!backend.connected?'Connect backend':aiSessionProvider===id&&aiSession?'✓ Connected':cliProvider(id)?item?.installed===false?'Not installed':'○ Not connected':item?.credential!=='not supplied'?'Key configured':'Add API key';
+    status.classList.toggle('online',aiSessionProvider===id&&!!aiSession);
   });
 }
 
 function paintAccount() {
   const id=selectedProvider,item=aiConfig?.providers.find(item=>item.id===id),state=accountStates[id];
-  const cli=cliProvider(id),signedIn=!!state?.authenticated;
+  const cli=cliProvider(id),connected=!!aiSession&&aiSessionProvider===id,signedIn=connected&&!!state?.authenticated;
   let name='Connect a backend',plan='Your account is loaded from the selected server.',badge='Not connected',note='Configure the compute backend above to use AI services.';
   if(backend.connected&&item) {
-    if(cli) {
+    if(!connected) {
+      name='Connect your '+item.name;badge='Not connected';plan='No AI account is active in this page.';
+      note=cli?'Sign in through the official CLI on your backend, then explicitly connect that account here.':'Save your own API settings, then connect this page to that provider.';
+    } else if(cli) {
       badge=signedIn?'Signed in':state?.authenticated===null?'Status unavailable':item.installed===false?'Not installed':state?'Signed out':'Checking account';
       name=signedIn?(state.email||state.name||'Connected CLI account'):item.installed===false?'Install '+item.name:'Connect '+item.name;
       plan=signedIn?[state.plan?titleCase(state.plan):null,state.method==='chatgpt'?'ChatGPT':state.method?titleCase(state.method):null].filter(Boolean).join(' · ')||'Official CLI session':'Sign in on the machine running this backend.';
@@ -41,11 +45,12 @@ function paintAccount() {
       note='API keys do not expose an account email here. Use your provider dashboard to manage the key and billing.';
     }
   }
-  byId('accountBadge').textContent=badge;byId('accountBadge').classList.toggle('connected',signedIn||(!cli&&item?.credential!=='not supplied'&&backend.connected));
+  byId('accountBadge').textContent=badge;byId('accountBadge').classList.toggle('connected',connected);
   byId('accountName').textContent=name;byId('accountPlan').textContent=plan;byId('aiLoginStatus').textContent=note;
   byId('accountAvatar').textContent=signedIn?(name.slice(0,2).toUpperCase()):cli?(id==='codex'?'C':'A'):'API';
   byId('aiLoginHelp').hidden=!cli;byId('aiLoginHelp').textContent=signedIn?'Switch account ↗':'Sign in ↗';
   byId('aiLogout').hidden=!cli||!signedIn;byId('aiRefreshLogin').hidden=!cli;
+  byId('aiConnect').hidden=connected;byId('aiDisconnect').hidden=!connected;
   paintProviderCards();
 }
 
@@ -61,7 +66,7 @@ function renderAIProfile() {
 }
 
 async function refreshAccount(id=selectedProvider) {
-  if(!backend.connected||!cliProvider(id))return;
+  if(!backend.connected||!cliProvider(id)||!aiSession||aiSessionProvider!==id)return;
   try {accountStates[id]=await requestJson('/api/ai/login?provider='+id);}
   catch(error){accountStates[id]={authenticated:null,message:error.message};}
   paintAccount();
@@ -85,7 +90,7 @@ function confirmSignOut() {
   byId('cancelSignOut').onclick=()=>byId('detailDialog').close();
   byId('confirmSignOut').onclick=async()=>{
     byId('detailDialog').close();aiControls(true);aiNotice('Signing out…',true);
-    try {accountStates[id]=await requestJson('/api/ai/logout',{provider:id,confirm:true});paintAccount();aiNotice(accountStates[id].authenticated?'A managed credential is still active on this backend.':'Signed out of the backend account.');}
+    try {accountStates[id]=await requestJson('/api/ai/logout',{provider:id,confirm:true});aiSession='';aiSessionProvider='';paintAccount();aiNotice(accountStates[id].authenticated?'A managed credential is still active on this backend.':'Signed out of the backend account.');}
     catch(error){aiNotice(error.message,false,true);}
     finally{aiControls(false);}
   };
@@ -101,6 +106,17 @@ async function pollAITest() {
 }
 
 async function initializeAISettings() {
+  byId('aiConnect').onclick=async()=>{
+    if(selectedProvider!==aiConfig?.provider){aiNotice('Save the selected provider first, then connect your account.');return;}
+    aiControls(true);aiNotice('Connecting the account you selected on this backend…',true);
+    try {const result=await requestJson('/api/ai/connect',{confirm:true});aiSession=result.session;aiSessionProvider=result.provider;accountStates[result.provider]=result.account;paintAccount();aiNotice('Connected for this page session. Reloading the page disconnects AI access.');}
+    catch(error){aiNotice(error.message,false,true);}
+    finally{aiControls(false);}
+  };
+  byId('aiDisconnect').onclick=async()=>{
+    try{await requestJson('/api/ai/disconnect',{});aiSession='';aiSessionProvider='';Object.keys(accountStates).forEach(key=>delete accountStates[key]);paintAccount();aiControls(false);aiNotice('This page is disconnected. The backend CLI account remains signed in.');}
+    catch(error){aiNotice(error.message,false,true);}
+  };
   document.querySelectorAll('[data-provider]').forEach(node=>{
     node.onclick=()=>{selectedProvider=node.dataset.provider;renderAIProfile();aiNotice('');if(cliProvider(selectedProvider))refreshAccount();};
     node.onkeydown=event=>{
@@ -110,14 +126,15 @@ async function initializeAISettings() {
   });
   byId('aiRefreshLogin').onclick=()=>refreshAccount();byId('aiLoginHelp').onclick=signInHelp;byId('aiLogout').onclick=confirmSignOut;
   byId('editBackend').onclick=()=>{byId('backendForm').hidden=!byId('backendForm').hidden;};
-  byId('backendUrl').value=backend.address;byId('backendToken').value='';
+  byId('backendUrl').value=backend.address||(savedBackend!=='disconnected'?savedBackend:'');byId('backendToken').value='';
   byId('backendForm').onsubmit=async event=>{
     event.preventDefault();byId('connectBackend').disabled=true;byId('backendFeedback').textContent='Connecting to your backend…';
     try {
       const address=normalizeBackend(byId('backendUrl').value.trim());
-      const token=byId('backendToken').value.trim()||(address===backend.address?backend.token:'');
+      const token=byId('backendToken').value.trim()||(address===backend.address?backend.token:sessionStorage.getItem(backendTokenKey(address))||'');
       await probeBackend({address,token});
       localStorage.setItem(backendPreference,address);sessionStorage.setItem(backendTokenKey(address),token);
+      sessionStorage.setItem('unibrainManualConnect',address);
       byId('backendToken').value='';location.hash='settings';location.reload();
     } catch(error){byId('backendFeedback').textContent=error.message;byId('connectBackend').disabled=false;}
   };
@@ -130,6 +147,7 @@ async function initializeAISettings() {
     event.preventDefault();if(aiBusy||!aiConfig)return;aiControls(true);aiNotice('Saving connection…',true);
     try {
       const value=await requestJson('/api/ai/settings',{provider:selectedProvider,model:byId('aiModel').value,base_url:byId('aiBaseUrl').value,api_key:byId('aiKey').value,clear_key:byId('aiClearKey').checked});
+      aiSession='';aiSessionProvider='';Object.keys(accountStates).forEach(key=>delete accountStates[key]);
       byId('aiKey').value='';renderAI(value);aiNotice('Saved. New agent requests use this connection.');
     } catch(error){byId('aiKey').value='';aiNotice(error.message,false,true);}
     finally{aiControls(false);}
@@ -149,7 +167,6 @@ async function initializeAISettings() {
   if(!connected){renderAIProfile();return;}
   try {
     const config=await requestJson('/api/ai');renderAI(config);
-    Promise.allSettled(['codex','claude'].map(refreshAccount));
     if(config.test.status==='running'){aiControls(true);aiNotice('Connection test is running…',true);pollAITest();}
   } catch(error){aiNotice(error.message,false,true);}
 }

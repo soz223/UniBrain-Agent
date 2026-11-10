@@ -34,7 +34,7 @@ class RemoteTests(unittest.TestCase):
     def test_cross_origin_api_requires_token_and_exact_origin(self):
         with self.request() as response:
             self.assertEqual(response.headers['Access-Control-Allow-Origin'], ORIGIN)
-            self.assertEqual(json.load(response)['api_version'], 1)
+            self.assertEqual(json.load(response)['api_version'], 2)
         for token in (None, 'incorrect'):
             with self.assertRaises(HTTPError) as caught: self.request(token=token)
             self.assertEqual(caught.exception.code, 401)
