@@ -8,8 +8,8 @@ let buildPoll = null;
 let activityStarted = null;
 const mainStages = ["denoising", "bias", "extraction", "normalization", "registration", "parcellation", "graph", "classification"];
 const stageNames = { extraction: "Extraction", normalization: "Normalization", parcellation: "Parcellation", graph: "Network generation" };
-const draftKey = "unibrainDraftV2";
-const buildKey = "unibrainBuildV2";
+const draftKey = "unibrainDraftV3:" + backend.address;
+const buildKey = "unibrainBuildV3:" + backend.address;
 
 function isOriginal() {
   return library && draft && library.stages.every(stage => draft[stage.id] === library.defaults[stage.id]);
@@ -162,12 +162,6 @@ function showBuild(record) {
   renderChoices();
 }
 
-async function requestJson(url, data) {
-  const response = await fetch(url, data === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-  const value = await response.json();
-  if (!response.ok) throw new Error(value.error || "Request failed");
-  return value;
-}
 
 function buildError(error) {
   buildBusy = false;
@@ -194,6 +188,7 @@ async function pollBuild(identifier) {
 
 async function prepareSelection() {
   if (buildBusy) return;
+  if (!backend.connected) {openWorkspace("settings");return;}
   showBuild({ status: "queued", selection: { ...draft }, created: new Date().toISOString(), events: [] });
   try {
     const value = await requestJson("/api/prepare", { selection: draft, backend: "configured" });
@@ -261,8 +256,9 @@ async function initializeEditor() {
   setInterval(() => {
     if (activityStarted) byId("buildElapsed").textContent = Math.max(0, Math.floor((Date.now() - activityStarted) / 1000)) + "s";
   }, 1000);
-  if (location.protocol === "file:") {
-    byId("buildMessage").textContent = "Open the local dashboard to edit and run a pipeline.";
+  if (!(await backendReady)) {
+    library = appConfig.catalog;draft = {...library.defaults};renderChoices();
+    byId("buildMessage").textContent = "Browse stages, then connect your backend in AI settings to build and train.";
     byId("prepareBuild").disabled = true;
     return;
   }

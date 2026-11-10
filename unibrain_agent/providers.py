@@ -121,22 +121,7 @@ class ProviderSettings:
             self.test = {**status, "provider": config["provider"], "seconds": round(time.perf_counter() - started, 2)}
 
 
-def login_status(provider):
-    if provider not in {"codex", "claude"}:
-        raise ValueError("Login status is available for CLI providers")
-    executable = shutil.which(provider)
-    if not executable:
-        return {"installed": False, "authenticated": False, "message": "CLI is not installed on the backend machine"}
-    command = [executable, "login", "status"] if provider == "codex" else [executable, "auth", "status"]
-    try:
-        process = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
-                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        authenticated = process.returncode == 0
-        # CLI status may include account identifiers; return only the authentication state.
-        return {"installed": True, "authenticated": authenticated,
-                "message": "CLI reports an active login. Test the connection to check model access." if authenticated else "Sign in on the backend machine, then refresh."}
-    except (OSError, subprocess.TimeoutExpired):
-        return {"installed": True, "authenticated": False, "message": "Could not check CLI login. Run the sign-in command in your terminal."}
+from .accounts import login_status
 
 
 class NoRedirect(HTTPRedirectHandler):

@@ -21,8 +21,9 @@ def main():
     prepare.add_argument("selection")
     prepare.add_argument("--backend", choices=["configured", "codex", "rules"], default="configured")
     serve = sub.add_parser("serve", help="Open the local prototype dashboard")
-    serve.add_argument("--port", type=int, default=8775)
+    serve.add_argument("--port", type=int, default=8776)
     serve.add_argument("--open", action="store_true")
+    serve.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()
     if args.command == "run":
         from .runner import run as execute
@@ -54,7 +55,7 @@ def main():
         print(run_original(args.epochs, output_dir=args.output_dir)["run_dir"])
     else:
         from .server import serve as start
-        start(args.port, args.open)
+        start(args.port, args.open, args.host)
 
 
 if __name__ == "__main__":

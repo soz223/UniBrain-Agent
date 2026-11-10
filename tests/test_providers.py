@@ -136,12 +136,13 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(result, {"ok": True})
         self.assertEqual(usage['input_tokens'], 10)
 
-    def test_login_status_omits_account_details(self):
-        process = subprocess.CompletedProcess([], 0, '{"email":"private@example.com"}', '')
+    def test_login_status_returns_requested_identity_but_no_credentials(self):
+        process = subprocess.CompletedProcess([], 0, '{"email":"private@example.com","accessToken":"never-return-this"}', '')
         with patch('unibrain_agent.providers.shutil.which', return_value='claude'), patch('unibrain_agent.providers.subprocess.run', return_value=process):
             status = login_status('claude')
         self.assertTrue(status['authenticated'])
-        self.assertNotIn('private', json.dumps(status))
+        self.assertEqual(status['email'], 'private@example.com')
+        self.assertNotIn('never-return-this', json.dumps(status))
 
     def test_agent_records_actual_provider_and_rejects_bad_model_output(self):
         with tempfile.TemporaryDirectory() as folder:

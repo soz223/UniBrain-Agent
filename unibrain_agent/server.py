@@ -9,14 +9,17 @@ from urllib.parse import parse_qs, urlsplit
 from .paths import RUNS
 from .live import RunMonitor
 from .report import document, landing, previews, volume_slice
+from .access import AccessPolicy
 
 
-def create_server(port=8775):
+def create_server(port=8776, host="127.0.0.1", access=None):
     from .assistant_workspace import AssistantWorkspace
-    from .providers import provider_settings, login_status
+    from .providers import provider_settings
+    from .accounts import login_status, logout
+    policy = access or AccessPolicy(host)
     assistant = AssistantWorkspace()
     ai = provider_settings()
-    state = {"app": "unibrain_agent", "version": "0.7", "running": False, "completed": False,
+    state = {"app": "unibrain_agent", "version": "0.8", "api_version": 1, "running": False, "completed": False,
              "message": "Ready", "error": None, "job": None, "build_id": None}
     lock = threading.Lock()
     monitor = RunMonitor()
@@ -64,20 +67,34 @@ def create_server(port=8775):
             self.send_header("Content-Length", str(len(content)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
+            origin = self.headers.get("Origin")
+            if origin and policy.accepts_origin(origin, self.server.server_port):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+                if self.headers.get("Access-Control-Request-Private-Network") == "true":
+                    self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
             self.wfile.write(content)
 
-        def local_request(self):
+        def local_request(self, preflight=False):
             actual_port = self.server.server_port
-            allowed = {f"127.0.0.1:{actual_port}", f"localhost:{actual_port}"}
-            if self.headers.get("Host") not in allowed:
+            if self.headers.get("Host") not in policy.hosts(actual_port):
                 self.respond({"error": "Host rejected"}, 403)
                 return False
             origin = self.headers.get("Origin")
-            if origin and origin not in {"http://" + host for host in allowed}:
+            if not policy.accepts_origin(origin, actual_port):
                 self.respond({"error": "Origin rejected"}, 403)
                 return False
+            if not preflight and urlsplit(self.path).path.startswith("/api/") and not policy.authenticated(self.headers.get("Authorization")):
+                self.respond({"error": "Backend access token required or invalid"}, 401)
+                return False
             return True
+
+        def do_OPTIONS(self):
+            if self.local_request(preflight=True):
+                self.respond({"allowed": True})
 
         def do_GET(self):
             if not self.local_request():
@@ -93,6 +110,16 @@ def create_server(port=8775):
                 elif path == "/api/catalog":
                     from .catalog import catalog
                     self.respond(catalog())
+                elif path == "/api/report":
+                    latest = RUNS / "latest.json"
+                    report = None
+                    if latest.exists():
+                        folder = Path(json.loads(latest.read_text(encoding="utf-8"))["run_dir"]).resolve()
+                        if folder.parent != RUNS.resolve():
+                            raise ValueError("Report is outside the configured run directory")
+                        report = json.loads((folder / "report.json").read_text(encoding="utf-8"))
+                        report["previews"] = previews(folder)
+                    self.respond({"report": report})
                 elif path == "/api/runtime":
                     from .runtime import settings
                     self.respond(settings())
@@ -120,13 +147,7 @@ def create_server(port=8775):
                     from .builds import read_build
                     self.respond(read_build(path.removeprefix("/api/builds/")))
                 elif path == "/":
-                    latest = RUNS / "latest.json"
-                    if latest.exists():
-                        folder = Path(json.loads(latest.read_text(encoding="utf-8"))["run_dir"])
-                        report = json.loads((folder / "report.json").read_text(encoding="utf-8"))
-                        self.respond(document({**report, "previews": previews(folder)}), kind="text/html")
-                    else:
-                        self.respond(landing(), kind="text/html")
+                    self.respond(landing(), kind="text/html")
                 else:
                     self.respond({"error": "Not found"}, 404)
             except (ValueError, FileNotFoundError) as error:
@@ -144,13 +165,20 @@ def create_server(port=8775):
                 body = json.loads(self.rfile.read(length))
                 if not isinstance(body, dict):
                     raise ValueError("Expected a JSON object")
-                if self.path in {"/api/ai/settings", "/api/ai/test"}:
+                if self.path in {"/api/ai/settings", "/api/ai/test", "/api/ai/logout"}:
                     with lock, assistant.lock:
                         if state["running"] or assistant.active:
                             self.respond({"error": "Wait for the current build, run or assistant request to finish"}, 409)
                             return
-                        self.respond(ai.update(body) if self.path.endswith("settings") else ai.start_test(),
-                                     200 if self.path.endswith("settings") else 202)
+                        if self.path.endswith("logout"):
+                            if ai.public()["test"]["status"] == "running":
+                                raise ValueError("Wait for the connection test to finish")
+                            if body.get("confirm") is not True:
+                                raise ValueError("Confirm signing out of the backend CLI account")
+                            self.respond(logout(body.get("provider")))
+                        else:
+                            self.respond(ai.update(body) if self.path.endswith("settings") else ai.start_test(),
+                                         200 if self.path.endswith("settings") else 202)
                     return
                 if self.path == "/api/assistant":
                     if ai.public()["test"]["status"] == "running":
@@ -203,13 +231,13 @@ def create_server(port=8775):
         def log_message(self, *args):
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = ThreadingHTTPServer((host, port), Handler)
     server.state = state
     return server
 
 
-def serve(port=8775, open_browser=False):
-    server = create_server(port)
+def serve(port=8776, open_browser=False, host="127.0.0.1"):
+    server = create_server(port, host)
     print(f"UniBrain Agent: http://127.0.0.1:{server.server_port}", flush=True)
     if open_browser:
         webbrowser.open(f"http://127.0.0.1:{server.server_port}")

@@ -1,6 +1,6 @@
 "use strict";
 
-const report = JSON.parse(document.getElementById("reportData").textContent);
+let report = JSON.parse(document.getElementById("reportData").textContent);
 const byId = id => document.getElementById(id);
 const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const format = (value, digits = 3) => Number.isFinite(value) ? value.toFixed(digits) : "Not measured";
@@ -150,7 +150,7 @@ function setFailure(error) {
 async function poll() {
   clearTimeout(pollTimer);
   try {
-    const response = await fetch("/api/status");
+    const response = await backendFetch("/api/status");
     if (!response.ok) throw new Error("Execution service unavailable");
     const state = await response.json();
     if (state.job !== "run") return;
@@ -162,7 +162,8 @@ async function poll() {
       pollTimer = setTimeout(poll, 1000);
     } else if (state.completed && state.run_dir !== report?.run_dir && !reloadPending) {
       reloadPending = true;
-      setTimeout(() => location.reload(), 700);
+      await loadLatestReport();
+      reloadPending = false;
     } else if (state.completed) {
       byId("results").hidden = !report?.candidate;
     }
@@ -193,7 +194,7 @@ async function renderVolume() {
       if (location.protocol === "file:") throw new Error("Open the local workspace to view this slice.");
       volumeAbort = new AbortController();
       const query = new URLSearchParams({ run: preview.run_id || report.run_dir.split(/[\\/]/).at(-1), branch: "candidate", stage: imageStage, index });
-      const response = await fetch("/api/volume?" + query, { signal: volumeAbort.signal });
+      const response = await backendFetch("/api/volume?" + query, { signal: volumeAbort.signal });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Slice unavailable");
       if (request !== volumeRequest) return;
@@ -279,6 +280,7 @@ function savedTelemetry() {
 
 function renderResults() {
   const model = report.candidate, validation = model.validation;
+  byId("empty").hidden = true;
   byId("results").hidden = false;
   byId("runDate").textContent = new Date(report.created).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
   renderLive(savedTelemetry());
@@ -302,7 +304,14 @@ function renderResults() {
   byId("footerMeta").textContent = "UniBrain " + report.upstream_commit.slice(0, 8) + " · seed " + report.seed;
 }
 
-function initialize() {
+async function loadLatestReport() {
+  const data = await requestJson("/api/report");
+  report = data.report;
+  sliceCache.clear();
+  if (report?.candidate) renderResults();
+}
+
+async function initialize() {
   document.querySelectorAll('.sidebar nav a').forEach(link => link.onclick = () => {
     const target = document.querySelector(link.getAttribute('href'));
     if (target?.tagName === 'DETAILS') target.open = true;
@@ -334,6 +343,9 @@ function initialize() {
   };
   if (report?.candidate) renderResults();
   else byId("empty").hidden = false;
+  if (await backendReady) {
+    try {await loadLatestReport();} catch(error) {byId("empty").textContent = error.message;}
+  }
 }
 
 initialize();

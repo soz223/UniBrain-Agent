@@ -13,13 +13,15 @@ python -m venv .venv
 .venv/Scripts/python.exe -m unibrain_agent serve --open
 ```
 
-The dashboard opens at http://127.0.0.1:8775. Subsequent Windows launches can use `Launch UniBrain Agent.cmd`. Linux uses `.venv/bin/python` or `bash launch.sh`. See [deployment instructions](docs/deployment.md) for Linux setup, external cohorts, GPU selection, remote access and CPU development.
+The dashboard opens at http://127.0.0.1:8776. Subsequent Windows launches can use `Launch UniBrain Agent.cmd`. Linux uses `.venv/bin/python` or `bash launch.sh`. See [deployment instructions](docs/deployment.md) for Linux setup, external cohorts, GPU selection, remote access and CPU development.
 
 The bootstrap script downloads pinned source files and the original public UniBrain examples. It does not download pretrained weights. Upstream licenses remain with their source files. A partial source fetch can be requested with `--source reg_unibrain`.
 
 The original workflow does not require an agent login. Custom compositions use the provider selected in **AI settings**, initially Codex CLI with its existing login. `--backend rules` is available through the CLI for an explicit offline test. A failed model invocation never silently falls back to rules. Prompts contain the catalog and aggregate diagnostics; MRI arrays and subject records stay local.
 
-**AI settings** supports Codex CLI, Claude Code, OpenAI API, Anthropic API and an OpenAI compatible endpoint. It includes official CLI sign-in instructions, login status, model selection and a real connection test. API keys entered in the page stay in backend memory; environment variables support persistent deployments. See [AI connections and deployment](docs/deployment.md). GitHub Pages alone cannot execute the Python backend or training; the supported private deployment runs the complete application on your computer or GPU server.
+**AI settings** uses provider cards for Codex CLI, Claude Code, OpenAI API, Anthropic API and a compatible endpoint. It shows the connected CLI account, email and plan when supplied by the official CLI, with refresh, switch and sign out controls. API keys entered in the page stay in backend memory; environment variables support persistent deployments.
+
+The [GitHub Pages frontend](https://soz223.github.io/UniBrain-Agent/) runs independently of the Python backend. In **AI settings**, connect your workstation or HTTPS GPU server with its address and access token. All research, training, account and volume requests go to that server. The public frontend includes the application and method catalog; experiment data and credentials are loaded only after authentication. See [AI connections and deployment](docs/deployment.md) for setup.
 
 ## Choose, validate, run
 

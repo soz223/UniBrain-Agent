@@ -123,6 +123,7 @@ async function pollAssistant(id, mode) {
 
 async function submitAssistant(mode, role = 'all') {
   if (assistantBusy) return;
+  if (!backend.connected) {openWorkspace("settings");return;}
   const message = mode === 'research' ? byId('researchInput').value.trim() : 'Review the available task evidence and recommend the next training action.';
   if (!message) return;
   assistantBusy = true;
@@ -160,8 +161,14 @@ async function initializeAssistant() {
   byId('researchPrompt').onclick = () => showDetails('Researcher prompt','<pre class="prompt-content">'+escapeHtml(assistantConfig?.research_prompt || 'Loading…')+'</pre>');
   byId('inspectRoleEvidence').onclick = () => showDetails('Measured context','<pre class="prompt-content">'+escapeHtml(JSON.stringify(rolesJob?.context || assistantConfig?.context,null,2))+'</pre>','AGGREGATE MEASUREMENTS');
   window.addEventListener('trainingtelemetry', event => updateTrainingTeam(event.detail));
-  openWorkspace(['#research','#roles','#settings'].includes(location.hash) ? location.hash.slice(1) : 'pipeline');
-  if (location.protocol === 'file:') return;
+  const connected = await backendReady;
+  openWorkspace(['#research','#roles','#settings'].includes(location.hash) ? location.hash.slice(1) : !connected && appConfig.standalone ? 'settings' : 'pipeline');
+  if (!connected) {
+    assistantConfig = {roles:appConfig.roles,research_prompt:appConfig.research_prompt,context:null};
+    assistantLibrary = appConfig.catalog;showRoles(null);
+    byId('researchStage').innerHTML += assistantLibrary.stages.map(stage => '<option value="'+stage.id+'">'+escapeHtml(stage.name)+'</option>').join('');
+    return;
+  }
   try {
     [assistantConfig,assistantLibrary] = await Promise.all([requestJson('/api/assistant'),requestJson('/api/catalog')]);
     byId('researchStage').innerHTML += assistantLibrary.stages.map(stage => '<option value="'+stage.id+'">'+escapeHtml(stage.name)+'</option>').join('');

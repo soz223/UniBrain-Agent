@@ -65,19 +65,7 @@ def previews(folder, full=False):
     return result
 
 
-def document(payload):
-    template = (PROJECT / "web" / "dashboard.html").read_text(encoding="utf-8")
-    encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).replace("<", "\\u003c")
-    css = (PROJECT / "web" / "dashboard.css").read_text(encoding="utf-8")
-    css += (PROJECT / "web" / "assistant.css").read_text(encoding="utf-8")
-    css += (PROJECT / "web" / "settings.css").read_text(encoding="utf-8")
-    script = (PROJECT / "web" / "dashboard.js").read_text(encoding="utf-8")
-    editor = (PROJECT / "web" / "editor.js").read_text(encoding="utf-8")
-    assistant = (PROJECT / "web" / "assistant.js").read_text(encoding="utf-8")
-    assistant += "\n" + (PROJECT / "web" / "settings.js").read_text(encoding="utf-8")
-    panels = (PROJECT / "web" / "assistant.html").read_text(encoding="utf-8")
-    panels += (PROJECT / "web" / "settings.html").read_text(encoding="utf-8")
-    return template.replace("__STYLE__", css).replace("__SCRIPT__", script).replace("__EDITOR_SCRIPT__", editor).replace("__ASSISTANT_SCRIPT__", assistant).replace("__ASSISTANT_PANELS__", panels).replace("__REPORT_JSON__", encoded)
+from .frontend import document
 
 
 def render(report, folder):
