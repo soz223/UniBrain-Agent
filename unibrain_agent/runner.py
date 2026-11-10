@@ -192,7 +192,9 @@ def _train_branch(model, train, val, template, steps, seed, folder, name, emit, 
     return result
 
 
-def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_event=None, build_dir=None, comparison=True, device=None):
+def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_event=None, build_dir=None, comparison=True, device=None, coordination="single"):
+    if coordination not in {"single", "roles"}:
+        raise ValueError("Unknown training coordination mode")
     if steps < 2:
         raise ValueError("Use at least two optimizer steps")
     runtime = settings()
@@ -235,7 +237,8 @@ def run(backend="codex", steps=5, seed=17, data_dir=None, output_dir=None, on_ev
         emit("data", "Validated original GitHub sample format and atlas label mapping")
         evidence = evidence_bundle()
         write_json(folder / "research_evidence.json", evidence)
-        agent = Agent(backend, folder / "agent", emit)
+        agent = Agent(backend, folder / "agent", emit, coordination=coordination)
+        report["coordination_mode"] = coordination
         if build_dir:
             from .builds import verify_build
             build = verify_build(build_dir)

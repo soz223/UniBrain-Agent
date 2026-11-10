@@ -11,3 +11,4 @@ builds/
 *.pid
 .pytest_cache/
 qa/
+assistant_sessions/

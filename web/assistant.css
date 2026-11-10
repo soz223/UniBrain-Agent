@@ -1,0 +1,80 @@
+.sidebar nav a.active { color:var(--ink);background:#29332e; }
+.assistant-view { max-width:1000px;margin:auto;scroll-margin-top:80px; }
+.assistant-view .heading-row { align-items:center;gap:18px; }
+.assistant-view .heading-row p { font-size:12px;max-width:520px; }
+.research-scope,.team-toolbar { display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:20px 0; }
+.research-scope label { color:var(--muted);font-size:12px; }
+.research-scope select { padding:7px;max-width:210px;margin-left:5px; }
+.research-scope .text-button { margin-left:auto; }
+.example-prompts { display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 28px; }
+.example-prompts button { padding:8px 12px;font-size:11px;background:transparent;border-radius:18px; }
+.conversation { display:grid;gap:18px;max-height:62vh;overflow-y:auto;padding-right:7px; }
+.conversation-empty { padding:55px 24px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:14px; }
+.conversation-empty small { display:block;max-width:430px;margin:10px auto;color:var(--dim); }
+.chat-message { line-height:1.75;overflow-wrap:anywhere; }
+.user-message { justify-self:end;max-width:88%;white-space:pre-wrap;background:#2a302d;border-radius:17px 17px 3px 17px;padding:14px 18px; }
+.assistant-message { padding:12px 4px 24px; }
+.answer-text { white-space:pre-wrap;line-height:1.8; }
+.source-tag { display:block;color:var(--accent);font-size:10px;letter-spacing:.2px;margin-bottom:9px; }
+.recommendation { margin:14px 0;padding:15px 18px;background:var(--panel);border:1px solid var(--line);border-radius:12px; }
+.recommendation strong,.source-card strong { display:block;font-size:13px; }
+.recommendation p { margin:8px 0;font-size:12px; }
+.recommendation small,.source-card p,.assistant-footnote { font-size:11px;color:var(--dim); }
+.verification-needed { border-left:2px solid #587568;padding-left:10px; }
+.followup-question { margin:14px 0;font-size:12px; }
+.source-disclosure { border-top:1px solid var(--line);margin-top:15px;padding-top:12px; }
+.source-disclosure summary { cursor:pointer;color:var(--muted);font-size:12px; }
+.source-card { padding:15px 0;border-bottom:1px solid var(--line); }
+.source-card p { margin:7px 0; }
+.source-card a { font-size:11px; }
+.chat-composer { margin:25px 0 12px;border:1px solid #516157;border-radius:16px;background:#232724;padding:14px; }
+.chat-composer:focus-within { border-color:var(--accent); }
+.chat-composer textarea { display:block;width:100%;border:0;outline:none;background:transparent;color:var(--ink);resize:vertical;min-height:80px;max-height:240px;line-height:1.6; }
+.chat-composer>div { display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:8px; }
+.chat-composer>div>span { color:var(--dim);font-size:10px; }
+.assistant-footnote { line-height:1.6; }
+.assistant-progress { display:flex;align-items:center;gap:12px;padding:13px 16px;margin:18px 0;background:#25302b;border-radius:10px;font-size:12px; }
+.assistant-error,.retrieval-warning { color:var(--amber); }
+.assistant-error { background:#332c22; }
+.prompt-content { white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;font:12px/1.8 var(--mono);color:var(--ink); }
+.team-flow { display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:25px 0;color:var(--muted);font-size:11px; }
+.team-flow span:nth-child(odd) { padding:6px 10px;border:1px solid var(--line);border-radius:16px; }
+.team-evidence { padding:18px;display:flex;align-items:center;gap:18px; }
+.team-evidence p { font-size:12px;margin-top:6px; }
+.team-evidence button { flex-shrink:0;margin-left:auto; }
+.team-toolbar { justify-content:space-between;font-size:12px;color:var(--muted); }
+.role-cards { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+.role-card { border:1px solid var(--line);border-radius:12px;padding:17px;background:var(--panel); }
+.role-card:last-child { grid-column:1/-1;border-color:#53675c; }
+.role-card-heading { display:flex;align-items:center;justify-content:space-between;gap:10px; }
+.role-card-heading strong { font-size:13px; }
+.role-card-heading span { color:var(--dim);font-size:10px; }
+.role-card p { margin:10px 0;min-height:38px;font-size:12px; }
+.role-card>div:last-child { display:flex;justify-content:space-between; }
+.role-active { border-color:var(--accent);animation:role-pulse 1.7s ease-in-out infinite; }
+@keyframes role-pulse { 50% { box-shadow:0 0 0 3px #a6d8c712; } }
+.role-review { margin:24px 0; }
+.role-response { margin:10px 0; }
+.role-response>div { padding:12px 4px; }
+.role-response li { font-size:12px;color:var(--muted);margin:7px 0; }
+.role-response strong { font-size:12px; }
+.coordinator-decision { padding:20px;margin-top:20px; }
+.coordinator-decision h2 { margin:8px 0; }
+.coordinator-decision table { margin:15px 0; }
+.coordinator-decision small { color:var(--muted); }
+.training-team-live { margin-top:22px;padding:20px; }
+.training-role-control { padding:12px 22px;border-top:1px solid var(--line);display:flex;align-items:center;gap:14px;flex-wrap:wrap; }
+.training-role-control label { font-size:12px; }
+.training-role-control p { font-size:10px;flex:1;min-width:150px; }
+.training-role-control input { accent-color:var(--accent); }
+@media(max-width:850px) {
+  .team-evidence { align-items:flex-start;flex-direction:column;gap:8px; }
+  .team-evidence button { margin-left:0; }
+}
+@media(max-width:580px) {
+  .role-cards { grid-template-columns:1fr; }
+  .chat-composer>div>span { display:none; }
+  .research-scope .text-button { margin-left:0; }
+  .user-message { max-width:95%; }
+}
+@media(prefers-reduced-motion:reduce) { .role-active { animation:none; } }

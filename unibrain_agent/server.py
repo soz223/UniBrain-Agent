@@ -11,13 +11,15 @@ from .live import RunMonitor
 from .report import document, landing, previews, volume_slice
 
 
-def create_server(port=8771):
-    state = {"app": "unibrain_agent", "version": "0.5", "running": False, "completed": False,
+def create_server(port=8773):
+    from .assistant_workspace import AssistantWorkspace
+    assistant = AssistantWorkspace()
+    state = {"app": "unibrain_agent", "version": "0.6", "running": False, "completed": False,
              "message": "Ready", "error": None, "job": None, "build_id": None}
     lock = threading.Lock()
     monitor = RunMonitor()
 
-    def execute(backend, steps, folder=None):
+    def execute(backend, steps, folder=None, coordination="single"):
         from .runner import run, write_json
         try:
             def event(value, run_folder):
@@ -31,7 +33,7 @@ def create_server(port=8771):
                 from .native import run_original
                 result = run_original(epochs=steps, build=build, on_event=event)
             else:
-                result = run(backend=backend, steps=steps, on_event=event, build_dir=folder, comparison=False)
+                result = run(backend=backend, steps=steps, on_event=event, build_dir=folder, comparison=False, coordination=coordination)
             result["live"] = monitor.snapshot()
             write_json(Path(result["run_dir"]) / "report.json", result)
             with lock:
@@ -92,6 +94,10 @@ def create_server(port=8771):
                 elif path == "/api/runtime":
                     from .runtime import settings
                     self.respond(settings())
+                elif path == "/api/assistant":
+                    self.respond(assistant.state())
+                elif path.startswith("/api/assistant/jobs/"):
+                    self.respond(assistant.read(path.removeprefix("/api/assistant/jobs/")))
                 elif path == "/api/volume":
                     query = parse_qs(urlsplit(self.path).query)
                     if set(query) != {"run", "branch", "stage", "index"} or any(len(v) != 1 for v in query.values()):
@@ -126,20 +132,28 @@ def create_server(port=8771):
                 if self.headers.get_content_type() != "application/json":
                     raise ValueError("Use application/json")
                 length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= 8192:
+                if not 0 < length <= 32768:
                     raise ValueError("Invalid request size")
                 body = json.loads(self.rfile.read(length))
                 if not isinstance(body, dict):
                     raise ValueError("Expected a JSON object")
+                if self.path == "/api/assistant":
+                    self.respond(assistant.submit(body), 202)
+                    return
                 backend, steps = body.get("backend", "codex"), body.get("steps", 5)
                 if backend not in {"codex", "rules"} or type(steps) is not int or not 2 <= steps <= 20:
                     raise ValueError("Invalid backend or step budget")
                 folder = None
+                coordination = body.get("coordination", "single")
+                if coordination not in {"single", "roles"}:
+                    raise ValueError("Unknown coordination mode")
                 if self.path.startswith("/api/builds/") and self.path.endswith("/run"):
                     from .builds import build_path, verify_build
                     folder = build_path(self.path[len("/api/builds/"):-len("/run")])
                     record = verify_build(folder)
                     backend = record["backend"]
+                    if record.get("profile") == "original" and coordination == "roles":
+                        raise ValueError("Original reproduction preserves its optimizer. Use a custom pipeline for role coordination.")
                 elif self.path == "/api/prepare":
                     from .catalog import DEFAULTS
                     selection = body.get("selection")
@@ -160,7 +174,7 @@ def create_server(port=8771):
                     else:
                         monitor.reset(steps)
                         state.update(job="run", build_id=folder.name if folder else None)
-                        target, args = execute, (backend, steps, folder)
+                        target, args = execute, (backend, steps, folder, coordination)
                     state.update(running=True, completed=False, message="Starting", error=None, run_dir=None)
                 threading.Thread(target=target, args=args, daemon=True).start()
                 self.respond({"started": True, "build_id": state["build_id"]}, 202)
@@ -175,7 +189,7 @@ def create_server(port=8771):
     return server
 
 
-def serve(port=8771, open_browser=False):
+def serve(port=8773, open_browser=False):
     server = create_server(port)
     print(f"UniBrain Agent: http://127.0.0.1:{server.server_port}", flush=True)
     if open_browser:

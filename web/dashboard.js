@@ -82,6 +82,7 @@ function renderLive(value) {
   renderLoss();
   renderCalls(value);
   renderJournal(value.events || []);
+  window.dispatchEvent(new CustomEvent("trainingtelemetry", {detail:value}));
 }
 
 function renderLoss() {
@@ -248,7 +249,8 @@ function coordinationDetails() {
   const control = report.candidate.coordination;
   const rows = tasks.map(task => [titleCase(task), scientific(control.diagnostic.task_norms[task]), format(control.weights_before[task]), format(control.weights_after[task])]);
   const shared = control.diagnostic.shared_gradient_cosines.map(item => [item.tasks.map(titleCase).join(" / "), item.shared_parameter_tensors, format(item.cosine)]);
-  showDetails("Training coordination", '<p>' + escapeHtml(control.rationale) + '</p>' + table(["Task", "Gradient norm", "Weight before", "Weight after"], rows) + '<h3>Gradients on shared parameters</h3>' + table(["Tasks", "Shared tensors", "Cosine"], shared) + '<p>One agent decision before optimizer update 2. Available actions: retain the loss weights or apply bounded gradient norm balancing. TaskForce multiagent learning is not implemented.</p>', "STEP " + control.step);
+  const reviews = (control.roles || []).map(role => '<h3>' + escapeHtml(titleCase(role.role)) + '</h3><p>' + escapeHtml(role.summary) + '</p><p>' + escapeHtml(role.recommendation) + '</p>').join('');
+  showDetails("Training coordination", '<p>' + escapeHtml(control.rationale) + '</p>' + table(["Task", "Gradient norm", "Weight before", "Weight after"], rows) + reviews + '<h3>Gradients on shared parameters</h3>' + table(["Tasks", "Shared tensors", "Cosine"], shared) + '<p>Decision before optimizer update 2. Actions: retain loss weights or apply bounded gradient norm balancing. Roles use prompts; a TaskForce reinforcement learning policy is not implemented.</p>', "STEP " + control.step);
 }
 
 function renderMethods() {

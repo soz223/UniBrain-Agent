@@ -13,7 +13,7 @@ python -m venv .venv
 .venv/Scripts/python.exe -m unibrain_agent serve --open
 ```
 
-The dashboard opens at http://127.0.0.1:8771. Subsequent Windows launches can use `Launch UniBrain Agent.cmd`. Linux uses `.venv/bin/python` or `bash launch.sh`. See [deployment instructions](docs/deployment.md) for Linux setup, external cohorts, GPU selection, remote access and CPU development.
+The dashboard opens at http://127.0.0.1:8773. Subsequent Windows launches can use `Launch UniBrain Agent.cmd`. Linux uses `.venv/bin/python` or `bash launch.sh`. See [deployment instructions](docs/deployment.md) for Linux setup, external cohorts, GPU selection, remote access and CPU development.
 
 The bootstrap script downloads pinned source files and the original public UniBrain examples. It does not download pretrained weights. Upstream licenses remain with their source files. A partial source fetch can be requested with `--source reg_unibrain`.
 
@@ -29,6 +29,18 @@ The original workflow does not require an agent login. Custom compositions use C
 6. Inspect all 96 slices. **What is learning?** shows measured loss connectivity for adapters, or observed original parameter updates for native runs. Expand calls, the notebook, validation or source checks as needed. Completion does not imply improved performance.
 
 The original and custom adapter profiles are explicitly separate. The CLI retains paired adapter comparisons for explicit comparison work; the dashboard runs only the selected pipeline. The sidebar contains pipeline navigation, a reset to UniBrain and runtime information.
+
+## Research conversations and training roles
+
+Open **Research** in the sidebar to choose a stage, try an example question or continue a conversation. The researcher reads the project catalog and can retrieve live publication metadata and available abstracts from Crossref. Answers include source links, mechanisms, applicability and recommendations. **Use in pipeline** selects a registered adapter for review and validation; unregistered publications remain literature leads. Retrieval failures are displayed. A metadata result is not a new code audit.
+
+Open **Training roles** for extraction, registration, segmentation and classification specialists plus a coordinator. Each role has **View prompt** and **Run role** buttons; **Run all roles** performs a sequential review. The coordinator receives the specialists' outputs and the measured context. These saved-run reviews are advisory and never change training weights. Original runs without per-task gradients produce a request for measurements rather than invented conflict scores.
+
+For a custom pipeline, enable **Use training roles** before **Confirm & run**. The executor measures task gradients before optimizer update 2, calls the four specialists and coordinator, then either retains the weights or applies bounded gradient-norm balancing. The applied decision, before/after weights and role calls appear in the run record. Original reproduction keeps this switch disabled. This is prompt based coordination; a TaskForce reinforcement learning policy, gradient projection and performance improvement are not claimed.
+
+Prompts live in [`prompts`](prompts), and prepared builds pin their hashes. Conversations and execution transcripts stay in the ignored `assistant_sessions` directory, configurable through `UNIBRAIN_ASSISTANT`. The server uses the existing Codex CLI login and does not send MRI arrays or subject records to the role prompts. Public metadata queries contain stage terms and question keywords. No agent silently falls back to the rules backend.
+
+The [assistant verification record](catalog/assistant_verification.json) documents a live literature search, follow-up conversation, advisory role review and CUDA sample run with five actual model calls. Integration follows [Codex structured execution](https://learn.chatgpt.com/docs/non-interactive-mode) and [Crossref metadata retrieval](https://www.crossref.org/documentation/retrieve-metadata/rest-api/tips-for-using-the-crossref-rest-api/).
 
 ## Run the original UniBrain
 

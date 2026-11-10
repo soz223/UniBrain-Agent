@@ -1,0 +1,93 @@
+{
+  "date": "2026-11-10",
+  "research": {
+    "job_id": "20261110_114855_9ccac3df",
+    "provider": "Crossref",
+    "online_status": "complete",
+    "retrieved_publications": 6,
+    "cited_source_ids": [
+      "M06",
+      "M07",
+      "U01"
+    ],
+    "model_calls": 1
+  },
+  "followup": {
+    "job_id": "20261110_115116_a8c8f72a",
+    "previous": "20261110_114855_9ccac3df",
+    "history_turns": 1,
+    "model_calls": 1
+  },
+  "advisory_team": {
+    "job_id": "20261110_115244_fd1b3c20",
+    "model_calls": 5,
+    "decision": "request_measurement",
+    "weights_applied": false,
+    "task_gradients_available": false
+  },
+  "cuda_training": {
+    "run_id": "20261110_115228_357108",
+    "status": "complete",
+    "environment": {
+      "torch": "2.5.1+cu121",
+      "device": "cuda:0",
+      "threads": 4
+    },
+    "coordination_mode": "roles",
+    "optimizer_updates": 2,
+    "validation_samples": 5,
+    "decision_before_update": 2,
+    "action": "keep_weights",
+    "weights_before": {
+      "extraction": 1.0,
+      "registration": 0.1,
+      "segmentation": 1.0,
+      "classification": 1.0
+    },
+    "weights_after": {
+      "extraction": 1.0,
+      "registration": 0.1,
+      "segmentation": 1.0,
+      "classification": 1.0
+    },
+    "role_calls": [
+      {
+        "role": "extraction",
+        "backend": "codex",
+        "seconds": 9.059437799965963,
+        "role_prompt_sha256": "d50d9af8fe8221e70bbfac1d292762e4cb37298f19c902dd7c3692be00322af9"
+      },
+      {
+        "role": "registration",
+        "backend": "codex",
+        "seconds": 9.29542599990964,
+        "role_prompt_sha256": "6ea8ac2e7f0582dbfd413c19b2380433aca853810263b92a74889c29de02b88c"
+      },
+      {
+        "role": "segmentation",
+        "backend": "codex",
+        "seconds": 8.033957700012252,
+        "role_prompt_sha256": "0dee3d8dd35ef7ebf1705bf72a9d5eb10172ef03677174b4e7e695ae43cfff5b"
+      },
+      {
+        "role": "classification",
+        "backend": "codex",
+        "seconds": 8.97639840003103,
+        "role_prompt_sha256": "d2cab7df15a57e33c1ed6641593e08d02bda1964a2b2c2cc5134edc95b1f08f3"
+      },
+      {
+        "role": "coordinator",
+        "backend": "codex",
+        "seconds": 6.483004600042477,
+        "role_prompt_sha256": "914b9a7acf9d1a26431f8f6174407ab72eeb1111e46339ba261afbc5fdcf89f8"
+      }
+    ],
+    "spatial_checks_passed": true
+  },
+  "scope": [
+    "Separate role prompts and real model calls; no trained multi-agent reinforcement learning policy.",
+    "Review buttons are advisory. Actual bounded control is opt-in for custom training.",
+    "This sample run retained the loss weights; it does not establish performance gains.",
+    "Crossref retrieval verifies metadata availability, not implementation trainability."
+  ]
+}

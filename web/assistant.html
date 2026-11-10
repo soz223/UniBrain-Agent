@@ -1,0 +1,20 @@
+<section id="researchView" class="assistant-view" data-workspace="research" hidden>
+  <div class="heading-row"><div><h1>Research workspace</h1><p>Discuss methods, understand their limits, plan the next experiment.</p></div><button id="newResearch" class="text-button">New conversation</button></div>
+  <div class="research-scope"><label>Stage <select id="researchStage" aria-label="Research stage"><option value="all">All stages</option></select></label><label class="check"><input id="onlineResearch" type="checkbox" checked>Search papers online</label><button id="researchPrompt" class="text-button">View researcher prompt</button></div>
+  <div id="researchExamples" class="example-prompts"><button data-example="registration">Compare registration methods</button><button data-example="extraction">Explain a gradient boundary</button><button data-example="classification">Plan a small experiment</button></div>
+  <div id="researchConversation" class="conversation" aria-label="Research conversation"><div class="conversation-empty">Start with a stage or a concrete problem.<small>Recommendations include sources, integration conditions and the checks still needed.</small></div></div>
+  <div id="researchProgress" class="assistant-progress" role="status" aria-live="polite" hidden></div>
+  <form id="researchForm" class="chat-composer"><textarea id="researchInput" aria-label="Research question" placeholder="Ask about a stage, a paper, a loss or an experiment…" rows="3" maxlength="4000" required></textarea><div><span>Enter to send · Shift + Enter for a new line</span><button id="sendResearch" class="primary" type="submit">Ask researcher ↗</button></div></form>
+  <p class="assistant-footnote">Online search retrieves publication metadata and available abstracts through Crossref. New papers need code inspection before integration. Model replies use your configured Codex login.</p>
+</section>
+<section id="rolesView" class="assistant-view" data-workspace="roles" hidden>
+  <div class="heading-row"><div><h1>Training roles</h1><p>Four task perspectives. One coordinated decision.</p></div><span class="badge">TaskForce inspired</span></div>
+  <div class="team-flow"><span>Measured losses & gradients</span><span aria-hidden="true">→</span><span>Task specialists</span><span aria-hidden="true">→</span><span>Coordinator</span><span aria-hidden="true">→</span><span>Bounded action</span></div>
+  <div class="panel team-evidence"><div><strong id="roleEvidenceTitle">Training evidence</strong><p id="roleEvidenceDescription">Loading the latest experiment…</p></div><button id="inspectRoleEvidence" class="text-button">Inspect measurements</button></div>
+  <div class="team-toolbar"><span>Review the latest saved run</span><button id="runAllRoles" class="primary">Run all roles</button></div>
+  <div id="roleCards" class="role-cards"></div>
+  <div id="rolesProgress" class="assistant-progress" role="status" aria-live="polite" hidden></div>
+  <div id="roleReview" class="role-review" aria-label="Role review"></div>
+  <details class="disclosure"><summary>When does this change training?</summary><p class="disclosure-note">These review buttons produce advice. To coordinate a custom run, enable “Use training roles” in the pipeline controls. Before optimizer update 2, the four specialists review measured task gradients and the coordinator selects whether to retain or rebalance loss weights. Each weight change is bounded and the total budget is preserved. Original UniBrain reproduction keeps its original losses and optimizer.</p><p class="disclosure-note">Roles are implemented as separate prompts and model calls. A learned multi-agent reinforcement learning policy and gradient projection are not implemented.</p></details>
+  <div id="trainingTeamLive" class="panel training-team-live" hidden></div>
+</section>

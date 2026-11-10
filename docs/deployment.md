@@ -13,10 +13,10 @@ python3.10 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-upstream.txt -r requirements.txt
 python scripts/bootstrap.py --source reg_unibrain --samples
-python -m unibrain_agent serve --port 8771
+python -m unibrain_agent serve --port 8773
 ```
 
-Open `http://127.0.0.1:8771`. The initial pipeline uses the full original UniBrain: original extraction, five registration stages, segmentation, nearest atlas transfer, cosine graph with original edge perturbation, and GCN. Optional stages start skipped. The original architecture, loss equations, augmentation and optimizer are preserved. The default two epoch budget exercises training, validation and checkpoint saving; the upstream paper schedule is 1000 epochs.
+Open `http://127.0.0.1:8773`. The initial pipeline uses the full original UniBrain: original extraction, five registration stages, segmentation, nearest atlas transfer, cosine graph with original edge perturbation, and GCN. Optional stages start skipped. The original architecture, loss equations, augmentation and optimizer are preserved. The default two epoch budget exercises training, validation and checkpoint saving; the upstream paper schedule is 1000 epochs.
 
 The original CUDA workflow runs in a separate process. It never silently uses the compact adapters when CUDA or dependencies are missing. The original trainer's existing behavior, including its mode handling after validation, is retained.
 
@@ -61,7 +61,7 @@ Environment overrides: `UNIBRAIN_SOURCES`, `UNIBRAIN_ORIGINAL_SOURCE`, `UNIBRAIN
 The server binds only to loopback. Run it on the remote host, then forward its port from your computer:
 
 ```bash
-ssh -L 8771:127.0.0.1:8771 user@server
+ssh -L 8773:127.0.0.1:8773 user@server
 ```
 
 Open the local forwarded URL. No publicly exposed service or web login is required. On clusters, use an allocated compute node and the institution's SSH routing.

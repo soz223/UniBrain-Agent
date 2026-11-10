@@ -13,6 +13,7 @@ def main():
     run.add_argument("--build-id")
     run.add_argument("--device", default=None)
     run.add_argument("--single", action="store_true")
+    run.add_argument("--coordination", choices=["single", "roles"], default="single")
     original = sub.add_parser("original", help="Run the full original UniBrain CUDA workflow")
     original.add_argument("--epochs", type=int, default=2)
     original.add_argument("--output-dir")
@@ -20,7 +21,7 @@ def main():
     prepare.add_argument("selection")
     prepare.add_argument("--backend", choices=["codex", "rules"], default="codex")
     serve = sub.add_parser("serve", help="Open the local prototype dashboard")
-    serve.add_argument("--port", type=int, default=8771)
+    serve.add_argument("--port", type=int, default=8773)
     serve.add_argument("--open", action="store_true")
     args = parser.parse_args()
     if args.command == "run":
@@ -30,11 +31,13 @@ def main():
         folder = build_path(args.build_id) if args.build_id else None
         build = verify_build(folder) if folder else None
         if build and build.get("profile") == "original":
+            if args.coordination == "roles":
+                parser.error("Original reproduction keeps its optimizer; use a custom build for role coordination")
             from .native import run_original
             result = run_original(args.steps, build=build, output_dir=args.output_dir)
         else:
             result = execute(args.backend, args.steps, args.seed, args.data_dir, args.output_dir,
-                             build_dir=folder, comparison=not args.single, device=args.device)
+                             build_dir=folder, comparison=not args.single, device=args.device, coordination=args.coordination)
         print(result["run_dir"] + "/index.html")
     elif args.command == "prepare":
         import json

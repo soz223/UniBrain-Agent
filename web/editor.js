@@ -28,6 +28,11 @@ function renderChoices() {
   byId("budgetLabel").textContent = isOriginal() ? "Epochs" : "Steps";
   byId("prepareBuild").textContent = isOriginal() ? "Prepare UniBrain" : "Apply changes";
   byId("resetPipeline").disabled = buildBusy;
+  if (byId("teamTraining")) {
+    byId("teamTraining").disabled = isOriginal() || buildBusy;
+    if (isOriginal()) byId("teamTraining").checked = false;
+    byId("teamTrainingNote").textContent = isOriginal() ? "Original reproduction keeps its loss weights. Role reviews remain available." : "Four task specialists and a coordinator review measured gradients before update 2.";
+  }
   const button = (stage, index) => {
     const option = chosenOption(stage);
     const optional = stage.options.some(item => item.id === "none");
@@ -221,7 +226,8 @@ async function runBuild() {
   startLiveRun(Number(byId("buildSteps").value));
   renderChoices();
   try {
-    await requestJson("/api/builds/" + activeBuild.id + "/run", { steps: Number(byId("buildSteps").value), backend: activeBuild.backend });
+    await requestJson("/api/builds/" + activeBuild.id + "/run", { steps: Number(byId("buildSteps").value), backend: activeBuild.backend,
+      coordination: byId("teamTraining").checked ? "roles" : "single" });
     poll();
   } catch (error) { setFailure(error); }
 }

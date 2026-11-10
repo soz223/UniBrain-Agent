@@ -99,6 +99,7 @@ def prepare(identifier, on_event=None):
                                                     fromfile="baseline/pipeline.py", tofile="candidate/pipeline.py"))
         record["implementation_hashes"] = {str(p.relative_to(PROJECT)): digest(p) for p in sorted((PROJECT / "unibrain_agent").glob("*.py"))}
         record["implementation_hashes"]["scripts/run_upstream.py"] = digest(PROJECT / "scripts/run_upstream.py")
+        record["implementation_hashes"].update({str(p.relative_to(PROJECT)): digest(p) for p in sorted((PROJECT / "prompts").glob("*.md"))})
         if original_selection(selection):
             record["status"] = "ready"
             emit("ready", "Original UniBrain sources and runtime are ready. Confirm to train.", phase="ready")
