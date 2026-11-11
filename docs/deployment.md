@@ -207,3 +207,9 @@ ssh -N -L 18777:127.0.0.1:18777 user@server
 ```
 
 In the public frontend's AI settings, use `http://127.0.0.1:18777` and the token from the server's private `backend.env`. AI accounts remain disconnected until explicitly connected. The service defaults to the dataset supplied at installation; a smoke directory remains a small test subset until a full exported fold is inspected and attached. Only one experiment runs per backend instance. This does not reserve the GPU against unrelated processes on the host.
+
+## Full cohort baseline queue
+
+Run `scripts/run_baseline_queue.py` with a workspace, cohort root, backend, state directory, epoch budget and physical GPU index. It exports each original fold, attaches it through the backend, checks GPU occupancy immediately before each launch, and runs the unchanged UniBrain architecture and losses. The deployed frontend displays the current fold through the backend status stream. The queue records fold mapping and GPU checks in `baseline_queue.json`, and stores complete test metrics beside each run. It stops on a failed audit or run. A restarted queue requires review of the existing state before another launch.
+
+The original entry point requests 1000 epochs and saves a model after every epoch except the first. A smaller epoch budget is a budgeted baseline, not a full reproduction of that schedule. The original trainer loads the test split but does not evaluate it. `scripts/evaluate_upstream.py` evaluates the saved checkpoint on the held out test split after training, without changing the original training source. Tissue and atlas masks in prepared cohorts may be automatic reference labels; interpret their overlap metrics accordingly.
