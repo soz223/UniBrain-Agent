@@ -74,7 +74,24 @@ The dashboard execution and Windows CUDA / Ubuntu CPU adapter checks are recorde
 
 The agent composes registered, source pinned adapters. It does not freely rewrite arbitrary upstream code or implement unseen methods. Every generated build is retained separately, so selecting a new method cannot overwrite the original UniBrain source.
 
-## Available stages
+## Full architecture replacement experiment
+
+`scripts/run_full_replacement.py` provides an isolated AI code generation,
+gradient checking and repair loop for a full default SynthStrip extraction
+network inside the full original UniBrain host. It retains five registration
+stages and the original loss and optimizer settings. It does not use the
+compact adapters described below. Validation is bounded to one or two updates.
+See [the portable execution guide](docs/full-replacement.md) for paths, GPU
+allocation, fault injection and the precise gradient contract. This command is
+separate from the dashboard's existing compact composition action.
+
+The [full replacement verification](catalog/full_replacement_verification.json)
+records two actual Codex calls: generation and repair of an explicitly injected
+hard mask fault. The repaired model completed two joint updates, inference and
+strict checkpoint reload on Windows CUDA. Linux CUDA execution of this new
+loop remains unverified; CPU portability and allocation checks are tested.
+
+## Available compact stages
 
 | Stage | Research choices | Current adaptation |
 | :--- | :--- | :--- |

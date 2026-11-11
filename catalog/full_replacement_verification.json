@@ -1,0 +1,141 @@
+{
+  "date": "2026-11-11",
+  "scope": "Full UniBrain host, default SynthStrip, random initialization, public training samples, two updates; controlled fault injection, not diagnostic performance",
+  "status": "passed",
+  "fault_injection": "hard_mask",
+  "provenance": {
+    "unibrain": [
+      {
+        "repository": "https://github.com/Anonymous7852/UniBrain",
+        "commit": "f9f8d906b1725046d532f862a28876482aca2cfa",
+        "verified_files": 4,
+        "verified_clean": true
+      }
+    ],
+    "synthstrip": [
+      {
+        "repository": "https://github.com/freesurfer/freesurfer",
+        "commit": "4f8728e5132e8d39a8f1bf3d24d15fed62f4fc9d",
+        "verified_files": 1,
+        "verified_clean": true
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "provider": "codex",
+      "fault_injected": true,
+      "adapter_sha256": "a772f1c4153ce68bce7b2431264e200f3c8a82d221af73b4011f0144a39456b6",
+      "status": "adapter_failed",
+      "optimizer_updates": 0,
+      "gradient_check": {
+        "registration_to_extraction_norm": 0.0,
+        "connected_tensors": 0,
+        "total_tensors": 54,
+        "mask_requires_grad": false,
+        "input_gradient_norm": 940.6040649414062
+      }
+    },
+    {
+      "attempt": 2,
+      "provider": "codex",
+      "fault_injected": false,
+      "adapter_sha256": "bee0af18a8552cb95891607b0f58e0df0ff126d6c9883aa14978f6fe7f2d1fb4",
+      "status": "passed",
+      "optimizer_updates": 2,
+      "gradient_check": {
+        "registration_to_extraction_norm": 0.005270667583877437,
+        "connected_tensors": 54,
+        "total_tensors": 54,
+        "mask_requires_grad": true,
+        "input_gradient_norm": 473.1739196777344
+      }
+    }
+  ],
+  "updates": [
+    {
+      "step": 1,
+      "losses": {
+        "extraction": 0.6986003518104553,
+        "registration": 0.27172696590423584,
+        "segmentation": 1.3862618207931519,
+        "classification": 0.702682614326477
+      },
+      "total_loss": 2.8147172927856445,
+      "changed_parameter_tensors": {
+        "ext_net": 54,
+        "reg_net": 16,
+        "seg_net": 42,
+        "feature_net": 6,
+        "gnn_pred": 6
+      },
+      "gradient": {
+        "registration_to_extraction_norm": 0.00546203081330692,
+        "connected_tensors": 54,
+        "total_tensors": 54,
+        "mask_requires_grad": true,
+        "input_gradient_norm": 473.2392272949219
+      },
+      "finite_gradients": true
+    },
+    {
+      "step": 2,
+      "losses": {
+        "extraction": 0.6985194087028503,
+        "registration": 0.2278602123260498,
+        "segmentation": 1.3775583505630493,
+        "classification": 0.6956958174705505
+      },
+      "total_loss": 2.7945597171783447,
+      "changed_parameter_tensors": {
+        "ext_net": 54,
+        "reg_net": 28,
+        "seg_net": 42,
+        "feature_net": 6,
+        "gnn_pred": 6
+      },
+      "gradient": {
+        "registration_to_extraction_norm": 0.005270667583877437,
+        "connected_tensors": 54,
+        "total_tensors": 54,
+        "mask_requires_grad": true,
+        "input_gradient_norm": 473.1739196777344
+      },
+      "finite_gradients": true
+    }
+  ],
+  "architecture": {
+    "strict_checkpoint_load": true,
+    "finite": true,
+    "architecture_matches_measured_run": true,
+    "original_parameters": 305812248,
+    "parameters": 307816920,
+    "unchanged_modules": {
+      "reg_net": 6489020,
+      "seg_net": 35858308,
+      "par_net": 36248949,
+      "feature_net": 226591360,
+      "graph_gen": 0,
+      "gnn_pred": 62722
+    }
+  },
+  "inference": {
+    "logits_shape": [
+      1,
+      2
+    ],
+    "finite": true
+  },
+  "checkpoint_sha256": "36655f98b819364d70064aa63ec0b0cdd453a6bae19c0149e00955f5259951de",
+  "source_after": [
+    {
+      "repository": "https://github.com/Anonymous7852/UniBrain",
+      "commit": "f9f8d906b1725046d532f862a28876482aca2cfa",
+      "verified_files": 4,
+      "verified_clean": true
+    }
+  ],
+  "portability": "Windows CUDA tested. CPU strict reload and scheduler visibility tests passed. Linux CUDA execution of this new loop not yet tested.",
+  "baseline_isolation": "Executed locally; mair01 services, configuration and source were not changed."
+}
