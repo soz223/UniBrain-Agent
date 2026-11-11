@@ -565,6 +565,10 @@ main {
   font-size:10px;
   color:var(--dim);
 }
+.chart-empty.compact {
+  min-height:72px;
+  background:none;
+}
 .plot-caption {
   display:flex;
   justify-content:space-between;
@@ -645,6 +649,10 @@ main {
 }
 .calls-disclosure,.notebook {
   margin:0 23px;
+}
+#metricsPanel {
+  margin:0 23px;
+  padding:0;
 }
 .disclosure-note {
   font-size:11px;

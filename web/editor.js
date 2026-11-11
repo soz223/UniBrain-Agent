@@ -312,6 +312,9 @@ async function initializeEditor() {
     }
     if (status.running && status.job === "run") {
       buildBusy = true;
+      byId("results").hidden = true;
+      byId("metricsPanel").hidden = true;
+      byId("gradientPanel").hidden = true;
       byId("confirmBuild").disabled = true;
       byId("prepareBuild").disabled = true;
       byId("buildSteps").disabled = true;

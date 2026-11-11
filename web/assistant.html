@@ -8,16 +8,17 @@
   <p class="assistant-footnote">Online search retrieves publication metadata and available abstracts through Crossref. New papers need code inspection before integration. Model replies use the connection selected in AI settings.</p>
 </section>
 <section id="rolesView" class="assistant-view" data-workspace="roles" hidden>
-  <div class="heading-row"><div><h1>Training coordination</h1><p>Learned gradient policy for original UniBrain; prompt reviews for custom adapters.</p></div><span class="badge">TaskForce style</span></div>
-  <p class="disclosure-note">The learned policy observes four task losses and their gradient Gram matrix on bounded parameter probes during labeled training. It uses one actor per task, shared reward, centralized critics and replay. At inference, the trained UniBrain model predicts without losses or policy updates.</p>
-  <div class="team-flow"><span>Build: pin policy</span><span aria-hidden="true">→</span><span>Train: observe gradients</span><span aria-hidden="true">→</span><span>Actors choose weights</span><span aria-hidden="true">→</span><span>Inference: trained checkpoint</span></div>
-  <p class="disclosure-note">Custom pipeline prompt review</p>
-  <div class="team-flow"><span>Measured losses & gradients</span><span aria-hidden="true">→</span><span>Task specialists</span><span aria-hidden="true">→</span><span>Coordinator</span><span aria-hidden="true">→</span><span>Bounded action</span></div>
-  <div class="panel team-evidence"><div><strong id="roleEvidenceTitle">Training evidence</strong><p id="roleEvidenceDescription">Loading the latest experiment…</p></div><button id="inspectRoleEvidence" class="text-button">Inspect measurements</button></div>
-  <div class="team-toolbar"><span>Review the latest saved run</span><button id="runAllRoles" class="primary">Run all roles</button></div>
-  <div id="roleCards" class="role-cards"></div>
-  <div id="rolesProgress" class="assistant-progress" role="status" aria-live="polite" hidden></div>
-  <div id="roleReview" class="role-review" aria-label="Role review"></div>
-  <details class="disclosure"><summary>When does this change training?</summary><p class="disclosure-note">For the full original architecture, enable Learned gradient policy before Confirm & run. Every labeled training update computes four task gradients, predicts their mixture, and trains the policy from the next observation. The original path remains available with the switch off. Custom adapter runs use prompt-based roles for a single bounded decision.</p></details>
+  <div class="heading-row"><div><h1>Training</h1><p>Gradient coordination for the selected pipeline.</p></div><span class="badge">Optional policy</span></div>
+  <p class="disclosure-note">Enable the policy in Pipeline to coordinate four losses during labeled training. Inference uses the resulting UniBrain checkpoint.</p>
+  <div class="team-flow"><span>Build policy</span><span aria-hidden="true">→</span><span>Coordinate task gradients</span><span aria-hidden="true">→</span><span>Use trained checkpoint</span></div>
+  <section class="panel learning-panel" id="gradientPanel" hidden><div class="panel-head"><h2>Training signals</h2><select id="gradientTask" aria-label="Learning signal"><option value="classification">Classification loss</option><option value="extraction">Extraction loss</option><option value="registration">Registration loss</option><option value="segmentation">Segmentation loss</option></select></div><p id="gradientExplanation" class="section-explanation"></p><div id="learningPaths" class="learning-paths"></div><details class="disclosure"><summary id="gradientDisclosure">Inspect measured gradients</summary><div id="gradientMatrix" class="table-wrap"></div><p id="gradientMeasurementNote" class="disclosure-note"></p></details><div id="trainingControl" class="training-control"></div></section>
+  <details class="disclosure prompt-review"><summary>Prompt role review <span>Optional analysis for custom pipelines</span></summary>
+    <div class="team-flow"><span>Measured losses & gradients</span><span aria-hidden="true">→</span><span>Task specialists</span><span aria-hidden="true">→</span><span>Coordinator</span><span aria-hidden="true">→</span><span>Bounded action</span></div>
+    <div class="panel team-evidence"><div><strong id="roleEvidenceTitle">Training evidence</strong><p id="roleEvidenceDescription">Loading the latest experiment…</p></div><button id="inspectRoleEvidence" class="text-button">Inspect measurements</button></div>
+    <div class="team-toolbar"><span>Review the latest saved run</span><button id="runAllRoles" class="primary">Run all roles</button></div>
+    <div id="roleCards" class="role-cards"></div>
+    <div id="rolesProgress" class="assistant-progress" role="status" aria-live="polite" hidden></div>
+    <div id="roleReview" class="role-review" aria-label="Role review"></div>
+  </details>
   <div id="trainingTeamLive" class="panel training-team-live" hidden></div>
 </section>

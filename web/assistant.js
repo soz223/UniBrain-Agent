@@ -153,7 +153,7 @@ async function initializeAssistant() {
     openWorkspace(link.dataset.workspaceLink || 'pipeline', link.dataset.workspaceLink ? null : link.getAttribute('href').slice(1));
   }));
   byId('resetPipeline').addEventListener('click', () => openWorkspace('pipeline'));
-  byId('openTrainingRoles').onclick = () => openWorkspace('roles');
+  byId('openTrainingRoles').onclick = () => {openWorkspace('roles');document.querySelector('.prompt-review').open=true;};
   byId('researchForm').onsubmit = event => { event.preventDefault(); submitAssistant('research'); };
   byId('researchInput').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey) {event.preventDefault();submitAssistant('research');} };
   byId('newResearch').onclick = () => { researchJob=null;byId('researchConversation').innerHTML='<div class="conversation-empty">Start a new research conversation.</div>';byId('researchProgress').hidden=true;byId('researchInput').focus(); };
@@ -163,7 +163,7 @@ async function initializeAssistant() {
   byId('inspectRoleEvidence').onclick = () => showDetails('Measured context','<pre class="prompt-content">'+escapeHtml(JSON.stringify(rolesJob?.context || assistantConfig?.context,null,2))+'</pre>','AGGREGATE MEASUREMENTS');
   window.addEventListener('trainingtelemetry', event => updateTrainingTeam(event.detail));
   const connected = await backendReady;
-  openWorkspace(['#research','#roles','#settings'].includes(location.hash) ? location.hash.slice(1) : !connected && appConfig.standalone ? 'settings' : 'pipeline');
+  openWorkspace(['#data','#research','#roles','#settings'].includes(location.hash) ? location.hash.slice(1) : !connected && appConfig.standalone ? 'settings' : 'pipeline');
   if (!connected) {
     assistantConfig = {roles:appConfig.roles,research_prompt:appConfig.research_prompt,context:null};
     assistantLibrary = appConfig.catalog;showRoles(null);

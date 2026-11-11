@@ -6,28 +6,48 @@ function dataControls(busy) {
   document.querySelectorAll('[data-attach-dataset]').forEach(node=>node.disabled=busy);
 }
 
+function selectedDatasetLabel(selected) {
+  if (!selected) return '○ Using configured sample data';
+  const name=selected.path.split(/[\\/]/).filter(Boolean).at(-1);
+  const counts=Object.entries(selected.audit?.splits||{}).map(([split,value])=>split+' '+value.count).join(' · ');
+  return '✓ Attached '+name+(counts?' · '+counts:'');
+}
+
+function showSelectedDataset(selected) {
+  byId('selectedDataset').textContent=selectedDatasetLabel(selected);
+  const warning=selected?.audit?.warnings?.[0];
+  byId('dataWarning').hidden=!warning;
+  byId('dataWarning').textContent=warning?'! '+warning:'';
+  byId('dataBadge').textContent=selected?'✓ Attached':'○ Sample data';
+}
+
 function renderDataJob(job) {
   dataJob=job;dataControls(job.status==='running');
   const progress=byId('dataProgress'),failed=job.status==='failed';
   progress.hidden=job.status==='complete';progress.classList.toggle('assistant-error',failed);
   progress.innerHTML=(dataBusy?'<span class="spinner"></span>':'<span>!</span>')+'<span>'+escapeHtml(job.error||job.events?.at(-1)?.message||'Starting data checks…')+'</span>';
-  byId('dataBadge').textContent=dataBusy?'◉ Working':failed?'! Needs attention':'✓ Checked';
-  if(job.status!=='complete')return;
+  byId('dataBadge').textContent=dataBusy?'◉ Working':failed?'! Needs attention':dataConfig?.selected?'✓ Attached':'○ Sample data';
+  if(job.status!=='complete'){byId('dataResult').innerHTML='';return;}
   let html='';
   if(job.mode==='discuss') {
     const result=job.result;
-    html='<article class="data-answer"><p>'+escapeHtml(result.answer)+'</p><details class="disclosure"><summary>Preparation plan & model discussion</summary><h3>Preparation plan</h3><ol>'+result.plan.map(item=>'<li>'+escapeHtml(item)+'</li>').join('')+'</ol>'+(result.blockers.length?'<h3>Inputs to resolve</h3><p>'+escapeHtml(result.blockers.join('\n'))+'</p>':'')+'<h3>Model discussion</h3><p>'+escapeHtml(result.model_changes)+'</p></details><p class="settings-note">'+escapeHtml((job.calls||[]).map(call=>call.backend+' · '+call.seconds.toFixed(1)+'s').join(' · '))+'</p></article>';
+    const answer=result.answer||'';
+    html='<details class="disclosure data-answer"><summary>Latest data agent answer</summary><p>'+escapeHtml(answer)+'</p>'+(result.blockers?.length?'<p class="data-blocker">Needs input: '+escapeHtml(result.blockers.slice(0,2).join(' · '))+'</p>':'')+'</details>';
   }
   const items=job.mode==='build'?[{path:job.result.dataset,kind:'Converted dataset',status:'ready',audit:job.result.audit}]:job.inventory?.items||[];
-  if(items.length)html+='<details class="disclosure"'+(job.mode!=='discuss'?' open':'')+'><summary>Inspected sources <span>'+items.length+' entries</span></summary>';
-  html+=items.slice(0,30).map((item,index)=>'<div class="data-result-row"><div><strong>'+escapeHtml((item.status==='ready'?'✓ ':item.status==='blocked'?'! ':'○ ')+item.kind)+'</strong><small>'+escapeHtml(item.path)+'</small><small>'+escapeHtml(item.reason||(item.audit?Object.entries(item.audit.splits).map(([split,value])=>split+': '+value.count).join(' · '):''))+(item.audit?.warnings?.length?' · '+escapeHtml(item.audit.warnings.join(' ')):'')+'</small></div>'+(item.status==='ready'?'<button class="text-button" data-attach-dataset="'+index+'">Use dataset ↗</button>':'')+'</div>').join('');
-  if(items.length)html+='</details>';
-  if(!items.length&&job.mode==='inspect')html='<p class="settings-note">No supported volumes found. Select NIfTI folders, DICOM series or a UniBrain NPY dataset.</p>';
-  html+='<details class="disclosure"><summary>Data notebook <span>'+job.events.length+' events</span></summary><pre class="prompt-content">'+escapeHtml(job.events.map(event=>event.message).join('\n'))+'</pre></details>';
+  const ordered=[...items].sort((a,b)=>(b.status==='ready')-(a.status==='ready'));
+  if(job.mode!=='discuss') {
+    const ready=items.filter(item=>item.status==='ready').length;
+    html='<p class="data-summary">'+ready+' ready · '+(items.length-ready)+' need attention</p>';
+    const row=(item,index)=>'<div class="data-result-row"><div><strong>'+escapeHtml((item.status==='ready'?'✓ ':'! ')+item.kind)+'</strong><small>'+escapeHtml(item.path.split(/[\\/]/).filter(Boolean).at(-1)||item.path)+'</small><small>'+escapeHtml(item.reason||(item.audit?Object.entries(item.audit.splits).map(([split,value])=>split+' '+value.count).join(' · '):''))+'</small></div>'+(item.status==='ready'?'<button class="text-button" data-attach-dataset="'+index+'">Use dataset ↗</button>':'')+'</div>';
+    html+=ordered.slice(0,2).map(row).join('');
+    if(ordered.length>2)html+='<details class="disclosure"><summary>More datasets <span>'+(ordered.length-2)+'</span></summary>'+ordered.slice(2).map((item,index)=>row(item,index+2)).join('')+'</details>';
+    if(!items.length)html='<p class="settings-note">No supported data found in this source.</p>';
+  }
   byId('dataResult').innerHTML=html;
   document.querySelectorAll('[data-attach-dataset]').forEach(button=>button.onclick=async()=>{
     dataControls(true);
-    try {const selected=await requestJson('/api/data/use',{id:job.id,dataset:items[Number(button.dataset.attachDataset)].path});dataConfig.selected=selected;byId('selectedDataset').textContent='✓ Attached dataset · '+selected.path;window.dispatchEvent(new Event('datasetchanged'));}
+    try {const selected=await requestJson('/api/data/use',{id:job.id,dataset:ordered[Number(button.dataset.attachDataset)].path});dataConfig.selected=selected;showSelectedDataset(selected);window.dispatchEvent(new Event('datasetchanged'));}
     catch(error){progress.hidden=false;progress.textContent=error.message;}
     finally{dataControls(false);}
   });
@@ -53,9 +73,9 @@ async function initializeData() {
   byId('inspectData').onclick=()=>submitData('inspect');byId('buildData').onclick=()=>submitData('build');
   byId('dataChatForm').onsubmit=event=>{event.preventDefault();submitData('discuss');};
   byId('dataExample').onclick=()=>showDetails('Conversion manifest','<p>Paths are relative to the manifest on your backend. Add eligible subjects for train, val and test. Keep each subject in one split. Confirm class meanings and annotation provenance.</p><pre class="prompt-content">'+escapeHtml(JSON.stringify(manifestExample,null,2))+'</pre><a href="https://github.com/soz223/UniBrain-Agent/blob/main/docs/data-agent.md" target="_blank" rel="noopener">Data preparation guide ↗</a>','DATA BUILD AGENT');
-  byId('viewDataContract').onclick=()=>showDetails('Model input contract','<pre class="prompt-content">'+escapeHtml(JSON.stringify({...appConfig.data_contract,selection:draft||appConfig.catalog.defaults},null,2))+'</pre>','SELECTED PIPELINE');
+  byId('viewDataContract').onclick=()=>showDetails('Model input requirements',table(['Input','Required format'],[['Image','3D T1w · 96 × 96 × 96'],['Targets','Brain mask · tissue labels 0 to 3 · AAL116 atlas · binary diagnosis'],['Splits','Train · validation · test']])+'<p>Each subject needs aligned annotations and a consistent identity across sources.</p>','DATA CONTRACT');
   if(!(await backendReady)){dataControls(false);return;}
-  try {dataConfig=await requestJson('/api/data');if(dataConfig.selected)byId('selectedDataset').textContent='✓ Attached dataset · '+dataConfig.selected.path;if(dataConfig.job){byId('dataSources').value=(dataConfig.job.sources||[]).join('\n');byId('dataManifest').value=dataConfig.job.manifest||'';renderDataJob(dataConfig.job);if(dataBusy)pollData(dataConfig.job.id);}}
+  try {dataConfig=await requestJson('/api/data');showSelectedDataset(dataConfig.selected);if(dataConfig.job){byId('dataSources').value=(dataConfig.job.sources||[]).join('\n');byId('dataManifest').value=dataConfig.job.manifest||'';renderDataJob(dataConfig.job);if(dataBusy)pollData(dataConfig.job.id);}}
   catch(error){byId('selectedDataset').textContent='! '+error.message;}
 }
 initializeData();

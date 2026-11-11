@@ -46,6 +46,8 @@ function duration(seconds) {
 function startLiveRun(steps) {
   runBusy = true;
   byId("results").hidden = true;
+  byId("metricsPanel").hidden = true;
+  byId("gradientPanel").hidden = true;
   byId("empty").hidden = true;
   byId("activityPanel").hidden = true;
   byId("runError").hidden = true;
@@ -94,8 +96,8 @@ function renderLoss() {
   const history = (liveRun?.history || []).filter(step => Number.isFinite(key === "weighted_loss" ? step.weighted_loss : step.losses?.[key]));
   if (!history.length) {
     const finished = ["complete", "failed"].includes(liveRun?.phase);
-    byId("lossChart").innerHTML = finished ? '<div class="chart-empty"><span>Loss series unavailable</span><small>This saved run did not record the selected training scalar.</small></div>' : '<div class="chart-empty"><span>Waiting for a loss measurement</span><small>The curve appears as recorded optimizer steps arrive.</small></div>';
-    byId("lossSummary").textContent = finished ? "No recorded loss values" : "Waiting for training telemetry";
+    byId("lossChart").innerHTML = finished ? '<div class="chart-empty compact"><span>Loss was not recorded in this run</span></div>' : '<div class="chart-empty"><span>Waiting for a loss measurement</span><small>The curve appears as recorded optimizer steps arrive.</small></div>';
+    byId("lossSummary").textContent = finished ? (liveRun?.history?.length || 0) + " optimizer updates recorded" : "Waiting for training telemetry";
     return;
   }
   const values = history.map(step => key === "weighted_loss" ? step.weighted_loss : step.losses[key]);
@@ -303,6 +305,9 @@ function renderResults() {
   const model = report.candidate, validation = model.validation;
   byId("empty").hidden = true;
   byId("results").hidden = false;
+  byId("gradientPanel").hidden = false;
+  byId("metricsPanel").hidden = false;
+  byId("metricsPanel").open = true;
   byId("runDate").textContent = new Date(report.created).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
   renderLive(savedTelemetry());
   renderVolume();
@@ -312,7 +317,8 @@ function renderResults() {
     '<div><strong>Task-wise gradient policy</strong><span>' + control.policy_updates + ' actor-critic updates · policy-trained UniBrain checkpoint used for inference</span></div><button id="coordinationDetails" class="text-button">Inspect policy ↗</button>' :
     control ? '<div><strong>Agent training decision</strong><span>Step ' + control.step + ' · ' + (control.action === "keep_weights" ? "Kept loss weights" : "Balanced gradient magnitudes") + '</span></div><button id="coordinationDetails" class="text-button">Inspect decision ↗</button>' : '<span>Original loss weights and Adam optimizer preserved.</span>';
   if (control) byId("coordinationDetails").onclick = coordinationDetails;
-  byId("validationMetrics").innerHTML = [["Extraction Dice", validation.extraction_dice], ["Tissue Dice", validation.tissue_dice], ["Classification accuracy", validation.accuracy], report.profile === "original" ? ["Final training loss", model.history.at(-1)?.weighted_loss] : ["Reference loss", validation.reference_loss]].map(([label, value]) => '<div class="metric"><span>' + label + '</span><strong>' + format(value) + '</strong></div>').join("");
+  const finalLoss = model.history.at(-1)?.weighted_loss;
+  byId("validationMetrics").innerHTML = [["Extraction Dice", validation.extraction_dice], ["Tissue Dice", validation.tissue_dice], ["Classification accuracy", validation.accuracy], report.profile === "original" ? Number.isFinite(finalLoss) ? ["Final training loss", finalLoss] : ["Optimizer updates", model.steps] : ["Reference loss", validation.reference_loss]].map(([label, value]) => '<div class="metric"><span>' + label + '</span><strong>' + (label === "Optimizer updates" ? value : format(value)) + '</strong></div>').join("");
   byId("dataCaveat").textContent = validation.count + " validation samples. These execution checks do not establish diagnostic performance.";
   const splits = report.data.splits;
   if (report.profile === "original") {
