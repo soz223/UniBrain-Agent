@@ -51,6 +51,17 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(monitor.snapshot()["history"], [])
         self.assertEqual(monitor.snapshot()["events"], [])
 
+    def test_long_run_keeps_recent_history_and_total_progress(self):
+        monitor = RunMonitor()
+        monitor.reset(700)
+        for step in range(1, 701):
+            monitor.record({"kind": "training", "message": "Training", "step": step,
+                            "weighted_loss": 1.0, "losses": {}, "weights": {}})
+        snapshot = monitor.snapshot()
+        self.assertEqual(snapshot["completed_steps"], 700)
+        self.assertEqual(len(snapshot["history"]), 500)
+        self.assertEqual(snapshot["history"][0]["step"], 201)
+
     def test_api_streams_updates_and_rejects_duplicate_runs(self):
         started, release = threading.Event(), threading.Event()
         server = create_server(0)

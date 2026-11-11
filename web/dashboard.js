@@ -75,8 +75,9 @@ function renderLive(value) {
   const stats = value.resources || {};
   const gpuNote = Number.isFinite(stats.gpu_allocated_mb) ? " · GPU allocated " + format(stats.gpu_allocated_mb / 1024, 2) + " GB" : "";
   const history = value.history || [];
-  byId("stepCount").textContent = history.length + " / " + value.steps + " updates";
-  byId("runtimeStats").innerHTML = [["Device", stats.device || "Pending", stats.threads ? stats.threads + " threads" : ""], ["Worker CPU", Number.isFinite(stats.cpu_percent) ? format(stats.cpu_percent, 1) + "%" : "…", "of total CPU"], ["Worker memory", Number.isFinite(stats.rss_mb) ? format(stats.rss_mb / 1024, 2) : "…", "GB resident"], ["Updates", history.length + " / " + value.steps, finished ? "completed" : "optimizer steps"]].map(([label, number, unit]) => '<div class="runtime-stat"><span>' + label + '</span><strong>' + number + '</strong><br><small>' + unit + '</small></div>').join("");
+  const completed = value.completed_steps ?? history.at(-1)?.step ?? 0;
+  byId("stepCount").textContent = completed + " / " + value.steps + " updates";
+  byId("runtimeStats").innerHTML = [["Device", stats.device || "Pending", stats.threads ? stats.threads + " threads" : ""], ["Worker CPU", Number.isFinite(stats.cpu_percent) ? format(stats.cpu_percent, 1) + "%" : "…", "of total CPU"], ["Worker memory", Number.isFinite(stats.rss_mb) ? format(stats.rss_mb / 1024, 2) : "…", "GB resident"], ["Updates", completed + " / " + value.steps, finished ? "completed" : "optimizer steps"]].map(([label, number, unit]) => '<div class="runtime-stat"><span>' + label + '</span><strong>' + number + '</strong><br><small>' + unit + '</small></div>').join("");
   const current = value.modules?.find(item => item.module === value.current_module);
   const agent = runBusy && value.agents?.find(item => item.status === "running");
   let activity = current ? (modules[current.label] || current.label) + " is running" : agent ? titleCase(agent.role) + " agent is thinking" : value.phase === "training" ? "Computing gradients and updating weights" : value.phase === "validation" ? "Validation " + value.validation?.completed + " / " + value.validation?.total : finished ? "Checkpoint and outputs saved" : failed ? "Execution stopped" : "Waiting for the next stage";
@@ -103,7 +104,8 @@ function renderLoss() {
   const values = history.map(step => key === "weighted_loss" ? step.weighted_loss : step.losses[key]);
   const low = Math.min(...values), high = Math.max(...values), pad = Math.max((high - low) * .18, Math.abs(high) * .02, .01);
   const minimum = low - pad, maximum = high + pad;
-  const x = i => 48 + i * 478 / Math.max(1, (liveRun.steps || history.length) - 1);
+  const firstStep = history[0].step, lastStep = history.at(-1).step;
+  const x = i => 48 + (history[i].step - firstStep) * 478 / Math.max(1, lastStep - firstStep);
   const y = n => 155 - (n - minimum) * 128 / (maximum - minimum);
   const grid = Array.from({ length: 4 }, (_, i) => {
     const n = minimum + (maximum - minimum) * i / 3;
@@ -111,7 +113,7 @@ function renderLoss() {
   }).join("");
   const line = '<polyline points="' + values.map((v, i) => x(i) + ',' + y(v)).join(' ') + '" fill="none" stroke="#a6d8c7" stroke-width="2"/>';
   const points = values.map((v, i) => '<circle cx="' + x(i) + '" cy="' + y(v) + '" r="3.5" fill="#a6d8c7"><title>Step ' + history[i].step + ': ' + format(v, 5) + '</title></circle>').join("");
-  byId("lossChart").innerHTML = '<svg viewBox="0 0 550 185" role="img" aria-label="Selected model training loss by optimizer step">' + grid + line + points + '<text x="48" y="179" fill="#89988f">STEP 1</text><text x="528" y="179" text-anchor="end" fill="#89988f">STEP ' + liveRun.steps + '</text></svg>';
+  byId("lossChart").innerHTML = '<svg viewBox="0 0 550 185" role="img" aria-label="Selected model training loss by optimizer step">' + grid + line + points + '<text x="48" y="179" fill="#89988f">STEP ' + firstStep + '</text><text x="528" y="179" text-anchor="end" fill="#89988f">STEP ' + lastStep + '</text></svg>';
   byId("lossSummary").textContent = "Latest " + format(values.at(-1), 4) + (key === "weighted_loss" ? " · includes current loss weights" : "");
 }
 

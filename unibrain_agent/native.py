@@ -72,14 +72,19 @@ def run_original(epochs=2, build=None, on_event=None, output_dir=None, coordinat
               "backend": "original", "epochs": epochs, "events": [], "seed": None,
               "coordination_mode": coordination,
               "build": {"id": build["id"], "selection": build["selection"]} if build else None}
+    last_report_write = 0.0
 
     def emit(event):
+        nonlocal last_report_write
         event.setdefault("seconds", round(time.perf_counter() - started, 3))
         report["events"].append(event)
+        report["events"] = report["events"][-120:]
         with (folder / "events.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(event) + "\n")
-        if event["kind"] != "module":
+        now = time.monotonic()
+        if event["kind"] != "module" and (now - last_report_write >= 2 or event["kind"] in {"complete", "failed"}):
             write_json(folder / "report.json", report)
+            last_report_write = now
         if on_event:
             on_event(event, folder)
 
@@ -115,7 +120,7 @@ def run_original(epochs=2, build=None, on_event=None, output_dir=None, coordinat
         report.update(status="complete", native=verification, elapsed_seconds=time.perf_counter() - started,
                       data={"splits": {key: {"count": value} for key, value in counts.items()}},
                       environment={"device": "cuda", "threads": config["threads"]},
-                      candidate={"steps": len(verification["updates"]), "history": verification["updates"],
+                      candidate={"steps": verification.get("update_count", len(verification["updates"])), "history": verification["updates"],
                                  "training_seconds": verification["elapsed_seconds"],
                                  "coordination": {"mode": "taskforce", "policy_updates": verification.get("policy_updates", 0),
                                                   "checkpoint": verification.get("policy_checkpoint"),

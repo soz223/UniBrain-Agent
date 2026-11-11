@@ -25,6 +25,7 @@ class RunMonitor:
             self.message = "Starting your pipeline"
             self.steps = steps
             self.history = []
+            self.completed_steps = 0
             self.events = []
             self.modules = {}
             self.agents = {}
@@ -61,6 +62,8 @@ class RunMonitor:
                 if "gradient_policy" in event:
                     step["gradient_policy"] = event["gradient_policy"]
                 self.history.append(step)
+                self.history = self.history[-500:]
+                self.completed_steps = event["step"]
             elif kind in {"agent", "decision"}:
                 role = event.get("role", event["message"])
                 self.agents[role] = {"role": role, "status": "running" if kind == "agent" else "completed",
@@ -89,6 +92,7 @@ class RunMonitor:
             return copy.deepcopy({"phase": self.phase, "message": self.message, "started_at": self.started,
                                   "elapsed_seconds": round((self.finished or now) - self.started, 1),
                                   "steps": self.steps, "history": self.history, "events": self.events,
+                                  "completed_steps": self.completed_steps,
                                   "modules": list(self.modules.values()), "agents": list(self.agents.values()),
                                   "current_module": self.current_module, "validation": self.validation,
                                   "resources": self.resources})

@@ -46,6 +46,11 @@ class UpstreamAuditTests(unittest.TestCase):
             checkpoint = source / "result/model/sample.pth"
             torch.save({"weight": torch.ones(2)}, checkpoint)
             self.assertTrue(audit_results(source, record)["passed"])
+            compact = {**record, "updates": [update], "update_count": 4,
+                       "step_checks": {"finite_gradient_norms": True, "active_modules_updated": True,
+                                       "policy_applied_every_step": True}}
+            self.assertTrue(audit_results(source, compact)["passed"])
+            self.assertFalse(audit_results(source, {**compact, "update_count": 3})["passed"])
             self.assertFalse(audit_results(source, {**record, "updates": [update] * 3})["passed"])
             self.assertFalse(audit_results(source, {**record, "source_unchanged": False})["passed"])
             torch.save({"weight": torch.tensor([float("nan")])}, checkpoint)

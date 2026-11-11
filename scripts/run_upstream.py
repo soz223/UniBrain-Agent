@@ -65,15 +65,18 @@ def audit_results(source, record, data_dir=None, work_dir=None):
                             "state_tensors": len(state), "finite": finite})
         del state
     expected = counts["train"] * record["epochs"]
+    checks_so_far = record.get("step_checks", {})
+    updates = record["updates"]
+    update_count = record.get("update_count", len(updates))
     active_modules = {"ext_net", "reg_net", "seg_net", "feature_net", "gnn_pred"}
     checks = {"source_unchanged": record["source_unchanged"], "training_completed": record["status"] == "completed",
-              "all_training_updates": len(record["updates"]) == expected,
-              "finite_gradient_norms": bool(record["updates"]) and all(step["finite_gradient_norms"] for step in record["updates"]),
-              "active_modules_updated": bool(record["updates"]) and all(active_modules.issubset(step["modules_with_observed_updates"]) for step in record["updates"]),
+              "all_training_updates": update_count == expected,
+              "finite_gradient_norms": bool(update_count) and checks_so_far.get("finite_gradient_norms", all(step["finite_gradient_norms"] for step in updates)),
+              "active_modules_updated": bool(update_count) and checks_so_far.get("active_modules_updated", all(active_modules.issubset(step["modules_with_observed_updates"]) for step in updates)),
               "all_validation_epochs": len(validation_lines) == record["epochs"],
               "checkpoint_saved": bool(checkpoints), "checkpoint_finite": bool(checkpoints) and all(item["finite"] for item in checkpoints)}
     if record.get("gradient_policy"):
-        checks["policy_applied_every_step"] = bool(record["updates"]) and all("gradient_policy" in step for step in record["updates"])
+        checks["policy_applied_every_step"] = bool(update_count) and checks_so_far.get("policy_applied_every_step", all("gradient_policy" in step for step in updates))
         checks["policy_checkpoint_saved"] = (work_dir / record.get("policy_checkpoint", "missing")).is_file()
         checks["policy_learned"] = expected < 5 or record.get("policy_updates", 0) > 0
     return {"passed": all(checks.values()), "checks": checks, "sample_counts": counts,
@@ -121,6 +124,8 @@ def main():
                           "torch_geometric": torch_geometric.__version__, "gpu": torch.cuda.get_device_name()},
               "source_sha256": {name: digest(source / name) for name in ("main.py", "model.py", "train.py", "utils.py")},
               "changes": ["Epoch budget only", "Read-only optimizer observations"], "updates": [],
+              "update_count": 0, "step_checks": {"finite_gradient_norms": True, "active_modules_updated": True,
+                                                  "policy_applied_every_step": True},
               "gradient_policy": "taskwise_actor_critic" if args.gradient_policy else None}
     if args.gradient_policy:
         record["changes"] = ["Epoch budget", "Task-wise actor-critic gradient aggregation", "Optimizer observations"]
@@ -145,6 +150,7 @@ def main():
     original_backward = torch.Tensor.backward
     model = None
     model_parameter_ids = set()
+    active_modules = {"ext_net", "reg_net", "seg_net", "feature_net", "gnn_pred"}
     team = None
     policy_parameters = []
     policy_step = None
@@ -178,7 +184,7 @@ def main():
             validation_count += 1
             emit("validation_progress", f"Validation sample {validation_count}/{counts['val'] * args.epochs}",
                  completed=validation_count, total=counts["val"] * args.epochs)
-            if args.telemetry:
+            if args.telemetry and validation_count % counts["val"] == 0:
                 np.savez_compressed(work_dir / "candidate_preview.npz", input=values[1].detach().cpu().numpy(),
                                     mask=output[1][-1].detach().cpu().numpy(), extracted=output[0][-1].detach().cpu().numpy(),
                                     warped=output[2][-1].detach().cpu().numpy(), edges=output[9].detach().cpu().numpy())
@@ -205,20 +211,28 @@ def main():
         result = original_step(optimizer, *values, **options)
         changed = [name for name, parameter in model.named_parameters() if name in before and
                    not torch.equal(before[name], parameter.detach().flatten()[::max(1, parameter.numel() // 32)][:32])]
-        update = {"step": len(record["updates"]) + 1, "seconds": round(time.perf_counter() - started, 3),
+        update = {"step": record["update_count"] + 1, "seconds": round(time.perf_counter() - started, 3),
                   "gradient_tensors": len(norms), "finite_gradient_norms": all(math.isfinite(value) for value in norms),
                   "modules_with_observed_updates": sorted({name.split(".")[0] for name in changed}),
                   "cuda_peak_allocated_bytes": torch.cuda.max_memory_allocated()}
+        record["update_count"] = update["step"]
         record["updates"].append(update)
+        record["updates"] = record["updates"][-500:]
+        record["step_checks"]["finite_gradient_norms"] &= update["finite_gradient_norms"]
+        record["step_checks"]["active_modules_updated"] &= active_modules.issubset(update["modules_with_observed_updates"])
         if total_loss is not None:
             update.update(weighted_loss=total_loss, losses=losses,
                           weights=policy_step["weights"] if policy_step else
                           {"extraction": 1.0, "registration": 0.1, "segmentation": 1.0, "classification": 1.0})
             if policy_step:
                 update["gradient_policy"] = policy_step
+            record["step_checks"]["policy_applied_every_step"] &= "gradient_policy" in update if args.gradient_policy else True
             emit("training", f"Original UniBrain: update {update['step']}/{counts['train'] * args.epochs}", **update)
         policy_step = None
-        save()
+        with (work_dir / "updates.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(update, allow_nan=False) + "\n")
+        if update["step"] == 1 or update["step"] % 25 == 0:
+            save()
         print(json.dumps(update), flush=True)
         return result
 
@@ -263,7 +277,7 @@ def main():
         total, decision = team.combine(terms, policy_parameters)
         policy_step = {**decision, "weighted_loss": float(total.detach())}
         emit("policy", "Task-wise gradient policy updated the training mixture",
-             step=len(record["updates"]) + 1, weights=decision["weights"],
+             step=record["update_count"] + 1, weights=decision["weights"],
              reward=decision["reward"], policy_updates=decision["policy_updates"])
         return original_backward(total, *values, **options)
     if args.gradient_policy:
