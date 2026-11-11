@@ -36,12 +36,13 @@ class GeneratedExtraction(nn.Module):
         return result
 
 
-def build_full_model(source, adapter, checkpoint=None):
+def build_full_model(source, adapter=None, checkpoint=None, host_checkpoint=None):
     from scripts.evaluate_upstream import original_config
 
     source = Path(source).resolve()
     verify_original(source)
-    verify(["freesurfer_synthstrip"])
+    if adapter is not None:
+        verify(["freesurfer_synthstrip"])
     existing = sys.modules.get("model")
     if existing is not None and Path(existing.__file__).resolve() != source / "model.py":
         raise RuntimeError("Another model module is loaded; use an isolated worker")
@@ -55,8 +56,12 @@ def build_full_model(source, adapter, checkpoint=None):
     count = sum(p.numel() for p in model.parameters())
     if count != 305812248 or config["reg_stage"] != 5:
         raise RuntimeError("Full original architecture contract changed")
+    if host_checkpoint is not None:
+        host_state = torch.load(host_checkpoint, map_location="cpu", weights_only=True)
+        model.load_state_dict(host_state.get("model", host_state), strict=True)
     untouched = {name: module for name, module in model.named_children() if name != "ext_net"}
-    model.ext_net = GeneratedExtraction(adapter)
+    if adapter is not None:
+        model.ext_net = GeneratedExtraction(adapter)
     if any(getattr(model, name) is not module for name, module in untouched.items()):
         raise RuntimeError("A host module other than extraction changed")
     architecture = {"original_parameters": count, "parameters": sum(p.numel() for p in model.parameters()),

@@ -21,6 +21,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -r requirements.txt
+      - run: python scripts/bootstrap.py --source reg_voxelmorph_master --source reg_lapirn --source dynamic-network-architectures --source freesurfer_synthstrip
       - run: python -m unittest discover -s tests -v
       - run: node --check web/dashboard.js && node --check web/editor.js && node --check web/assistant.js && node --check web/settings.js && node --check web/connection.js && node --check web/data.js
       - run: node --test tests/frontend.test.cjs

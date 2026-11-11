@@ -1,0 +1,238 @@
+{
+  "date": "2026-11-11",
+  "scope": "Software acceptance, not cohort accuracy, benchmark effectiveness or a complete paper reproduction",
+  "original_source_commit": "f9f8d906b1725046d532f862a28876482aca2cfa",
+  "environment": {
+    "os": "Windows",
+    "python": "3.10",
+    "torch": "2.5.1+cu121",
+    "gpu": "NVIDIA GeForce RTX 3060 Ti"
+  },
+  "full_synthstrip_trainer": {
+    "status": "complete",
+    "optimizer_updates": 1,
+    "parameters": 307816920,
+    "input_shape": [
+      96,
+      96,
+      96
+    ],
+    "split_counts": {
+      "train": 1,
+      "val": 1,
+      "test": 1
+    },
+    "validation_completed": true,
+    "test_cases": 1,
+    "saved_checkpoints": [
+      "best.pt",
+      "last.pt"
+    ],
+    "test_checkpoint_sha256": "ebe4c8e5662759f77fe43bb524bf7e2ac8661e76fff8dd040aacaac827809ac3",
+    "report_sha256": "89fa6c355367c742c0753b0d4c4105ed1b00376e1c87aa5ed08c0eff87a23270",
+    "boundary": "Accepted adapter from the earlier repair experiment, one update and distinct tiny sample splits. Subsequent frozen-module and plan preflight fixes have CPU tests."
+  },
+  "full_voxelmorph_integration": {
+    "status": "passed",
+    "optimizer_updates": 1,
+    "checks": {
+      "contract": true,
+      "gradient": true,
+      "spatial": true,
+      "fidelity": true,
+      "updates": true
+    },
+    "architecture": {
+      "method": "voxelmorph",
+      "original_parameters": 305812248,
+      "parameters": 306113659,
+      "source": [
+        {
+          "repository": "https://github.com/voxelmorph/voxelmorph",
+          "commit": "9bde7a270edfc19ad1c61115cb5ebd82124ee3af",
+          "verified_files": 5,
+          "verified_clean": true
+        }
+      ],
+      "input_shape": [
+        96,
+        96,
+        96
+      ],
+      "compact": false,
+      "weights_sha256": null,
+      "host_checkpoint_sha256": null,
+      "plans_sha256": null,
+      "adaptation": "Five original affine stages plus full dense core; soft atlas sampling for ROI features; original graph augmentation",
+      "checkpoint_scope": "Candidate core only; official compatibility requires strict loading"
+    },
+    "source_hashes": {
+      "reg_unibrain/model.py": "de918d5bc3ef1a5943534f3b182a89123e7d434477a670fbfa7914d9744d9235",
+      "reg_unibrain/main.py": "8771fe09545c682ce180cef7510fcdc78744602575410b29bf7bd9f6dee7c8e0",
+      "reg_unibrain/train.py": "401b539d4fe7f77e409a30de98cb970e728f95e844cd1b0637a715912149266b",
+      "reg_unibrain/utils.py": "1a4c3f4f8b0151e3b6e6c8105a394f49c105211e383f7d428e60a20b44df632a",
+      "reg_voxelmorph_master/LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "reg_voxelmorph_master/voxelmorph/py/utils.py": "596d5ffe80a6dd6073840f88244ae50d6b7a3a1fa8b597ccb820dc518aeb273f",
+      "reg_voxelmorph_master/voxelmorph/torch/layers.py": "cba911dac4d421eb05a5853e05addd6c9d8f273c7f2ae6bc7aa511e7c1902954",
+      "reg_voxelmorph_master/voxelmorph/torch/modelio.py": "d3dc69223313c59bf984b5c5394a58b450c587745244e0416224fadb9ead02ff",
+      "reg_voxelmorph_master/voxelmorph/torch/networks.py": "a29715c830d5104e6ae313cd95cfb7a66f702ad4edefcad3639da9abc278f987"
+    },
+    "source_unchanged": true,
+    "adapter_sha256": "22bfe5c95f881a695404bfdd35da27525ea8232b94586934eaa5b2194d58f42f",
+    "implementation_hashes": {
+      "candidate_integration.py": "ec4647edbf1d482c329d0718a775814e40a35e5511389e3ed154644857a80f58",
+      "candidate_integration_worker.py": "4f106d9318845870d1a3005c33ad05b0523e2adefa2f51ec97ff012c1a093298",
+      "full_candidates.py": "4317a613d3f14b7c013f4b375c0b10e1d889d1faa3c9cadadd801fd677de1509"
+    },
+    "diagnostic": {
+      "fidelity": {
+        "maximum_core_error": 0.0,
+        "scope": "Same pinned core, weights, native outputs and voxel coordinates; not pretrained clinical accuracy"
+      },
+      "contract": {
+        "reference_shapes": [
+          [
+            1,
+            1,
+            96,
+            96,
+            96
+          ],
+          [
+            1,
+            1,
+            96,
+            96,
+            96
+          ],
+          [
+            1,
+            3,
+            48,
+            48,
+            48
+          ]
+        ]
+      },
+      "spatial": {
+        "passed": true,
+        "grid_maximum_errors": [
+          0.0,
+          0.0
+        ],
+        "warped_image_maximum_error": 0.0,
+        "align_corners": true,
+        "units": "Voxel velocity converted to normalized xyz",
+        "scope": "Dense and affine grid composition at 96 cubed; no NIfTI physical affine is supplied by the dataset"
+      },
+      "gradient": {
+        "candidate_objective": "registration",
+        "candidate": {
+          "passed": true,
+          "parameter_norm": 0.039019455596674614,
+          "input_norm": 1.70426801273293e-09,
+          "connected_tensors": 24,
+          "total_tensors": 24,
+          "finite": true
+        },
+        "classification_to_registration": {
+          "passed": true,
+          "parameter_norm": 1.4286732040985223e-05,
+          "input_norm": 2.1272763190662026e-11,
+          "connected_tensors": 24,
+          "total_tensors": 24,
+          "finite": true
+        }
+      },
+      "updates": [
+        {
+          "step": 1,
+          "candidate_changed_tensors": 24,
+          "host_changed_tensors": {
+            "ext_net": 42,
+            "reg_net": 40,
+            "seg_net": 42,
+            "feature_net": 6,
+            "gnn_pred": 6
+          },
+          "losses": {
+            "extraction": 0.6929722428321838,
+            "segmentation": 1.3862601518630981,
+            "classification": 0.7026796340942383,
+            "registration": 0.2670564651489258
+          }
+        }
+      ]
+    },
+    "inference": {
+      "logits_shape": [
+        1,
+        2
+      ],
+      "finite": true
+    },
+    "checkpoint_sha256": "1338010de8c72d726573e4ac6fc5ee097d806d1dbfe596171f2503275b90a4cc",
+    "gpu_peak_allocated_bytes": 15394850816,
+    "report_sha256": "ae6673e41ee4943f63a744ff70d09a02531ca754cc78f836848d12fe97e58a90",
+    "boundary": "Handwritten reference adapter, not an Agent success trial. Five original affine stages plus a full dense core and explicit soft atlas connection."
+  },
+  "cpu_composition": {
+    "status": "built",
+    "scope": "Real full CPU construction and strict transfer with matching adapter SHA256; no GPU forward or training",
+    "parameters": 308118331,
+    "retained_tensors": 256,
+    "new_tensors": 26,
+    "strict_load": true,
+    "report_sha256": "7a3ac824726047a555e2ec40095dddbc37125619246e4af534b1418d81c57bb0"
+  },
+  "case_study": {
+    "controlled_fault_injection": true,
+    "metrics": {
+      "attempt_count": 2,
+      "optimizer_updates": 2,
+      "observed_repair": 1
+    },
+    "repaired": true,
+    "report_sha256": "b48b2a7c218c6779de3c23d67a5cffe02bdc58896c4b523452ca7d0fce495249",
+    "scope": "Retrospective audit of prior retained evidence; no new Agent calls or training"
+  },
+  "checker_fixtures": {
+    "passed": true,
+    "cases": 15,
+    "scope": "Synthetic checker self-test; not a full pipeline integration experiment",
+    "report_sha256": "abad170308782b262b18bb194ca2a7836d91d352472b4c6a330c819a7f50dbed"
+  },
+  "tests": {
+    "full_suite": {
+      "count": 149,
+      "passed": true,
+      "log_sha256": "001d69d6999515b960ed4bcb018594e857ea355d510528eb4238f15a78afdb42"
+    },
+    "later_suite_path_regression": {
+      "count": 11,
+      "passed": true,
+      "log_sha256": "9ff6ac3ffb12747c3302b43c66f0b40d090edc2aca1304aa65de7cea4a9b7411"
+    },
+    "later_integration_checks": {
+      "count": 19,
+      "passed": true,
+      "log_sha256": "cd43415e603f6f7edd585a3b9eff558cdd640cba83f26df7692ce17d1738ae7d"
+    },
+    "frontend": {
+      "count": 4,
+      "passed": true
+    }
+  },
+  "pending": [
+    "Full LapIRN and nnU-Net GPU acceptance",
+    "Actual matched cohort experiments",
+    "Full integration evaluators for the other ten candidates",
+    "Named external Agent system integrations and a declared classical stagewise pipeline",
+    "All new CUDA programs on Linux"
+  ],
+  "baseline": {
+    "service_read_only_check": "active",
+    "deployment_restarted": false,
+    "server_gpu_used": false
+  }
+}

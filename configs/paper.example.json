@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "python": "",
+  "source": "",
+  "output_root": "./runs/paper",
+  "datasets": {
+    "abide": {
+      "folds": {
+        "1": "",
+        "2": "",
+        "3": "",
+        "4": "",
+        "5": ""
+      },
+      "sites": {}
+    },
+    "adhd": {
+      "folds": {
+        "1": "",
+        "2": "",
+        "3": "",
+        "4": "",
+        "5": ""
+      },
+      "sites": {}
+    }
+  },
+  "seeds": [
+    17,
+    29,
+    43
+  ],
+  "repetitions": 3,
+  "epochs": 20,
+  "long_epochs": 1000,
+  "pretrain_epochs": 20,
+  "gpu": 0,
+  "adapters": {},
+  "weights": {},
+  "hosts": {},
+  "plans": {},
+  "sequential_runs": {},
+  "integration_configs": {},
+  "case_study_run": "",
+  "executors": {}
+}

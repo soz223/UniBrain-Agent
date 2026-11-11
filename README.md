@@ -91,6 +91,33 @@ hard mask fault. The repaired model completed two joint updates, inference and
 strict checkpoint reload on Windows CUDA. Linux CUDA execution of this new
 loop remains unverified; CPU portability and allocation checks are tested.
 
+## Paper experiment programs
+
+The [experiment suite](docs/experiment-suite.md) plans the paper matrix, checks
+prerequisites, executes an explicitly selected job and summarizes retained
+evidence. [configs/paper.example.json](configs/paper.example.json) contains
+portable path placeholders and no machine or account credentials. Creating a
+plan does not start training. Missing implementations and resources remain
+visible as blocked jobs.
+
+The [full comparison trainer](docs/replacement-training.md) supports original
+controls, full SynthStrip, VoxelMorph, LapIRN and planned nnU-Net candidates,
+independent and joint training, connection interventions, checkpoint resume,
+validation selection and held-out test predictions. These are separate CLI
+programs; the dashboard's custom composition action still uses its declared
+compact profile. [Full composition](docs/full-composition.md) adds simultaneous
+or sequential extraction and registration replacement with audited state
+transfer.
+
+The [integration benchmark](docs/integration-benchmark.md) runs controlled
+Agent prompts and independent checks. It is not a reproduction of every named
+external Agent system. `scripts/summarize_case_study.py` audits actual retained
+repair attempts. `scripts/prepare_site_split.py`,
+`scripts/prepare_nnunet.py`, `scripts/evaluate_masks.py` and
+`scripts/compare_predictions.py` provide the corresponding data and analysis
+programs. See [research readiness](docs/research-readiness.md) for measured
+coverage, remaining implementation gaps and reproducibility boundaries.
+
 ## Available compact stages
 
 | Stage | Research choices | Current adaptation |

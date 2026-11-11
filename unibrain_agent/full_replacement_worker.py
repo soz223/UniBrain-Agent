@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import random
 import subprocess
 import traceback
 from pathlib import Path
@@ -55,8 +56,9 @@ def validate(args, record):
     from .full_model import build_full_model
 
     torch.set_num_threads(2)
-    torch.manual_seed(17)
-    np.random.seed(17)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
     record["source_before"] = verify_original(args.source)
     record["candidate_source"] = verify(["freesurfer_synthstrip"])
     model, config, architecture = build_full_model(args.source, args.adapter)
@@ -66,7 +68,7 @@ def validate(args, record):
     model.cuda().train()
     record.update(**architecture, original_config=config,
                   initialization="Random weights, full default SynthStrip and full original UniBrain host",
-                  adapter_sha256=digest(args.adapter), seed=17,
+                  adapter_sha256=digest(args.adapter), seed=args.seed,
                   boundary="Registration loss to extraction parameters; original atlas and graph boundaries retained")
     optimizer = torch.optim.Adam(model.parameters(), lr=config["learning_rate"], weight_decay=config["weight_decay"])
     dataset = OriginalDataset(args.data / "adhd_train_sample.npy")
@@ -154,6 +156,7 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--steps", type=int, choices=(1, 2), default=2)
+    parser.add_argument("--seed", type=int, default=17)
     args = parser.parse_args()
     record = {"status": "checking", "scope": "One or two full-model joint updates, not an accuracy experiment"}
     try:
