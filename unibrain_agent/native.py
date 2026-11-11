@@ -59,7 +59,9 @@ def check_original_runtime(config):
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
-def run_original(epochs=2, build=None, on_event=None, output_dir=None):
+def run_original(epochs=2, build=None, on_event=None, output_dir=None, coordination="single"):
+    if coordination not in {"single", "taskforce"}:
+        raise ValueError("Original UniBrain supports single or taskforce gradient control")
     config = build.get("runtime", settings()) if build else settings()
     check_original_runtime(config)
     folder = Path(output_dir) if output_dir else RUNS / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -68,6 +70,7 @@ def run_original(epochs=2, build=None, on_event=None, output_dir=None):
     report = {"status": "running", "profile": "original", "mode": "single", "created": datetime.now(timezone.utc).isoformat(),
               "run_dir": str(folder.resolve()), "upstream_commit": "f9f8d906b1725046d532f862a28876482aca2cfa",
               "backend": "original", "epochs": epochs, "events": [], "seed": None,
+              "coordination_mode": coordination,
               "build": {"id": build["id"], "selection": build["selection"]} if build else None}
 
     def emit(event):
@@ -85,6 +88,8 @@ def run_original(epochs=2, build=None, on_event=None, output_dir=None):
         command = [config["original_python"], str(PROJECT / "scripts/run_upstream.py"), config["original_source"],
                    "--epochs", str(epochs), "--data-dir", config["data"], "--output-dir", str(folder),
                    "--threads", str(config["threads"]), "--telemetry"]
+        if coordination == "taskforce":
+            command.append("--gradient-policy")
         with (folder / "run.log").open("w", encoding="utf-8") as log:
             process = subprocess.Popen(command, cwd=PROJECT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        text=True, encoding="utf-8", errors="replace", env=original_environment(config),
@@ -111,7 +116,11 @@ def run_original(epochs=2, build=None, on_event=None, output_dir=None):
                       data={"splits": {key: {"count": value} for key, value in counts.items()}},
                       environment={"device": "cuda", "threads": config["threads"]},
                       candidate={"steps": len(verification["updates"]), "history": verification["updates"],
-                                 "training_seconds": verification["elapsed_seconds"], "coordination": None,
+                                 "training_seconds": verification["elapsed_seconds"],
+                                 "coordination": {"mode": "taskforce", "policy_updates": verification.get("policy_updates", 0),
+                                                  "checkpoint": verification.get("policy_checkpoint"),
+                                                  "latest": next((row["gradient_policy"] for row in reversed(verification["updates"])
+                                                                  if "gradient_policy" in row), None)} if coordination == "taskforce" else None,
                                  "validation": {**validation, "count": counts["val"]},
                                  "checkpoint": verification["checkpoints"][-1], "model": {"config": {"stages": build["selection"] if build else DEFAULTS}}})
         emit({"kind": "complete", "message": "Original UniBrain finished. Source hashes, updates and checkpoint verified."})

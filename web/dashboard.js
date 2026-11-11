@@ -79,6 +79,10 @@ function renderLive(value) {
   const agent = runBusy && value.agents?.find(item => item.status === "running");
   let activity = current ? (modules[current.label] || current.label) + " is running" : agent ? titleCase(agent.role) + " agent is thinking" : value.phase === "training" ? "Computing gradients and updating weights" : value.phase === "validation" ? "Validation " + value.validation?.completed + " / " + value.validation?.total : finished ? "Checkpoint and outputs saved" : failed ? "Execution stopped" : "Waiting for the next stage";
   byId("currentActivity").innerHTML = escapeHtml(activity) + '<small>' + (finished ? "Resources: last observed worker sample." : "Last reported worker metrics · status polled every second.") + escapeHtml(gpuNote) + '</small>';
+  const policy = [...history].reverse().find(step => step.gradient_policy)?.gradient_policy;
+  byId("policyLive").hidden = !policy;
+  if (policy) byId("policyLive").innerHTML = '<strong>Gradient policy · ' + policy.policy_updates + ' learned updates</strong>' +
+    tasks.map(task => '<div><span>' + titleCase(task) + '</span><b>' + format(policy.weights[task], 3) + '</b></div>').join('');
   renderLoss();
   renderCalls(value);
   renderJournal(value.events || []);
@@ -219,13 +223,15 @@ async function renderVolume() {
 
 function renderGradients() {
   if (report.profile === "original") {
+    const policy = report.candidate.coordination?.mode === "taskforce";
     byId("gradientTask").hidden = true;
-    byId("gradientDisclosure").textContent = "Original gradient boundaries";
-    byId("gradientMeasurementNote").textContent = "Module updates are sampled during Adam steps. Loss by module connectivity is measured separately for custom adapter runs.";
+    byId("gradientDisclosure").textContent = policy ? "Policy gradient measurements" : "Original gradient boundaries";
+    byId("gradientMeasurementNote").textContent = policy ? "The task Gram matrix uses bounded parameter probes. Module updates are sampled during Adam steps." : "Module updates are sampled during Adam steps. Loss by module connectivity is measured separately for custom adapter runs.";
     const updates = report.native.updates;
-    byId("gradientExplanation").textContent = "Original training preserved. These modules had observed parameter updates; this is not a loss by module connectivity audit.";
+    byId("gradientExplanation").textContent = policy ? "The original model received policy-weighted gradients. These modules had observed parameter updates; the sampled Gram matrix is available below." : "Original training preserved. These modules had observed parameter updates; this is not a loss by module connectivity audit.";
     byId("learningPaths").innerHTML = Object.entries(modules).filter(([key]) => updates.some(step => step.modules_with_observed_updates.includes(key))).map(([key, label]) => '<div class="learning-chip active"><strong>' + label + '</strong><span>Updated in ' + updates.filter(step => step.modules_with_observed_updates.includes(key)).length + ' optimizer steps</span></div>').join("");
-    byId("gradientMatrix").innerHTML = '<p class="disclosure-note">The original graph retains nearest label sampling and discrete edge augmentation. Classification gradients to upstream image modules are not asserted. The unused predicted parcellation head is preserved.</p>';
+    const gram = report.candidate.coordination?.latest?.gram;
+    byId("gradientMatrix").innerHTML = (policy && gram ? table(["Task", ...tasks.map(titleCase)], tasks.map((task, i) => [titleCase(task), ...tasks.map((_, j) => scientific(gram[i]?.[j]))])) : "") + '<p class="disclosure-note">The original graph retains nearest label sampling and discrete edge augmentation. Classification gradients to upstream image modules are not asserted. The unused predicted parcellation head is preserved.</p>';
     return;
   }
   const task = byId("gradientTask").value;
@@ -248,6 +254,21 @@ function renderGradients() {
 
 function coordinationDetails() {
   const control = report.candidate.coordination;
+  if (control.mode === "taskforce") {
+    const steps = report.candidate.history.filter(step => step.gradient_policy);
+    const latest = control.latest || steps.at(-1)?.gradient_policy;
+    const rows = steps.map(step => [step.step, ...tasks.map(task => format(step.gradient_policy.weights[task], 3)),
+      step.gradient_policy.reward === null ? "Pending" : format(step.gradient_policy.reward, 4), step.gradient_policy.policy_updates]);
+    const gram = latest?.gram || [];
+    showDetails("Learned gradient policy", '<p>Four actors choose loss weights from task losses and a gradient Gram matrix measured on ' +
+      (report.native.gradient_probes?.parameter_values || 0).toLocaleString() + ' sampled trainable parameter values across ' +
+      escapeHtml((report.native.gradient_probes?.modules || []).map(titleCase).join(', ')) + '. Centralized critics update the actors from observed training rewards.</p>' +
+      table(["Step", ...tasks.map(titleCase), "Reward", "Policy updates"], rows) +
+      '<h3>Latest task gradient Gram matrix</h3>' + table(["Task", ...tasks.map(titleCase)], tasks.map((task, i) => [titleCase(task), ...tasks.map((_, j) => scientific(gram[i]?.[j]))])) +
+      '<p>Weights change the backward pass of the original UniBrain model. Validation and inference use its trained checkpoint. The policy requires labeled losses and does not run during unlabeled inference.</p>' +
+      '<p>Policy checkpoint: ' + escapeHtml(control.checkpoint || "Unavailable") + '</p>', "TRAINING POLICY");
+    return;
+  }
   const rows = tasks.map(task => [titleCase(task), scientific(control.diagnostic.task_norms[task]), format(control.weights_before[task]), format(control.weights_after[task])]);
   const shared = control.diagnostic.shared_gradient_cosines.map(item => [item.tasks.map(titleCase).join(" / "), item.shared_parameter_tensors, format(item.cosine)]);
   const reviews = (control.roles || []).map(role => '<h3>' + escapeHtml(titleCase(role.role)) + '</h3><p>' + escapeHtml(role.summary) + '</p><p>' + escapeHtml(role.recommendation) + '</p>').join('');
@@ -287,13 +308,15 @@ function renderResults() {
   renderVolume();
   renderGradients();
   const control = model.coordination;
-  byId("trainingControl").innerHTML = control ? '<div><strong>Agent training decision</strong><span>Step ' + control.step + ' · ' + (control.action === "keep_weights" ? "Kept loss weights" : "Balanced gradient magnitudes") + '</span></div><button id="coordinationDetails" class="text-button">Inspect decision ↗</button>' : '<span>Original loss weights and Adam optimizer preserved.</span>';
+  byId("trainingControl").innerHTML = control?.mode === "taskforce" ?
+    '<div><strong>Task-wise gradient policy</strong><span>' + control.policy_updates + ' actor-critic updates · policy-trained UniBrain checkpoint used for inference</span></div><button id="coordinationDetails" class="text-button">Inspect policy ↗</button>' :
+    control ? '<div><strong>Agent training decision</strong><span>Step ' + control.step + ' · ' + (control.action === "keep_weights" ? "Kept loss weights" : "Balanced gradient magnitudes") + '</span></div><button id="coordinationDetails" class="text-button">Inspect decision ↗</button>' : '<span>Original loss weights and Adam optimizer preserved.</span>';
   if (control) byId("coordinationDetails").onclick = coordinationDetails;
   byId("validationMetrics").innerHTML = [["Extraction Dice", validation.extraction_dice], ["Tissue Dice", validation.tissue_dice], ["Classification accuracy", validation.accuracy], report.profile === "original" ? ["Final training loss", model.history.at(-1)?.weighted_loss] : ["Reference loss", validation.reference_loss]].map(([label, value]) => '<div class="metric"><span>' + label + '</span><strong>' + format(value) + '</strong></div>').join("");
   byId("dataCaveat").textContent = validation.count + " validation samples. These execution checks do not establish diagnostic performance.";
   const splits = report.data.splits;
   if (report.profile === "original") {
-    byId("modelFacts").innerHTML = '<p class="facts">Original UniBrain · ' + report.native.parameters.toLocaleString() + ' parameters · ' + report.epochs + ' epochs<br>' + splits.train.count + ' training samples · ' + splits.val.count + ' validation samples<br>Full widths · five registration stages · original losses, augmentation and Adam<br>Source files unchanged: ' + escapeHtml(report.upstream_commit) + '</p><p class="disclosure-note">Execution and checkpoint verification do not establish the paper accuracy. Dataset reads use memory mapping. Original trainer behavior, including mode handling, is preserved.</p>';
+    byId("modelFacts").innerHTML = '<p class="facts">Original UniBrain · ' + report.native.parameters.toLocaleString() + ' parameters · ' + report.epochs + ' epochs<br>' + splits.train.count + ' training samples · ' + splits.val.count + ' validation samples<br>Full widths · five registration stages · ' + (control?.mode === "taskforce" ? "learned task gradient weighting" : "original loss weights") + ' · Adam<br>Source files unchanged: ' + escapeHtml(report.upstream_commit) + '</p><p class="disclosure-note">Execution and checkpoint verification do not establish the paper accuracy. Dataset reads use memory mapping. ' + (control?.mode === "taskforce" ? "Training gradients are coordinated by the selected policy; validation follows the original model path." : "Original trainer behavior, including mode handling, is preserved.") + '</p>';
     byId("geometry").innerHTML = table(["Original workflow check", "Result"], Object.entries(report.native.audit.checks).map(([key, value]) => [titleCase(key), value ? "Passed" : "Failed"]));
     byId("checksTitle").textContent = "Execution checks";
     byId("footerMeta").textContent = "Original UniBrain " + report.upstream_commit.slice(0, 8);

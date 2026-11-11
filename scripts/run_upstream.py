@@ -41,6 +41,13 @@ def training_values():
         del frame
 
 
+def training_frame():
+    frame = inspect.currentframe().f_back
+    while frame and "loss_train" not in frame.f_locals:
+        frame = frame.f_back
+    return frame
+
+
 def audit_results(source, record, data_dir=None, work_dir=None):
     import numpy as np
     import torch
@@ -65,6 +72,10 @@ def audit_results(source, record, data_dir=None, work_dir=None):
               "active_modules_updated": bool(record["updates"]) and all(active_modules.issubset(step["modules_with_observed_updates"]) for step in record["updates"]),
               "all_validation_epochs": len(validation_lines) == record["epochs"],
               "checkpoint_saved": bool(checkpoints), "checkpoint_finite": bool(checkpoints) and all(item["finite"] for item in checkpoints)}
+    if record.get("gradient_policy"):
+        checks["policy_applied_every_step"] = bool(record["updates"]) and all("gradient_policy" in step for step in record["updates"])
+        checks["policy_checkpoint_saved"] = (work_dir / record.get("policy_checkpoint", "missing")).is_file()
+        checks["policy_learned"] = expected < 5 or record.get("policy_updates", 0) > 0
     return {"passed": all(checks.values()), "checks": checks, "sample_counts": counts,
             "expected_updates": expected, "validation_epochs": len(validation_lines), "checkpoints": checkpoints,
             "dataset_sha256": {path.name: digest(path) for path in sorted(data_dir.glob("*.npy"))}}
@@ -78,6 +89,7 @@ def main():
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--telemetry", action="store_true")
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--gradient-policy", action="store_true")
     args = parser.parse_args()
     source = args.source.resolve()
     if args.epochs < 2:
@@ -108,7 +120,10 @@ def main():
               "runtime": {"python": sys.version, "torch": torch.__version__, "torchvision": torchvision.__version__,
                           "torch_geometric": torch_geometric.__version__, "gpu": torch.cuda.get_device_name()},
               "source_sha256": {name: digest(source / name) for name in ("main.py", "model.py", "train.py", "utils.py")},
-              "changes": ["Epoch budget only", "Read-only optimizer observations"], "updates": []}
+              "changes": ["Epoch budget only", "Read-only optimizer observations"], "updates": [],
+              "gradient_policy": "taskwise_actor_critic" if args.gradient_policy else None}
+    if args.gradient_policy:
+        record["changes"] = ["Epoch budget", "Task-wise actor-critic gradient aggregation", "Optimizer observations"]
     output = (work_dir if args.output_dir else source.parent) / "verification.json"
     process = psutil.Process()
     process.cpu_percent()
@@ -127,7 +142,12 @@ def main():
 
     original_train = train.train_UniBrain
     original_step = torch.optim.Adam.step
+    original_backward = torch.Tensor.backward
     model = None
+    model_parameter_ids = set()
+    team = None
+    policy_parameters = []
+    policy_step = None
     started = time.perf_counter()
     current_phase = None
     validation_count = 0
@@ -173,7 +193,12 @@ def main():
         handles.extend([module.register_forward_pre_hook(before), module.register_forward_hook(after)])
 
     def observe_step(optimizer, *values, **options):
+        nonlocal policy_step
+        if not any(id(parameter) in model_parameter_ids for group in optimizer.param_groups for parameter in group["params"]):
+            return original_step(optimizer, *values, **options)
         total_loss, losses = training_values()
+        if policy_step is not None:
+            total_loss = policy_step["weighted_loss"]
         before = {name: parameter.detach().flatten()[::max(1, parameter.numel() // 32)][:32].clone()
                   for name, parameter in model.named_parameters() if parameter.grad is not None}
         norms = [float(parameter.grad.norm()) for parameter in model.parameters() if parameter.grad is not None]
@@ -187,18 +212,31 @@ def main():
         record["updates"].append(update)
         if total_loss is not None:
             update.update(weighted_loss=total_loss, losses=losses,
-                          weights={"extraction": 1.0, "registration": 0.1, "segmentation": 1.0, "classification": 1.0})
+                          weights=policy_step["weights"] if policy_step else
+                          {"extraction": 1.0, "registration": 0.1, "segmentation": 1.0, "classification": 1.0})
+            if policy_step:
+                update["gradient_policy"] = policy_step
             emit("training", f"Original UniBrain: update {update['step']}/{counts['train'] * args.epochs}", **update)
+        policy_step = None
         save()
         print(json.dumps(update), flush=True)
         return result
 
     def bounded_train(*values, **options):
-        nonlocal model
+        nonlocal model, team, model_parameter_ids, policy_parameters
         bound = inspect.signature(original_train).bind(*values, **options)
         record["original_epochs"] = bound.arguments["num_epochs"]
         bound.arguments["num_epochs"] = args.epochs
         model = bound.arguments["model_name"]
+        model_parameter_ids = {id(parameter) for parameter in model.parameters()}
+        if args.gradient_policy:
+            from unibrain_agent.taskforce import GradientTeam, select_probes
+            team = GradientTeam((bound.arguments["lambda_ext"], bound.arguments["lambda_reg"],
+                                 bound.arguments["lambda_seg"], bound.arguments["lambda_cls"]))
+            policy_parameters, probe_names = select_probes(model)
+            record["gradient_probes"] = {"parameter_tensors": len(policy_parameters),
+                                         "parameter_values": sum(parameter.numel() for parameter in policy_parameters),
+                                         "modules": sorted({name.split(".")[0] for name in probe_names})}
         record["training_arguments"] = {key: value for key, value in bound.arguments.items() if key != "model_name"}
         record["parameters"] = sum(p.numel() for p in model.parameters())
         record["parameters_by_module"] = {name: sum(p.numel() for p in module.parameters()) for name, module in model.named_children()}
@@ -214,6 +252,22 @@ def main():
 
     train.train_UniBrain = bounded_train
     torch.optim.Adam.step = observe_step
+    def coordinated_backward(tensor, *values, **options):
+        nonlocal policy_step
+        frame = training_frame() if team is not None else None
+        if frame is None or frame.f_locals["loss_train"] is not tensor:
+            return original_backward(tensor, *values, **options)
+        terms = {key: frame.f_locals[name] for key, name in
+                 {"extraction": "ext_loss", "registration": "sim_loss_train",
+                  "segmentation": "seg_loss_train", "classification": "classifier_loss_train"}.items()}
+        total, decision = team.combine(terms, policy_parameters)
+        policy_step = {**decision, "weighted_loss": float(total.detach())}
+        emit("policy", "Task-wise gradient policy updated the training mixture",
+             step=len(record["updates"]) + 1, weights=decision["weights"],
+             reward=decision["reward"], policy_updates=decision["policy_updates"])
+        return original_backward(total, *values, **options)
+    if args.gradient_policy:
+        torch.Tensor.backward = coordinated_backward
     save()
     try:
         runpy.run_path(str(source / "main.py"), run_name="__main__")
@@ -222,6 +276,12 @@ def main():
         record["status"], record["error"] = "failed", str(error)
         traceback.print_exc()
     finally:
+        torch.Tensor.backward = original_backward
+        torch.optim.Adam.step = original_step
+        if team is not None:
+            team.save(work_dir / "gradient_policy.pt")
+            record["policy_updates"] = team.updates
+            record["policy_checkpoint"] = "gradient_policy.pt"
         record["elapsed_seconds"] = time.perf_counter() - started
         record["source_unchanged"] = all(digest(source / name) == value for name, value in record["source_sha256"].items())
         record["checkpoints"] = [str(path.relative_to(work_dir)) for path in work_dir.glob("result/model/*.pth")]

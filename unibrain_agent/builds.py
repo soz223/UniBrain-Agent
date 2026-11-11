@@ -33,23 +33,28 @@ def read_build(identifier):
     return record
 
 
-def create_build(selection, backend, dataset=None):
+def create_build(selection, backend, dataset=None, coordination="single"):
     if backend not in {"configured", "codex", "rules"}:
         raise ValueError("Invalid agent backend")
+    allowed = {"single", "taskforce"} if original_selection(selection) else {"single", "roles"}
+    if coordination not in allowed:
+        raise ValueError("Invalid training coordination for this pipeline")
     # A catalog choice may be incompatible with the current data; record the failure in prepare().
     identifier = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid4().hex[:8]
     folder = build_path(identifier)
     folder.mkdir(parents=True)
     record = {"id": identifier, "status": "queued", "selection": selection, "backend": backend,
-              "profile": "original" if original_selection(selection) else "composed",
+              "profile": "original" if original_selection(selection) else "composed", "coordination": coordination,
               "created": datetime.now(timezone.utc).isoformat(), "events": [], "error": None, "dataset": dataset}
     write_json(folder / "build.json", record)
     return record
 
 
-def generated_code(selection):
+def generated_code(selection, coordination="single"):
     if original_selection(selection):
-        return "from unibrain_agent.native import run_original\n\ndef run_pipeline(epochs=2):\n    return run_original(epochs=epochs)\n"
+        return ("from unibrain_agent.native import run_original\n\n"
+                "def run_pipeline(epochs=2):\n"
+                f"    return run_original(epochs=epochs, coordination={coordination!r})\n")
     return ("from unibrain_agent.composition import ComposedPipeline\n\n"
             "SELECTION = " + repr(selection) + "\n\n\ndef build_pipeline():\n    return ComposedPipeline(SELECTION)\n")
 
@@ -62,6 +67,8 @@ def review_code(identifier):
         raise ValueError("Generated file changed after preparation")
     files = [{"name": "pipeline.py", "code": record["code"], "kind": "Generated entry point", "sha256": record["code_sha256"]}]
     names = ["unibrain_agent/native.py", "scripts/run_upstream.py"] if record["profile"] == "original" else ["unibrain_agent/composition.py", "unibrain_agent/adapters.py", "unibrain_agent/pipeline.py"]
+    if record.get("coordination") == "taskforce":
+        names.append("unibrain_agent/taskforce.py")
     for name in names:
         path = PROJECT / name
         hashes = {key.replace("\\", "/"): value for key, value in record["implementation_hashes"].items()}
@@ -108,7 +115,7 @@ def prepare(identifier, on_event=None):
             record["sources"] = verify_original(record["runtime"]["original_source"])
             emit("build", "Checking the original CUDA runtime and data paths", phase="audit")
             environment = check_original_runtime(record["runtime"])
-            record["plan"] = {"rationale": "Run original main.py and train.py with unchanged architecture, losses and optimizer. Only the explicit epoch budget and data IO wrapper differ."}
+            record["plan"] = {"rationale": "Run the original architecture and Adam optimizer with a learned task-gradient loss mixture." if record.get("coordination") == "taskforce" else "Run original main.py and train.py with unchanged architecture, losses and optimizer. Only the explicit epoch budget and data IO wrapper differ."}
             record["agent_calls"] = []
             record["validation"] = {"passed": True, "kind": "prerequisites", "environment": environment,
                                      "scope": "Pinned sources, CUDA runtime and input paths checked. Full training is verified during the run; original gradient boundaries remain."}
@@ -121,7 +128,7 @@ def prepare(identifier, on_event=None):
         if not original_selection(selection):
             record["plan"] = agent.compose(selection, methods)
             record["agent_calls"] = agent.calls
-        code = generated_code(selection)
+        code = generated_code(selection, record.get("coordination", "single"))
         compile(code, "pipeline.py", "exec")
         (folder / "pipeline.py").write_text(code, encoding="utf-8")
         record["code"] = code
@@ -163,7 +170,7 @@ def verify_build(folder, ready=True):
     if ready and (record["status"] != "ready" or not record.get("validation", {}).get("passed")):
         raise ValueError("This build has not passed validation")
     validate_selection(record["selection"])
-    if (folder / "pipeline.py").read_text(encoding="utf-8") != generated_code(record["selection"]):
+    if (folder / "pipeline.py").read_text(encoding="utf-8") != generated_code(record["selection"], record.get("coordination", "single")):
         raise ValueError("Generated code differs from the registered composition")
     if digest(folder / "pipeline.py") != record["code_sha256"]:
         raise ValueError("Build code changed after preparation")

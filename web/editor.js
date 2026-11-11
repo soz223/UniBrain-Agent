@@ -15,6 +15,10 @@ function isOriginal() {
   return library && draft && library.stages.every(stage => draft[stage.id] === library.defaults[stage.id]);
 }
 
+function selectedCoordination() {
+  return byId("teamTraining").checked ? (isOriginal() ? "taskforce" : "roles") : "single";
+}
+
 function chosenOption(stage, selection = draft) {
   return stage.options.find(option => option.id === selection[stage.id]);
 }
@@ -29,9 +33,9 @@ function renderChoices() {
   byId("prepareBuild").textContent = isOriginal() ? "Prepare UniBrain" : "Apply changes";
   byId("resetPipeline").disabled = buildBusy;
   if (byId("teamTraining")) {
-    byId("teamTraining").disabled = isOriginal() || buildBusy;
-    if (isOriginal()) byId("teamTraining").checked = false;
-    byId("teamTrainingNote").textContent = isOriginal() ? "Original reproduction keeps its loss weights. Role reviews remain available." : "Four task specialists and a coordinator review measured gradients before update 2.";
+    byId("teamTraining").disabled = buildBusy;
+    byId("teamTrainingLabel").textContent = isOriginal() ? "Learned gradient policy" : "Use training roles";
+    byId("teamTrainingNote").textContent = isOriginal() ? "TaskForce-style actors learn from losses and task gradients at every update. The original model architecture is retained." : "Four task specialists and a coordinator review measured gradients before update 2.";
   }
   const button = (stage, index) => {
     const option = chosenOption(stage);
@@ -138,12 +142,13 @@ function showActivity(record) {
 function showBuild(record) {
   activeBuild = record;
   buildBusy = ["queued", "preparing", "validating"].includes(record.status);
-  const matches = library.stages.every(stage => record.selection[stage.id] === draft[stage.id]);
+  const matches = library.stages.every(stage => record.selection[stage.id] === draft[stage.id]) &&
+    (record.coordination || "single") === selectedCoordination();
   const titles = { queued: "Starting checks", preparing: "Agent is building your pipeline", validating: "Validating the training graph",
     ready: "Ready to run", failed: "Build needs attention" };
   if (record.profile === "original") titles.preparing = "Checking original UniBrain";
-  setBuildState(record.status === "ready" ? "ready" : record.status === "failed" ? "failed" : "working", titles[record.status] || record.status);
-  byId("buildMessage").textContent = record.error || (record.status === "ready" ? record.profile === "original" ? "Original sources and CUDA runtime checked. Training verification runs after confirmation." : "Gradient, parameter update and spatial checks passed on one sample." :
+  setBuildState(record.status === "ready" && !matches ? "dirty" : record.status === "ready" ? "ready" : record.status === "failed" ? "failed" : "working", record.status === "ready" && !matches ? "Changes need preparation" : titles[record.status] || record.status);
+  byId("buildMessage").textContent = record.status === "ready" && !matches ? "Prepare the selected stages and training policy before running." : record.error || (record.status === "ready" ? record.profile === "original" ? "Original sources and CUDA runtime checked. Training verification runs after confirmation." : "Gradient, parameter update and spatial checks passed on one sample." :
     record.progress?.message || record.events?.at(-1)?.message || "Preparing selected stages");
   byId("prepareBuild").disabled = buildBusy;
   byId("prepareBuild").hidden = record.status === "ready" && matches;
@@ -152,7 +157,7 @@ function showBuild(record) {
   byId("viewBuild").hidden = false;
   byId("viewBuild").disabled = !record.code;
   showActivity(record);
-  if (record.status === "ready" && report?.build?.id === record.id && report.status === "complete") {
+  if (record.status === "ready" && matches && report?.build?.id === record.id && report.status === "complete") {
     byId("activityPanel").hidden = true;
     setBuildState("ready", "Ready for another run");
     byId("buildMessage").textContent = "Last run completed. Adjust the tools or run this pipeline again.";
@@ -190,7 +195,7 @@ async function prepareSelection() {
   if (!isOriginal() && !aiSession) {openWorkspace("settings");aiNotice("Connect your AI account before generating a custom pipeline.");return;}
   showBuild({ status: "queued", selection: { ...draft }, created: new Date().toISOString(), events: [] });
   try {
-    const value = await requestJson("/api/prepare", { selection: draft, backend: "configured" });
+    const value = await requestJson("/api/prepare", { selection: draft, backend: "configured", coordination: selectedCoordination() });
     sessionStorage.setItem(buildKey, value.build_id);
     sessionStorage.removeItem(draftKey);
     await pollBuild(value.build_id);
@@ -225,7 +230,7 @@ async function runBuild() {
   renderChoices();
   try {
     await requestJson("/api/builds/" + activeBuild.id + "/run", { steps: Number(byId("buildSteps").value), backend: activeBuild.backend,
-      coordination: byId("teamTraining").checked ? "roles" : "single" });
+      coordination: selectedCoordination() });
     poll();
   } catch (error) { setFailure(error); }
 }
@@ -237,6 +242,10 @@ function setBuildState(state, label) {
 }
 
 async function initializeEditor() {
+  byId("teamTraining").onchange = () => {
+    if (activeBuild) showBuild(activeBuild);
+    else renderChoices();
+  };
   window.addEventListener('datasetchanged',()=>{
     activeBuild=null;sessionStorage.removeItem(buildKey);
     byId('confirmBuild').hidden=true;byId('viewBuild').disabled=true;byId('prepareBuild').hidden=false;
@@ -246,6 +255,7 @@ async function initializeEditor() {
   byId("resetPipeline").onclick = () => {
     if (buildBusy) return;
     draft = { ...library.defaults }; activeBuild = null;
+    byId("teamTraining").checked = false;
     sessionStorage.removeItem(draftKey); sessionStorage.removeItem(buildKey);
     byId("buildSteps").value = "2";
     setBuildState("idle", "Ready to configure");
@@ -295,6 +305,7 @@ async function initializeEditor() {
       try {
         const record = await requestJson("/api/builds/" + previous);
         draft = { ...record.selection };
+        byId("teamTraining").checked = record.coordination === "taskforce" || record.coordination === "roles";
         showBuild(record);
         if (buildBusy) pollBuild(previous);
       } catch (_) { sessionStorage.removeItem(buildKey); }

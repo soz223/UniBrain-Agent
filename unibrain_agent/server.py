@@ -41,7 +41,7 @@ def create_server(port=8777, host="127.0.0.1", access=None):
             build = verify_build(folder) if folder else None
             if build and build.get("profile") == "original":
                 from .native import run_original
-                result = run_original(epochs=steps, build=build, on_event=event)
+                result = run_original(epochs=steps, build=build, on_event=event, coordination=coordination)
             else:
                 result = run(backend=backend, steps=steps, on_event=event, build_dir=folder, comparison=False, coordination=coordination)
             result["live"] = monitor.snapshot()
@@ -246,17 +246,21 @@ def create_server(port=8777, host="127.0.0.1", access=None):
                     raise ValueError("Invalid backend or step budget")
                 folder = None
                 coordination = body.get("coordination", "single")
-                if coordination not in {"single", "roles"}:
+                if coordination not in {"single", "roles", "taskforce"}:
                     raise ValueError("Unknown coordination mode")
                 if self.path.startswith("/api/builds/") and self.path.endswith("/run"):
                     from .builds import build_path, verify_build
                     folder = build_path(self.path[len("/api/builds/"):-len("/run")])
                     record = verify_build(folder)
                     backend = record["backend"]
+                    if coordination != record.get("coordination", "single"):
+                        raise ValueError("Training coordination changed after preparation. Prepare the pipeline again.")
                     if record.get("profile") != "original" and backend != "rules":
                         self.require_ai()
                     if record.get("profile") == "original" and coordination == "roles":
-                        raise ValueError("Original reproduction preserves its optimizer. Use a custom pipeline for role coordination.")
+                        raise ValueError("Prompt roles are available for custom runs; use taskforce for original UniBrain.")
+                    if record.get("profile") != "original" and coordination == "taskforce":
+                        raise ValueError("The taskforce gradient policy requires the full original UniBrain.")
                 elif self.path == "/api/prepare":
                     from .catalog import DEFAULTS
                     selection = body.get("selection")
@@ -277,7 +281,8 @@ def create_server(port=8777, host="127.0.0.1", access=None):
                         return
                     if self.path == "/api/prepare":
                         from .builds import create_build
-                        record = create_build(selection, backend, dataset=data_workspace.selected)
+                        record = create_build(selection, backend, dataset=data_workspace.selected,
+                                              coordination=coordination)
                         state.update(job="prepare", build_id=record["id"])
                         target, args = prepare_build, (record["id"],)
                     else:

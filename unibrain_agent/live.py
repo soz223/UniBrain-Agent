@@ -57,7 +57,10 @@ class RunMonitor:
                     self.current_module = None
                 return
             elif kind == "training":
-                self.history.append({key: event[key] for key in ("step", "weighted_loss", "losses", "weights")})
+                step = {key: event[key] for key in ("step", "weighted_loss", "losses", "weights")}
+                if "gradient_policy" in event:
+                    step["gradient_policy"] = event["gradient_policy"]
+                self.history.append(step)
             elif kind in {"agent", "decision"}:
                 role = event.get("role", event["message"])
                 self.agents[role] = {"role": role, "status": "running" if kind == "agent" else "completed",
