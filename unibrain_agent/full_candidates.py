@@ -1,6 +1,7 @@
 """Full resolution registration and planned segmentation candidates."""
 
 import json
+import math
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -41,18 +42,30 @@ def lapirn():
     return previous
 
 
-def planned_unet(plans):
-    if plans is None:
-        raise ValueError("nnU-Net requires a saved dataset-specific plans JSON; no generic plan is substituted")
-    plan = json.loads(Path(plans).read_text(encoding="utf-8"))
+def planned_execution(plan):
     if plan.get("transpose_forward", [0, 1, 2]) != [0, 1, 2]:
         raise ValueError("This integration requires identity planned axis order")
     config = plan["configurations"]["3d_fullres"]
     architecture = config["architecture"]
     if architecture["network_class_name"] != "dynamic_network_architectures.architectures.unet.PlainConvUNet":
         raise ValueError("Only an explicit PlainConvUNet plan is currently supported")
-    if config["patch_size"] != [96, 96, 96]:
-        raise ValueError("This full-volume integration requires a native 96 cubed plan")
+    strides = architecture["arch_kwargs"]["strides"]
+    if not strides or any(len(row) != 3 or any(type(v) is not int or v < 1 for v in row) for row in strides):
+        raise ValueError("Three dimensional integer strides are required")
+    divisors = [math.prod(row[axis] for row in strides) for axis in range(3)]
+    if any(96 % value for value in divisors):
+        raise ValueError("The planned strides do not support an unchanged 96 cubed input")
+    return {"native_planned_patch": config["patch_size"], "execution_patch": [96, 96, 96],
+            "stride_divisors": divisors, "plan_modified": False,
+            "scope": "Unchanged fully convolutional architecture on the full UniBrain volume; official patch training and preprocessing are not reproduced"}
+
+
+def planned_unet(plans):
+    if plans is None:
+        raise ValueError("nnU-Net requires a saved dataset-specific plans JSON; no generic plan is substituted")
+    plan = json.loads(Path(plans).read_text(encoding="utf-8"))
+    planned_execution(plan)
+    architecture = plan["configurations"]["3d_fullres"]["architecture"]
     kwargs = dict(architecture["arch_kwargs"])
     symbols = {"torch.nn.modules.conv.Conv3d": nn.Conv3d,
                "torch.nn.modules.instancenorm.InstanceNorm3d": nn.InstanceNorm3d,
@@ -179,4 +192,6 @@ def build_candidate_model(source, method, adapter=None, weights=None, plans=None
                     "adaptation": "Planned tissue head with native auxiliary outputs and normalized multi-scale tissue CE" if method == "nnunet" else
                     "Five original affine stages plus full dense core; soft atlas sampling for ROI features; original graph augmentation",
                     "checkpoint_scope": "Candidate core only; official compatibility requires strict loading"}
+    if method == "nnunet":
+        architecture["planned_execution"] = planned_execution(json.loads(Path(plans).read_text(encoding="utf-8")))
     return model, config, architecture

@@ -9,10 +9,27 @@ import nibabel as nib
 import numpy as np
 
 from unibrain_agent.data import FIELDS, digest
-from unibrain_agent.nnunet_prepare import export_training, parser, run_planner, validate_export, validate_plan_provenance
+from unibrain_agent.nnunet_prepare import export_training, parser, run_planner, validate_export, validate_plan_provenance, full_volume_contract
 
 
 class NnunetPreparationTests(unittest.TestCase):
+    def test_native_patch_is_retained_for_full_volume_execution(self):
+        plan = {"transpose_forward": [0, 1, 2], "configurations": {"3d_fullres": {
+            "patch_size": [64, 96, 96], "architecture": {
+                "network_class_name": "dynamic_network_architectures.architectures.unet.PlainConvUNet",
+                "arch_kwargs": {"n_stages": 5, "features_per_stage": [32, 64, 128, 256, 320],
+                                "strides": [[1, 1, 1]] + [[2, 2, 2]] * 4}}}}}
+        before = json.dumps(plan)
+        contract = full_volume_contract(plan)
+        self.assertEqual(json.dumps(plan), before)
+        self.assertTrue(contract["full_volume_adaptation"])
+        self.assertEqual(contract["native_planned_patch"], [64, 96, 96])
+        self.assertEqual(contract["execution_patch"], [96, 96, 96])
+        self.assertEqual(contract["stride_divisors"], [16, 16, 16])
+        plan["configurations"]["3d_fullres"]["architecture"]["arch_kwargs"]["strides"][-1] = [8, 2, 2]
+        with self.assertRaisesRegex(ValueError, "do not support"):
+            full_volume_contract(plan)
+
     def test_training_plan_rejects_cross_fold_and_changed_plan(self):
         with tempfile.TemporaryDirectory() as directory:
             plans = Path(directory) / "nnUNetPlans.json"
@@ -56,6 +73,8 @@ class NnunetPreparationTests(unittest.TestCase):
             report = export_training(args)
             self.assertFalse(report["test_read"])
             self.assertEqual(report["cases"][0]["subject_id"], "training_subject")
+            configuration = json.loads((args.output / "nnUNet_raw" / report["dataset_name"] / "dataset.json").read_text())
+            self.assertEqual(configuration["overwrite_image_reader_writer"], "NibabelIO")
             image = nib.load(args.output / "nnUNet_raw" / report["dataset_name"] / "imagesTr/case000000_0000.nii.gz")
             self.assertEqual(image.header.get_xyzt_units()[0], "unknown")
             np.testing.assert_array_equal(np.asarray(image.dataobj).transpose(2, 1, 0), original["raw_img_np"][0])

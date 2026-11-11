@@ -69,7 +69,9 @@ configurations after migration. Source and runtime paths come from CLI arguments
 and the portable local configuration, not usernames in the program.
 
 nnU-Net remains blocked until a real dataset-specific plans file is supplied.
-The supported plan is native 96 cubed PlainConvUNet with four tissue classes;
+The supported plan is a PlainConvUNet with four tissue classes and native
+strides compatible with full 96 cubed execution. Its native planned patch may
+differ and is retained unchanged alongside the execution volume;
 the evaluator does not invent a generic plan. `index.json` explicitly lists
 the other ten paper candidates as not implemented in the full integration
 benchmark. They are not routed to compact adapters.

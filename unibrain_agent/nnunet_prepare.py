@@ -52,7 +52,7 @@ def export_training(args):
                 "reference_kind": "Automatically generated tissue reference labels; not manual annotations",
                 "coordinates": args.coordinates, "spacing_array_axes": list(spacing), "nifti_spatial_unit": unit,
                 "spacing_source": args.spacing_source, "native_orientation_known": False, "nifti_to_source_axes": [2, 1, 0],
-                "geometry_note": "NIfTI axes are reversed so SimpleITK returns the original array axes. The diagonal affine and zero origin are synthetic. Normalized voxel units are not millimetres.",
+                "geometry_note": "NIfTI axes are reversed so official NibabelIO returns the original array axes. The diagonal affine and zero origin are synthetic. Normalized voxel units are not millimetres.",
                 "cases": [], "files": {}}
     write_json(output / "export.json", manifest)
     affine = np.diag([*spacing[::-1], 1.])
@@ -72,7 +72,7 @@ def export_training(args):
         manifest["cases"].append({"case": case, "source_index": index, "subject_id": ids[index]})
     dataset_json = {"channel_names": {"0": "T1"},
                     "labels": {"background": 0, "tissue_class_1": 1, "tissue_class_2": 2, "tissue_class_3": 3},
-                    "numTraining": len(dataset), "file_ending": ".nii.gz", "overwrite_image_reader_writer": "SimpleITKIO",
+                    "numTraining": len(dataset), "file_ending": ".nii.gz", "overwrite_image_reader_writer": "NibabelIO",
                     "description": "UniBrain training fold only; automatically generated tissue references"}
     write_json(raw / "dataset.json", dataset_json)
     manifest["files"][(raw / "dataset.json").relative_to(output).as_posix()] = digest(raw / "dataset.json")
@@ -87,7 +87,7 @@ def validate_export(output):
     if manifest["status"] != "exported" or not manifest["training_only"] or manifest["validation_read"] or manifest["test_read"]:
         raise ValueError("Planner requires a complete training-only export")
     if manifest.get("nifti_to_source_axes") != [2, 1, 0]:
-        raise ValueError("Export lacks the verified SimpleITK to source axis mapping")
+        raise ValueError("Export lacks the verified NibabelIO to source axis mapping")
     for relative, expected in manifest["files"].items():
         path = (output / relative).resolve()
         if output not in path.parents or not path.is_file() or digest(path) != expected:
@@ -116,6 +116,25 @@ def validate_plan_provenance(plans, training_hash, dataset, fold):
     if not environment.get("nnunetv2") or not re.fullmatch(r"[a-f0-9]{64}", environment.get("planner_source_sha256", "")):
         raise ValueError("Official planner version and source hash are required")
     return {"sidecar_sha256": digest(sidecar), **provenance}
+
+
+def full_volume_contract(plans):
+    from .full_candidates import planned_execution
+    try:
+        contract = planned_execution(plans)
+        kwargs = plans["configurations"]["3d_fullres"]["architecture"]["arch_kwargs"]
+    except (KeyError, TypeError) as error:
+        raise ValueError("The native architecture plan is incomplete") from error
+    stages, strides = kwargs.get("n_stages", 0), kwargs.get("strides", [])
+    features = kwargs.get("features_per_stage", [])
+    if stages < 5 or len(strides) != stages or not features or min(features) < 16:
+        raise ValueError("A complete full width planned network is required")
+    native = contract["native_planned_patch"]
+    if not isinstance(native, list) or len(native) != 3:
+        raise ValueError("The native 3D patch shape is missing")
+    return {**contract, "architecture_unchanged": True,
+            "full_volume_adaptation": native != [96, 96, 96],
+            "adaptation": "Execute the unchanged fully convolutional architecture on the 96 cubed UniBrain volume; retain the native plan and all stages"}
 
 
 def run_planner(args):
@@ -162,15 +181,17 @@ def run_planner(args):
         plans = json.loads(path.read_text(encoding="utf-8"))
         config = plans.get("configurations", {}).get("3d_fullres", {})
         architecture = config.get("architecture", {})
-        compatible = (config.get("patch_size") == [96, 96, 96] and plans.get("transpose_forward", [0, 1, 2]) == [0, 1, 2]
-                      and architecture.get("network_class_name") == "dynamic_network_architectures.architectures.unet.PlainConvUNet")
+        try:
+            report.update(full_volume_contract(plans))
+            compatible = True
+        except ValueError as error:
+            compatible = False
+            report["reason"] = str(error) + "; the native plan was preserved unchanged"
         report.update(status="ready" if compatible else "incompatible", plans=str(path.relative_to(output)),
                       plans_sha256=digest(path), patch_size=config.get("patch_size"),
                       transpose_forward=plans.get("transpose_forward"),
                       architecture=architecture.get("network_class_name"),
                       scope="Real planner output; forward/backward and complete UniBrain integration still require execution checks")
-        if not compatible:
-            report["reason"] = "The native plan does not meet the 96 cubed PlainConvUNet contract with unchanged tensor axes; it was preserved unchanged"
         write_json(path.with_suffix(".provenance.json"), report)
     write_json(output / "plan.json", report)
     write_json(attempt / "report.json", report)

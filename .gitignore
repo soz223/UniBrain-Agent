@@ -1,5 +1,6 @@
 .venv/
 .venv-upstream/
+.venv-planner/
 __pycache__/
 *.pyc
 *.egg-info/

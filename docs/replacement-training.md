@@ -45,6 +45,9 @@ explicit research adaptation, not the complete official nnU-Net trainer.
 Use [the training fold preparation program](nnunet-preparation.md) to export
 only training subjects and call the official planner with explicit coordinate
 units. An incompatible native plan is retained and reported, never rewritten.
+The unchanged planned network executes on UniBrain's 96 cubed volume when its
+cumulative strides permit that size. The native patch and execution shape are
+recorded separately; this is an explicit full volume execution adaptation.
 
 ## Execution
 
