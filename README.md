@@ -70,7 +70,7 @@ Two epochs cover ten training updates, two validation passes and the upstream ch
 
 The measured run in [catalog/upstream_verification.json](catalog/upstream_verification.json) completed all ten updates and both validation passes in 658.9 seconds on Windows with an RTX 3060 Ti. The model contained 305,812,248 parameters. Its 1,223,405,454 byte checkpoint had finite tensors and loaded strictly into the full original architecture. All four upstream code files remained unchanged. Source behavior findings, including the unused parcellation head and the trainer's mode handling after validation, are recorded separately in that audit.
 
-The new dashboard execution and Windows CUDA / Ubuntu CPU adapter checks are recorded in [catalog/portability_verification.json](catalog/portability_verification.json). Linux full original CUDA training, distributed training and large cohort throughput have not been verified.
+The dashboard execution and Windows CUDA / Ubuntu CPU adapter checks are recorded in [catalog/portability_verification.json](catalog/portability_verification.json). The [Linux original-model audit](catalog/linux_original_verification.json) verifies smoke subsets from all five ABIDE and ADHD folds, plus two authenticated backend API runs, on an RTX 6000 Ada. All 48 optimizer updates passed; the full original architecture and four upstream source files were preserved. Full-cohort throughput, distributed training and paper-result reproduction remain unverified.
 
 The agent composes registered, source pinned adapters. It does not freely rewrite arbitrary upstream code or implement unseen methods. Every generated build is retained separately, so selecting a new method cannot overwrite the original UniBrain source.
 

@@ -1,0 +1,154 @@
+{
+  "date": "2026-11-11",
+  "scope": "Original UniBrain smoke execution, not full-cohort performance reproduction",
+  "upstream_commit": "f9f8d906b1725046d532f862a28876482aca2cfa",
+  "runtime": {
+    "python": "3.10.19 (main, Feb 12 2026, 00:42:18) [Clang 21.1.4 ]",
+    "torch": "2.5.1+cu121",
+    "torchvision": "0.20.1+cu121",
+    "torch_geometric": "2.4.0",
+    "gpu": "NVIDIA RTX 6000 Ada Generation"
+  },
+  "parameters": 305812248,
+  "all_sources_unchanged": true,
+  "sample_counts_per_fold": {
+    "train": 2,
+    "val": 2,
+    "test_loaded_not_evaluated": 2
+  },
+  "epochs_per_run": 2,
+  "fold_runs": [
+    {
+      "cohort": "abide",
+      "fold": 1,
+      "passed": true,
+      "exit_code": 0,
+      "updates": 4,
+      "validation_epochs": 2,
+      "seconds": 13.405958676710725
+    },
+    {
+      "cohort": "abide",
+      "fold": 2,
+      "passed": true,
+      "exit_code": 0,
+      "updates": 4,
+      "validation_epochs": 2,
+      "seconds": 10.742444686591625
+    },
+    {
+      "cohort": "abide",
+      "fold": 3,
+      "passed": true,
+      "exit_code": 0,
+      "updates": 4,
+      "validation_epochs": 2,
+      "seconds": 9.733527421951294
+    },
+    {
+      "cohort": "abide",
+      "fold": 4,
+      "passed": true,
+      "exit_code": 0,
+      "updates": 4,
+      "validation_epochs": 2,
+      "seconds": 12.494355335831642
+    },
+    {
+      "cohort": "abide",
+      "fold": 5,
+      "passed": true,
+      "exit_code": 0,
+      "updates": 4,
+      "validation_epochs": 2,
+      "seconds": 12.457405358552933
+    },
+    {
+      "cohort": "adhd",
+      "fold": 1,
+      "passed": true,
+      "exit_code": 0,
+      "updates": 4,
+      "validation_epochs": 2,
+      "seconds": 12.015694040805101
+    },
+    {
+      "cohort": "adhd",
+      "fold": 2,
+      "passed": true,
+      "exit_code": 0,
+      "updates": 4,
+      "validation_epochs": 2,
+      "seconds": 9.308661341667175
+    },
+    {
+      "cohort": "adhd",
+      "fold": 3,
+      "passed": true,
+      "exit_code": 0,
+      "updates": 4,
+      "validation_epochs": 2,
+      "seconds": 10.792475573718548
+    },
+    {
+      "cohort": "adhd",
+      "fold": 4,
+      "passed": true,
+      "exit_code": 0,
+      "updates": 4,
+      "validation_epochs": 2,
+      "seconds": 9.440123431384563
+    },
+    {
+      "cohort": "adhd",
+      "fold": 5,
+      "passed": true,
+      "exit_code": 0,
+      "updates": 4,
+      "validation_epochs": 2,
+      "seconds": 9.40696008875966
+    }
+  ],
+  "backend_api_runs": [
+    {
+      "cohort": "abide",
+      "updates": 4,
+      "passed": true,
+      "live_training_events": 4
+    },
+    {
+      "cohort": "adhd",
+      "updates": 4,
+      "passed": true,
+      "live_training_events": 4
+    }
+  ],
+  "total_optimizer_updates": 48,
+  "peak_training_tensor_gib": 20.30502462387085,
+  "checks": {
+    "source_unchanged": true,
+    "training_completed": true,
+    "all_training_updates": true,
+    "finite_gradient_norms": true,
+    "active_modules_updated": true,
+    "all_validation_epochs": true,
+    "checkpoint_saved": true,
+    "checkpoint_finite": true
+  },
+  "all_fold_audits_passed": true,
+  "exported_records_match_master": 60,
+  "unit_tests_passed": 68,
+  "deployment": {
+    "service": "systemd user service",
+    "loopback_only": true,
+    "token_required": true,
+    "github_pages_origin_verified": true,
+    "linger_enabled": true
+  },
+  "limitations": [
+    "Two subjects per split are selected within existing fold membership.",
+    "The original trainer loads the test split but evaluates validation only.",
+    "Unchanged original model behavior is preserved, including its unused parcellation head.",
+    "No clinical accuracy, full-cohort throughput or paper-result reproduction is established."
+  ]
+}

@@ -167,4 +167,43 @@ The rules backend is an explicit deterministic test mode. The interactive custom
 
 ## Verified environments
 
-The [execution record](../catalog/portability_verification.json) contains the November 9, 2026 checks. The Windows dashboard completed full original CUDA training for two epochs, ten updates and two validation passes with unchanged upstream sources and a finite checkpoint. The compact adapter profile completed two updates and five validation samples on both Windows CUDA and Ubuntu WSL CPU. Twenty five unit tests passed on Windows and Ubuntu. Linux full original CUDA training and large cohort throughput remain unverified.
+The [execution record](../catalog/portability_verification.json) contains the November 9, 2026 checks. The Windows dashboard completed full original CUDA training for two epochs, ten updates and two validation passes with unchanged upstream sources and a finite checkpoint. The compact adapter profile completed two updates and five validation samples on both Windows CUDA and Ubuntu WSL CPU. Twenty five unit tests passed on Windows and Ubuntu.
+
+The [November 11 Linux audit](../catalog/linux_original_verification.json) covers smoke subsets from all five folds of ABIDE and ADHD. Each run used two training subjects, two validation subjects, two epochs and four optimizer updates. The test subset was loaded by the original trainer but not evaluated. All ten runs passed source, gradient, module-update, validation and checkpoint checks. Two additional runs through the deployed API passed, for 48 updates in total. The model retained all 305,812,248 parameters. Sixty-eight backend unit tests passed. These checks establish execution on this GPU, not full-cohort throughput or paper accuracy.
+
+## Prepared cohort folds
+
+Export an interface directory from a prepared cohort's master array and original fold indices:
+
+```bash
+python scripts/export_cohort_fold.py /datasets/abide /scratch/smoke/abide/round1 --fold 1
+```
+
+The default exports one subject per class in each split and labels the result `smoke_subset` in `cohort.json`. It preserves each selected record exactly and converts the supplied original 96 cubed NIfTI templates to NPY. Add `--full` to export every record in that fold. The original master array and fold indices remain unchanged. Output interface filenames retain the upstream `adhd_` prefix for either cohort.
+
+For the ten-fold smoke runner, export directories named `data/abide/round1` through `round5` and `data/adhd/round1` through `round5` under one workspace. Then run:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python scripts/smoke_cohort_folds.py /scratch/smoke --source sources/reg_unibrain
+```
+
+The runner executes folds sequentially and stops on the first failed audit. It retains logs, checkpoints and `summary.json`. Existing run folders are not overwritten. In the frontend's Data workspace, inspect a specific exported fold directory and attach it before preparing a new pipeline.
+
+## Persistent Linux backend
+
+After verifying the runtime, install a user service with a private token and an explicit dataset:
+
+```bash
+python scripts/install_user_backend.py --data /scratch/smoke/abide/round1 --state /scratch/unibrain-service --gpu 0 --port 18777
+loginctl enable-linger "$USER"
+```
+
+The installer creates `unibrain-backend.service`, an external runtime configuration and a mode-600 `backend.env`. Existing service configurations are not overwritten. Linger keeps the user service available after logout where host policy permits. Check it with `systemctl --user status unibrain-backend` and view native service logs with `journalctl --user -u unibrain-backend`.
+
+Forward the same port from your workstation:
+
+```bash
+ssh -N -L 18777:127.0.0.1:18777 user@server
+```
+
+In the public frontend's AI settings, use `http://127.0.0.1:18777` and the token from the server's private `backend.env`. AI accounts remain disconnected until explicitly connected. The service defaults to the dataset supplied at installation; a smoke directory remains a small test subset until a full exported fold is inspected and attached. Only one experiment runs per backend instance. This does not reserve the GPU against unrelated processes on the host.
