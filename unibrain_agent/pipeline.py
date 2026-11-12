@@ -126,6 +126,10 @@ class Pipeline(nn.Module):
                                 "This is an adapted execution baseline, not a reproduction of published accuracy"]}
 
 
+class LossTerms(dict):
+    pass
+
+
 def loss_terms(output, sample, template, extraction_loss="bce"):
     mask = output["mask"].clamp(1e-6, 1 - 1e-6)
     target = sample["raw_img_brain_mask_np"]
@@ -138,8 +142,16 @@ def loss_terms(output, sample, template, extraction_loss="bce"):
     for logits in output.get("tissue_aux", []):
         target = F.interpolate(output["tissue_target"], size=logits.shape[2:], mode="nearest")[:, 0].long()
         tissue = tissue + 0.5 * F.cross_entropy(logits, target)
-    tissue = tissue + 0.2 * output.get("parcellation_loss", 0)
-    return {"extraction": extraction,
-            "registration": unibrain_core().GCC()(output["warped"], template["image"]) + 0.01 * output.get("regularization", 0),
-            "segmentation": tissue,
-            "classification": F.cross_entropy(output["logits"], sample["label"])}
+    similarity = unibrain_core().GCC()(output["warped"], template["image"])
+    classification = F.cross_entropy(output["logits"], sample["label"])
+    result = LossTerms(extraction=extraction, registration=similarity + .01 * output.get('regularization', 0),
+                       segmentation=tissue + .2 * output.get('parcellation_loss', 0), classification=classification)
+    result.objective_parts = {key: (value, key, 1.) for key, value in
+                              {'extraction': extraction, 'registration': similarity, 'segmentation': tissue, 'classification': classification}.items()}
+    for name, source, group, scale in [('regularization', 'regularization', 'registration', .01),
+                                      ('parcellation', 'parcellation_loss', 'segmentation', .2)]:
+        if isinstance(output.get(source), torch.Tensor):
+            result.objective_parts[name] = (output[source], group, scale)
+    result.objective_definitions = {'extraction': 'BCE + soft Dice loss' if extraction_loss == 'bce_dice' else 'BCE',
+                                    'segmentation': 'CE + 0.5 CE per auxiliary head' if output.get('tissue_aux') else 'CE'}
+    return result

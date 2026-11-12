@@ -25,6 +25,7 @@ class RunMonitor:
             self.message = "Starting your pipeline"
             self.steps = steps
             self.history = []
+            self.objective = None
             self.completed_steps = 0
             self.events = []
             self.modules = {}
@@ -59,6 +60,7 @@ class RunMonitor:
                 return
             elif kind == "training":
                 step = {key: event[key] for key in ("step", "weighted_loss", "losses", "weights")}
+                self.objective = event.get('objective')
                 if "gradient_policy" in event:
                     step["gradient_policy"] = event["gradient_policy"]
                 self.history.append(step)
@@ -77,7 +79,7 @@ class RunMonitor:
                 self.phase = kind
                 self.finished = time.time()
                 self.current_module = None
-            self.events.append({key: value for key, value in event.items() if key not in {"subject_id", "config"}})
+            self.events.append({key: value for key, value in event.items() if key not in {"subject_id", "config", "objective"}})
             self.events = self.events[-120:]
 
     def snapshot(self):
@@ -92,6 +94,7 @@ class RunMonitor:
             return copy.deepcopy({"phase": self.phase, "message": self.message, "started_at": self.started,
                                   "elapsed_seconds": round((self.finished or now) - self.started, 1),
                                   "steps": self.steps, "history": self.history, "events": self.events,
+                                  "objective": self.objective,
                                   "completed_steps": self.completed_steps,
                                   "modules": list(self.modules.values()), "agents": list(self.agents.values()),
                                   "current_module": self.current_module, "validation": self.validation,

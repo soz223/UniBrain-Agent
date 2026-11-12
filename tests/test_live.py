@@ -16,6 +16,17 @@ from unibrain_agent.server import create_server
 
 
 class LiveTests(unittest.TestCase):
+    def test_objective_is_latest_only_and_cleared_on_reset(self):
+        monitor = RunMonitor()
+        monitor.record({'kind': 'training', 'message': 'Update', 'step': 1, 'weighted_loss': 1.,
+                        'losses': {}, 'weights': {}, 'objective': {'step': 1, 'terms': []}})
+        snapshot = monitor.snapshot()
+        self.assertEqual(snapshot['objective']['step'], 1)
+        self.assertNotIn('objective', snapshot['history'][0])
+        self.assertNotIn('objective', snapshot['events'][0])
+        monitor.reset(2)
+        self.assertIsNone(monitor.snapshot()['objective'])
+
     def test_observing_modules_preserves_outputs_and_gradients(self):
         model = torch.nn.Module()
         model.config = SimpleNamespace(stages={})

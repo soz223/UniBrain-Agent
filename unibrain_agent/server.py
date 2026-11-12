@@ -208,6 +208,11 @@ def create_server(port=8777, host="127.0.0.1", access=None):
                     from .objective import preview_objective
                     from .builds import read_build
                     build = read_build(body['build_id']) if body.get('build_id') else None
+                    if (build and build.get('status') == 'ready' and build.get('selection') == body['selection']
+                            and build.get('coordination', 'single') == body.get('coordination', 'single')
+                            and build.get('validation', {}).get('objective')):
+                        self.respond(build['validation']['objective'])
+                        return
                     self.respond(preview_objective(body['selection'], body.get('coordination', 'single'), build))
                     return
                 if self.path == "/api/research-cycles":

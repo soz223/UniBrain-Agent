@@ -46,6 +46,9 @@ def validate(folder):
         output = model(sample, template)
         terms = loss_terms(output, sample, template, record["plan"]["extraction_loss"])
         total = sum(REFERENCE_WEIGHTS[key] * value for key, value in terms.items())
+        from .objective import observe_objective
+        objective = observe_objective(model, terms, REFERENCE_WEIGHTS, total, step + 1)
+        objective.update(profile='Executed compact build check', selection=record['selection'], phase='build_validation')
         progress("training", f"Optimizer step {step + 1}/2: backpropagation and gradient checks")
         total.backward()
         missing = [name for name, p in named.items() if p.grad is None]
@@ -84,6 +87,7 @@ def validate(folder):
         failures.append("Classification gradient did not reach graph weights")
     progress("audit", "Gradient and spatial checks completed" if not failures else "; ".join(failures))
     return {"passed": not failures, "error": "; ".join(failures) or None, "passes": passes,
+            "objective": objective,
             "updates": updates, "gradients": audit, "spatial": spatial, "model": model.description(),
             "scope": "Two optimizer steps on one original GitHub training sample. Random weights. Not an accuracy evaluation."}
 

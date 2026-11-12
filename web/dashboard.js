@@ -57,6 +57,7 @@ function startLiveRun(steps) {
 
 function renderLive(value) {
   liveRun = value;
+  if (typeof renderObjective === 'function') renderObjective();
   const finished = value.phase === "complete";
   const failed = value.phase === "failed";
   runBusy = !finished && !failed;

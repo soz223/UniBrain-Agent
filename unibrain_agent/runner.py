@@ -145,6 +145,10 @@ def _train_branch(model, train, val, template, steps, seed, folder, name, emit, 
         started = time.perf_counter()
         emit("phase", f"Backpropagation and parameter update {step + 1}/{steps}", phase="training", operation="backward")
         total = sum(weights[key] * value for key, value in terms.items())
+        from .objective import observe_objective
+        objective = observe_objective(model, terms, weights, total, step + 1)
+        objective.update(profile='Executed compact adapter', selection=model.config.stages,
+                         coordination='roles' if agent is not None else 'single')
         if not bool(torch.isfinite(total)):
             raise RuntimeError(f"Nonfinite loss in {name}")
         total.backward()
@@ -153,7 +157,7 @@ def _train_branch(model, train, val, template, steps, seed, folder, name, emit, 
         elapsed = time.perf_counter() - started
         training_seconds += elapsed
         history.append({"step": step + 1, "subject_id": sample["id"], "weighted_loss": float(total.detach()),
-                        "losses": {key: float(value.detach()) for key, value in terms.items()}, "weights": dict(weights)})
+                        "losses": {key: float(value.detach()) for key, value in terms.items()}, "weights": dict(weights), "objective": objective})
         emit("training", f"{name}: step {step + 1}/{steps}", branch=name, **history[-1])
         del output, terms, total
     updated = {}

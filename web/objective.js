@@ -64,21 +64,26 @@ async function renderObjective() {
   const selector = byId('objectiveScope');
   selector.hidden = !cycle?.method; selector.value = objectiveScope;
   selector.onchange = () => {objectiveScope = selector.value; objectiveCacheKey = ''; renderObjective();};
-  const key = JSON.stringify([draft, selectedCoordination(), activeBuild?.id, activeBuild?.status, objectiveScope, cycle?.objective]);
+  const observed = typeof liveRun !== 'undefined' ? liveRun?.objective || liveRun?.history?.at(-1)?.objective : null;
+  const key = JSON.stringify([draft, selectedCoordination(), activeBuild?.id, activeBuild?.status, objectiveScope, cycle?.objective, observed]);
   if (key === objectiveCacheKey) return;
   objectiveCacheKey = key;
   const request = ++objectiveRequest;
   if (objectiveScope === 'research') {paintObjective(cycle?.objective || null); return;}
+  if (observed?.selection && library.stages.every(stage => observed.selection[stage.id] === draft[stage.id]) && observed.coordination === selectedCoordination()) {
+    paintObjective(observed); return;
+  }
   if (!backend.connected) {
     const baseline = appConfig.objective;
     paintObjective(baseline && JSON.stringify(baseline.selection) === JSON.stringify(draft) && selectedCoordination() === baseline.coordination ? baseline : null);
     return;
   }
   paintObjective(null);
+  byId('objectiveProfile').textContent = 'Loading objective from backend…';
   try {
     const packet = await requestJson('/api/objective/preview', {selection: {...draft}, coordination: selectedCoordination(), build_id: activeBuild?.id});
     if (request === objectiveRequest) paintObjective(packet);
   } catch (error) {
-    if (request === objectiveRequest) {paintObjective(null); byId('objectiveChanges').textContent = 'Objective unavailable: ' + error.message;}
+    if (request === objectiveRequest) {objectiveCacheKey = ''; paintObjective(null); byId('objectiveChanges').textContent = 'Objective unavailable: ' + error.message;}
   }
 }

@@ -42,6 +42,11 @@ def preview_objective(selection, coordination='single', build=None):
 
 
 def observe_objective(model, losses, weights, total, step):
+    definitions = getattr(losses, 'objective_definitions', {})
+    if hasattr(losses, 'objective_parts'):
+        parts = losses.objective_parts
+        weights = {name: weights[group] * scale for name, (_, group, scale) in parts.items()}
+        losses = {name: value for name, (value, _, _) in parts.items()}
     parameters = {id(parameter): name for name, parameter in model.named_parameters()}
     modules = {name.split('.')[0] for name in parameters.values()}
     terms, connections = [], []
@@ -64,6 +69,7 @@ def observe_objective(model, losses, weights, total, step):
                 reached.add(parameter.split('.')[0])
             pending.extend(child for child, _ in node.next_functions if child is not None)
         label, definition, supervision = LABELS.get(name, (name.replace('_', ' ').title(), 'Runtime tensor', 'See generated code'))
+        definition = definitions.get(name, definition)
         terms.append({'id': name, 'name': label, 'definition': definition, 'supervision': supervision, 'weight': weight,
                       'value': value, 'weighted_value': weight * value,
                       'operations': sorted(operations), 'requires_grad': bool(loss.requires_grad)})

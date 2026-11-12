@@ -153,6 +153,7 @@ def main():
     active_modules = {"ext_net", "reg_net", "seg_net", "feature_net", "gnn_pred"}
     team = None
     policy_parameters = []
+    objective_step = None
     policy_step = None
     started = time.perf_counter()
     current_phase = None
@@ -212,6 +213,7 @@ def main():
         changed = [name for name, parameter in model.named_parameters() if name in before and
                    not torch.equal(before[name], parameter.detach().flatten()[::max(1, parameter.numel() // 32)][:32])]
         update = {"step": record["update_count"] + 1, "seconds": round(time.perf_counter() - started, 3),
+                  "objective": objective_step,
                   "gradient_tensors": len(norms), "finite_gradient_norms": all(math.isfinite(value) for value in norms),
                   "modules_with_observed_updates": sorted({name.split(".")[0] for name in changed}),
                   "cuda_peak_allocated_bytes": torch.cuda.max_memory_allocated()}
@@ -223,7 +225,7 @@ def main():
         if total_loss is not None:
             update.update(weighted_loss=total_loss, losses=losses,
                           weights=policy_step["weights"] if policy_step else
-                          {"extraction": 1.0, "registration": 0.1, "segmentation": 1.0, "classification": 1.0})
+                          {term['id']: term['weight'] for term in objective_step['terms']} if objective_step else {})
             if policy_step:
                 update["gradient_policy"] = policy_step
             record["step_checks"]["policy_applied_every_step"] &= "gradient_policy" in update if args.gradient_policy else True
@@ -267,21 +269,29 @@ def main():
     train.train_UniBrain = bounded_train
     torch.optim.Adam.step = observe_step
     def coordinated_backward(tensor, *values, **options):
-        nonlocal policy_step
-        frame = training_frame() if team is not None else None
+        nonlocal policy_step, objective_step
+        frame = training_frame()
         if frame is None or frame.f_locals["loss_train"] is not tensor:
             return original_backward(tensor, *values, **options)
         terms = {key: frame.f_locals[name] for key, name in
                  {"extraction": "ext_loss", "registration": "sim_loss_train",
                   "segmentation": "seg_loss_train", "classification": "classifier_loss_train"}.items()}
-        total, decision = team.combine(terms, policy_parameters)
-        policy_step = {**decision, "weighted_loss": float(total.detach())}
-        emit("policy", "Task-wise gradient policy updated the training mixture",
-             step=record["update_count"] + 1, weights=decision["weights"],
-             reward=decision["reward"], policy_updates=decision["policy_updates"])
+        weights = {task: record['training_arguments'][key] for task, key in
+                   [('extraction', 'lambda_ext'), ('registration', 'lambda_reg'), ('segmentation', 'lambda_seg'), ('classification', 'lambda_cls')]}
+        total = tensor
+        if team is not None:
+            total, decision = team.combine(terms, policy_parameters)
+            weights = decision['weights']
+            policy_step = {**decision, "weighted_loss": float(total.detach())}
+            emit("policy", "Task-wise gradient policy updated the training mixture",
+                 step=record["update_count"] + 1, weights=weights,
+                 reward=decision["reward"], policy_updates=decision["policy_updates"])
+        from unibrain_agent.objective import observe_objective
+        from unibrain_agent.catalog import DEFAULTS
+        objective_step = observe_objective(model, terms, weights, total, record['update_count'] + 1)
+        objective_step.update(selection=dict(DEFAULTS), coordination='taskforce' if team else 'single')
         return original_backward(total, *values, **options)
-    if args.gradient_policy:
-        torch.Tensor.backward = coordinated_backward
+    torch.Tensor.backward = coordinated_backward
     save()
     try:
         runpy.run_path(str(source / "main.py"), run_name="__main__")

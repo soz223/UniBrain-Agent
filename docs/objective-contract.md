@@ -23,6 +23,12 @@ checks. Older runs lacking this record display an unavailable state. The UI
 does not infer their losses from a method name. Existing immutable checkpoints
 and upstream source files are unchanged.
 
+The original upstream entry point and the compact runner also emit executed
+objective records through the live monitor. The original entry's coefficients
+are read from its bound training arguments. Compact loss components share the
+same tensors as the grouped training losses, so smoothness and AAL terms can be
+expanded using the effective task weights without recomputing a forward pass.
+
 ## Bounded validation
 
 `catalog/objective_acceptance_20261112.json` contains two full host checks on the
@@ -32,6 +38,12 @@ denoising each completed two optimizer updates. Both passed the existing input
 and candidate gradient checks. RED WGAN uses downstream task supervision, with
 no separate denoising or discriminator objective. These checks establish
 execution and display consistency, not cohort performance or convergence.
+
+An additional original-entry control used one training subject for two epochs
+to meet the upstream checkpoint requirement while keeping two optimizer updates.
+The original finite-gradient and active-module update checks passed, and both
+recorded objectives reconstructed the original total. Its validation and test
+arrays were retained from the same acceptance subset.
 
 The verification used an isolated checkout and output directories on an idle
 GPU. Existing training processes and their source directories were not changed.
