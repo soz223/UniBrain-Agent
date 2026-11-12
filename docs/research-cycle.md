@@ -69,6 +69,22 @@ acceptance optimizer or silently reuse its checkpoint. Increase `--train-steps`,
 `--epochs` and `--eval-limit` explicitly for larger runs. Default evaluation is
 limited to two cases and is diagnostic, not a cohort accuracy estimate.
 
+For a complete preserved fold, use the explicit full training mode:
+
+```sh
+python scripts/run_research_cycle.py --source sources/reg_unibrain --data data/abide_fold1 --dataset abide --fold 1 --output private_runs/full_cycle --provider codex --task "Adapt the structural brain graph for diagnosis" --full-training --epochs 20 --evaluate-test --timeout 172800
+```
+
+This mode requires a version 2 `full_fold` manifest and verifies all six input
+checksums before calling the provider. It removes the update and evaluation
+limits. Completion requires every training subject in every declared epoch,
+one validation record per epoch, and matching cohort identity. With
+`--evaluate-test`, the complete test split is evaluated only after training,
+using the validation selected checkpoint. Its recorded checksum must match
+the retained `best.pt`. Test evaluation is rejected for bounded cycles.
+The declared timeout must accommodate the complete run. The suite reports
+bounded cycles separately from these formal experiments.
+
 `report.json` records selection rationale, actual provider usage, source audit,
 validation and repair trace, accepted code identity, training command, status
 and separate observed update counts. `source_audit.json`, `selection/`,
@@ -80,6 +96,7 @@ and occupied GPUs remain visible blocked outcomes.
 The orchestration tests mock providers and workers to verify control flow,
 budget enforcement and exact adapter path/hash transmission. They do not
 constitute an executed AI trial or a full GPU acceptance experiment.
-The current dashboard does not yet launch this new CLI cycle. Its provider
-calls use the shared constrained prompting harness, not a complete standalone
+The dashboard's [full research panel](full-research-workspace.md) launches a
+bounded cycle and displays its measured progress. Its provider calls use the
+shared constrained prompting harness, not a complete standalone
 Codex, Claude Code or MLE-STAR system reproduction.

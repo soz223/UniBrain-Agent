@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 
 from unibrain_agent.agents import Agent
 from unibrain_agent.providers import ProviderSettings, api_request, invoke, login_status, validate_profile
+from unibrain_agent.owned_process import OwnedProcessCleanupError
 from unibrain_agent.server import create_server
 
 SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}
@@ -127,7 +128,7 @@ class ProviderTests(unittest.TestCase):
 
     def test_claude_bridge_disables_tools_and_parses_structured_output(self):
         process = subprocess.CompletedProcess([], 0, json.dumps({"structured_output": {"ok": True}, "usage": {"input_tokens": 10}}), '')
-        with tempfile.TemporaryDirectory() as folder, patch('unibrain_agent.providers.shutil.which', return_value='claude'), patch('unibrain_agent.providers.subprocess.run', return_value=process) as execute:
+        with tempfile.TemporaryDirectory() as folder, patch('unibrain_agent.providers.shutil.which', return_value='claude'), patch('unibrain_agent.providers.run_capture', return_value=process) as execute:
             result, usage = invoke({"provider": "claude", "model": "chosen-model"}, 'Evidence', SCHEMA, Path(folder), 'review')
         command = execute.call_args.args[0]
         self.assertIn('--safe-mode', command)
@@ -135,6 +136,32 @@ class ProviderTests(unittest.TestCase):
         self.assertIn('--strict-mcp-config', command)
         self.assertEqual(result, {"ok": True})
         self.assertEqual(usage['input_tokens'], 10)
+        self.assertEqual(execute.call_args.kwargs['input_text'], 'Evidence')
+        self.assertEqual(execute.call_args.kwargs['timeout'], 240)
+
+    def test_cli_timeout_and_cleanup_errors_do_not_expose_prompt_or_output(self):
+        errors = [subprocess.TimeoutExpired('private-prompt', 240, output='private-key'), RuntimeError('private-key'),
+                  OwnedProcessCleanupError('private-key')]
+        for error in errors:
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as folder, \
+                    patch('unibrain_agent.providers.shutil.which', return_value='claude'), \
+                    patch('unibrain_agent.providers.run_capture', side_effect=error):
+                with self.assertRaises(RuntimeError) as caught:
+                    invoke({'provider': 'claude', 'model': 'model'}, 'private-prompt', SCHEMA, Path(folder), 'review')
+                self.assertNotIn('private-prompt', str(caught.exception))
+                self.assertNotIn('private-key', str(caught.exception))
+                if isinstance(error, OwnedProcessCleanupError):
+                    self.assertIsInstance(caught.exception, OwnedProcessCleanupError)
+
+    def test_codex_capture_retains_schema_output_and_usage(self):
+        def execute(command, input_text, timeout, cwd):
+            Path(command[command.index('--output-last-message') + 1]).write_text('{"ok":true}', encoding='utf-8')
+            return subprocess.CompletedProcess(command, 0, '{"type":"turn.completed","usage":{"input_tokens":7}}\n', '')
+        with tempfile.TemporaryDirectory() as folder, patch('unibrain_agent.providers.shutil.which', return_value='codex'), \
+                patch('unibrain_agent.providers.run_capture', side_effect=execute):
+            result, usage = invoke({'provider': 'codex', 'model': ''}, 'Evidence', SCHEMA, Path(folder), 'review')
+        self.assertTrue(result['ok'])
+        self.assertEqual(usage['input_tokens'], 7)
 
     def test_login_status_returns_requested_identity_but_no_credentials(self):
         process = subprocess.CompletedProcess([], 0, '{"email":"private@example.com","accessToken":"never-return-this"}', '')

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from unibrain_agent.integration_benchmark import CHECKS
-from unibrain_agent.research_cycle import fingerprint, parser, run_cycle, validate_training
+from unibrain_agent.research_cycle import fingerprint, parser, run_cycle, training_command, validate_full_training, validate_training
 
 
 class ResearchCycleTests(unittest.TestCase):
@@ -56,7 +56,9 @@ class ResearchCycleTests(unittest.TestCase):
                              "checkpoint_mode": checkpoint_mode, "connect_paths": True, "verify_gradients": True},
                   "coordination": {"mode": coordination, "policy_updates": 0, "last_decision": {"observed": True} if coordination == "taskforce" else None},
                   "checkpoint_policy": {"mode": checkpoint_mode},
-                  "gradient_verification": {"enabled": True, "verified_steps": 2, "diagnosis_reaches_all_candidates": True},
+                  "gradient_verification": {"enabled": True, "verified_steps": 2, "diagnosis_reaches_all_candidates": True,
+                                            "protocol_version": 2, "last_step": {"classification_to_input": {
+                                                "required": True, "finite": True, "nonzero": True}}},
                   "architecture": {"generated_adapter_active_in_training": True,
                                                                          "generated_adapter_sha256": fingerprint(adapter)}}
         (output / "report.json").write_text(json.dumps(result))
@@ -195,6 +197,63 @@ class ResearchCycleTests(unittest.TestCase):
                     return result
                 result, _, _, _ = self.execute_cycle(Path(temporary), execute=altered)
                 self.assertEqual(result["status"], "blocked")
+
+    def test_full_training_command_preserves_complete_splits(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            args = self.arguments(Path(temporary))
+            args.full_training, args.evaluate_test = True, True
+            command = training_command(args, "brainnetcnn", args.output / "adapter.py", args.output / "training")
+            self.assertNotIn("--max-steps", command)
+            self.assertNotIn("--eval-limit", command)
+            self.assertIn("--evaluate-test", command)
+            self.assertIn("--verify-gradients", command)
+
+    def test_trainable_parameters_do_not_hide_detached_input(self):
+        def detached(command, log, timeout):
+            result = self.training(command, log, timeout)
+            if "--preflight" not in command:
+                path = Path(command[command.index("--output") + 1]) / "report.json"
+                report = json.loads(path.read_text())
+                report["gradient_verification"]["last_step"]["classification_to_input"]["nonzero"] = False
+                path.write_text(json.dumps(report))
+            return result
+        with tempfile.TemporaryDirectory() as temporary:
+            result, _, _, _ = self.execute_cycle(Path(temporary), execute=detached)
+            self.assertEqual(result["status"], "blocked")
+            self.assertIn("original input image", result["error"])
+
+    def test_bounded_cycle_cannot_evaluate_test(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            args = self.arguments(Path(temporary))
+            args.evaluate_test = True
+            with self.assertRaisesRegex(ValueError, "explicit full training"):
+                run_cycle(args)
+            self.assertFalse(args.output.exists())
+
+    def test_full_training_requires_original_fold_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            args = self.arguments(Path(temporary))
+            args.full_training = True
+            with self.assertRaisesRegex(ValueError, "dataset and original fold"):
+                run_cycle(args)
+
+    def test_full_result_cannot_hide_partial_training_or_test(self):
+        import copy
+        from tests.test_full_cycle_results import FullCycleResultTests
+        mutations = [lambda r: r.update(steps=2), lambda r: r.update(status="budget_exhausted"),
+                     lambda r: r["config"].update(eval_limit=2), lambda r: r["config"].update(fold=2),
+                     lambda r: r.update(history=[{"epoch": 3}]),
+                     lambda r: r["test"].update(cases=[{"id": "one"}, {"id": "one"}]),
+                     lambda r: r["test"].update(sample_count=1),
+                     lambda r: r["audit"].update(data_hashes={"test": "changed"})]
+        with tempfile.TemporaryDirectory() as temporary:
+            args, splits, audit, record = FullCycleResultTests().fixture(Path(temporary))
+            validate_full_training(record, args, splits, audit)
+            for mutation in mutations:
+                changed = copy.deepcopy(record)
+                mutation(changed)
+                with self.assertRaises(ValueError):
+                    validate_full_training(changed, args, splits, audit)
 
 
 if __name__ == "__main__":

@@ -82,6 +82,14 @@ Older evidence can be revalidated under its original protocol. It is marked
 satisfy a new protocol 2 job. Original and auxiliary nnU Net classification
 input paths remain explicitly diagnostic rather than required paths.
 
+Merge retained matrices with `summarize_acceptance.py --matrix FIRST.json
+SECOND.json --cycle CYCLE_A/report.json CYCLE_B/report.json --output NEW_SUMMARY`.
+The exporter rechecks reports, update traces and checkpoint hashes. It keeps
+every observation while counting identical execution reports once. Strict and
+legacy checks remain separate. Repeated runs do not increase method coverage;
+provider cycles have their own count. Conflicting data exports cannot be merged
+into the same dataset, fold, seed, method and coordination cell.
+
 Acceptance defaults to `checkpoint_mode: weights`, retaining the complete
 model, identity and progress while omitting optimizer state. These checkpoints
 support evaluation or provenance checked initialization, not training resume.

@@ -1,0 +1,21 @@
+.cycle-panel { margin-top:18px; }
+.cycle-panel form,.cycle-panel>p,#cycleProgress { margin-left:22px; margin-right:22px; }
+.cycle-panel textarea { width:100%; margin:7px 0 12px; padding:12px; resize:vertical; color:var(--ink); background:var(--bg); border:1px solid var(--line); border-radius:10px; font:inherit; }
+.cycle-controls,.cycle-actions { display:flex; align-items:center; flex-wrap:wrap; gap:14px; margin:12px 0; }
+.cycle-controls label { display:flex; align-items:center; gap:8px; }
+.cycle-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; padding-top:12px; }
+.cycle-fields label { display:grid; gap:5px; color:var(--muted); font-size:12px; }
+.cycle-fields .wide { grid-column:1/-1; }
+.cycle-fields input,.cycle-fields select { width:100%; min-width:0; padding:8px; }
+.cycle-config { margin:14px 0; }
+.cycle-actions [role=status] { color:var(--muted); }
+.cycle-phases { display:flex; gap:8px; padding:0; list-style:none; flex-wrap:wrap; }
+.cycle-phases li { padding:6px 10px; background:var(--soft); color:var(--muted); border-radius:7px; }
+.cycle-phases .active { color:var(--accent); outline:1px solid var(--accent); }
+.cycle-panel .cycle-error { color:var(--red); white-space:pre-wrap; }
+#cycleSummary { margin:12px 0; }
+#cycleSummary p { margin:6px 0; }
+#cycleChart:empty { display:none; }
+#cycleChart svg { width:100%; height:140px; }
+#cycleEvidence pre { white-space:pre-wrap; overflow-wrap:anywhere; font:11px/1.5 var(--mono); }
+@media(max-width:700px) { .cycle-fields { grid-template-columns:repeat(2,minmax(0,1fr)); } }

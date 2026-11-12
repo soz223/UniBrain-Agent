@@ -3,9 +3,7 @@
 import argparse
 import json
 import math
-import os
 import shutil
-import signal
 import subprocess
 import sys
 import time
@@ -72,37 +70,14 @@ def last_json(log):
 
 
 def run_command(command, log, timeout):
-    with Path(log).open("w", encoding="utf-8") as stream:
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        with subprocess.Popen(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT, creationflags=flags,
-                              start_new_session=os.name != "nt") as process:
-            try:
-                return process.wait(timeout=timeout)
-            except (subprocess.TimeoutExpired, KeyboardInterrupt):
-                try:
-                    if os.name == "nt":
-                        stopped = subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                                 timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-                        if stopped.returncode and process.poll() is None:
-                            raise RuntimeError("Owned child process tree could not be terminated")
-                    else:
-                        try:
-                            os.killpg(process.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                    process.wait(timeout=10)
-                except Exception as error:
-                    if process.poll() is None:
-                        process.kill()
-                    raise RuntimeError("Owned child process tree cleanup failed; stop subsequent jobs") from error
-                raise
+    from unibrain_agent.owned_process import run_logged
+    return run_logged(command, log, timeout, cwd=ROOT)
 
 
 def resource_failure(message):
     text = str(message).lower()
     return any(term in text for term in ("selected gpu is occupied", "less than 4500", "cuda out of memory",
-                                          "cuda error", "no cuda", "no nvidia", "nvidia-smi", "outofmemoryerror", "child process tree",
+                                          "cuda error", "no cuda", "no nvidia", "nvidia-smi", "outofmemoryerror", "process tree",
                                           "out of memory", "not enough memory", "disk space", "no space left", "not enough space"))
 
 

@@ -51,11 +51,149 @@ class ExperimentSuiteTests(unittest.TestCase):
         self.assertTrue(jobs)
         self.assertTrue(all("/" not in job["id"] and "\\" not in job["id"] for job in jobs))
 
+    def cycle_fixture(self):
+        import numpy as np
+        self.config["source"] = "source"
+        self.config["epochs"] = 2
+        self.config["datasets"]["abide"]["folds"]["1"] = "data"
+        self.config["research_cycle"]["task"] = "CPU protocol fixture task"
+        (self.root / "source").mkdir()
+        (self.root / "source/model.py").touch()
+        (self.root / "data").mkdir()
+        np.save(self.root / "data/adhd_test_sample.npy", np.array([('fixtureA', 0), ('fixtureB', 1)], dtype=[('id', 'U12'), ('label', 'i4')]))
+        config = self.load()
+        job = next(job for job in plan(config) if job["group"] == "systems" and job["variant"] == "ours")
+        audit = {"manifest_sha256": "m" * 64, "data_hashes": {"adhd_train_sample.npy": "a" * 64},
+                 "split_counts": {"train": 2, "val": 2, "test": 2}, "scope": "full_fold"}
+        return config, job, audit
+
+    def cycle_runner(self, command, log, timeout, cwd):
+        import torch
+        from unibrain_agent.research_cycle import parser
+        args = parser().parse_args(command[2:])
+        args.output.mkdir()
+        training_dir = args.output / "training"
+        training_dir.mkdir()
+        adapter = args.output / "accepted_adapter.py"
+        adapter.write_text("# CPU protocol fixture", encoding="utf-8")
+        adapter_hash = hashlib.sha256(adapter.read_bytes()).hexdigest()
+        (training_dir / "best.pt").write_bytes(b"CPU fixture; not model weights")
+        (training_dir / "last.pt").write_bytes(b"CPU fixture; not model weights")
+        (training_dir / "updates.jsonl").write_text("{}\n", encoding="utf-8")
+        steps = 2 * args.epochs if args.full_training else args.train_steps
+        metrics = {name: .7 for name in ('accuracy', 'balanced_accuracy', 'macro_f1', 'auc', 'sensitivity', 'specificity',
+                                        'brain_dice', 'tissue_dice', 'atlas_dice', 'registration_dice', 'reference_loss', 'classification_loss')}
+        training = {"status": "complete" if args.full_training else "budget_exhausted", "method": "brainnetcnn",
+                    "setting": "joint", "seed": args.seed, "steps": steps,
+                    "config": {"dataset": args.dataset, "fold": args.fold, "source": str(args.source), "data": str(args.data),
+                               "adapter": str(adapter), "coordination": "none", "checkpoint_mode": "weights",
+                               "connect_paths": True, "verify_gradients": True, "epochs": args.epochs,
+                               "selection_metric": args.selection_metric, "output": str(training_dir),
+                               "max_steps": None if args.full_training else args.train_steps,
+                               "eval_limit": None if args.full_training else args.eval_limit, "evaluate_test": args.evaluate_test},
+                    "architecture": {"generated_adapter_active_in_training": True, "generated_adapter_sha256": adapter_hash},
+                    "audit": {"data_hashes": {"adhd_train_sample.npy": "a" * 64}},
+                    "gradient_verification": {"enabled": True, "protocol_version": 2, "verified_steps": steps,
+                                              "diagnosis_reaches_all_candidates": True,
+                                              "last_step": {"classification_to_input": {"required": True, "finite": True, "nonzero": True}}},
+                    "coordination": {"mode": "none", "policy_updates": 0}, "checkpoint_policy": {"mode": "weights"},
+                    "selection": {"metric": args.selection_metric, "direction": "minimize", "scope": "validation_only", "best_epoch": 1, "best_value": .7},
+                    "best_validation": metrics,
+                    "history": [{"epoch": epoch, "validation": metrics} for epoch in range(1, args.epochs + 1)]}
+        if args.full_training:
+            identity = {"method": "brainnetcnn", "setting": "joint", "seed": args.seed, "dataset": args.dataset, "fold": args.fold,
+                        "selection_metric": args.selection_metric, "adapter_hash": adapter_hash, "data_hashes": training["audit"]["data_hashes"]}
+            progress = {"epoch": 1, "best_epoch": 1, "best_value": .7, "best_loss": .7, "selection_metric": args.selection_metric,
+                        "steps": 2, "pretrain_steps": 0}
+            torch.save({"model": {"fixture": torch.ones(1)}, "identity": identity, "progress": progress,
+                        "checkpoint_kind": "evaluation_weights_only"}, training_dir / "best.pt")
+            cases = [{"id": name, "label": label, "prediction": label, "probability": .2 if label == 0 else .8,
+                      **{key: .7 for key in ('brain_dice', 'tissue_dice', 'atlas_dice', 'registration_dice', 'reference_loss', 'classification_loss')}}
+                     for name, label in (('fixtureA', 0), ('fixtureB', 1))]
+            training["test"] = {"sample_count": 2, "full_split_count": 2, "cases": cases,
+                                "checkpoint_sha256": hashlib.sha256((training_dir / "best.pt").read_bytes()).hexdigest(),
+                                "metrics": {**metrics, **{key: 1. for key in ('accuracy', 'balanced_accuracy', 'macro_f1', 'auc', 'sensitivity', 'specificity')}}}
+        save(training_dir / "report.json", training)
+        evaluation = {"status": "passed", "runs": True, "optimizer_updates": 1,
+                      "checks": {name: True for name in ("contract", "gradient", "spatial", "fidelity", "updates")},
+                      "data": {"sha256": "a" * 64}}
+        outcome = {"status": "complete", "phase": "complete", "method": "brainnetcnn", "seed": args.seed,
+                   "provider": {"provider": args.provider}, "task": args.task,
+                   "accepted_adapter": {"file": adapter.name, "sha256": adapter_hash},
+                   "accepted_adapter_unchanged_after_training": True,
+                   "actual_updates": {"acceptance": 1, "training": steps},
+                   "integration": {"status": "passed", "final_valid": True,
+                                   "calls": [{"adapter_sha256": adapter_hash, "evaluation": evaluation}]},
+                   "training_protocol": {"full_training": args.full_training, "evaluate_test": args.evaluate_test},
+                   "budgets": {"training_epochs": args.epochs}, "training": training}
+        save(args.output / "report.json", outcome)
+        log.write_text("CPU protocol fixture", encoding="utf-8")
+        return 0
+
+    def test_native_ours_commands_and_full_result_hashes(self):
+        from unibrain_agent.research_cycle import parser
+        config, job, audit = self.cycle_fixture()
+        for smoke in (None, 2):
+            args = parser().parse_args(command_for(config, job, self.root / "out", smoke)[2:])
+            self.assertEqual(args.full_training, smoke is None)
+            self.assertEqual(args.evaluate_test, smoke is None)
+        with patch("unibrain_agent.experiment_suite.full_fold_audit", return_value=audit), \
+                patch("unibrain_agent.experiment_suite.run_logged", side_effect=self.cycle_runner):
+            result = run_job(config, job)
+        self.assertEqual(result["status"], "complete", result)
+        self.assertEqual(result["selected_method"], "brainnetcnn")
+        self.assertEqual(next(row for row in summarize(config)["metrics"] if row["metric"] == "auc")["mean"], 1.)
+        retained = self.root / "runs/paper" / job["id"] / "payload/accepted_adapter.py"
+        retained.write_text("# changed after execution", encoding="utf-8")
+        summarized = summarize(config)
+        self.assertFalse(summarized["metrics"])
+        self.assertIn("changed_artifact", {row["status"] for row in summarized["rows"]})
+
+    def test_native_ours_short_run_never_enters_full_experiment_metrics(self):
+        config, job, audit = self.cycle_fixture()
+        with patch("unibrain_agent.experiment_suite.full_fold_audit", return_value=audit), \
+                patch("unibrain_agent.experiment_suite.run_logged", side_effect=self.cycle_runner):
+            result = run_job(config, job, smoke_steps=2)
+        self.assertEqual(result["status"], "smoke_complete", result)
+        self.assertFalse(summarize(config)["metrics"])
+
+    def test_native_ours_refuses_a_partial_held_out_test(self):
+        config, job, audit = self.cycle_fixture()
+        def runner(command, log, timeout, cwd):
+            result = self.cycle_runner(command, log, timeout, cwd)
+            folder = Path(command[command.index("--output") + 1])
+            training_path = folder / "training/report.json"
+            training = json.loads(training_path.read_text(encoding="utf-8"))
+            training["test"]["cases"].pop()
+            save(training_path, training)
+            outcome = json.loads((folder / "report.json").read_text(encoding="utf-8"))
+            outcome["training"] = training
+            save(folder / "report.json", outcome)
+            return result
+        with patch("unibrain_agent.experiment_suite.full_fold_audit", return_value=audit), \
+                patch("unibrain_agent.experiment_suite.run_logged", side_effect=runner):
+            result = run_job(config, job)
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("held out test", result["error"])
+
+    def test_native_cycle_resource_block_is_not_a_failed_scientific_result(self):
+        config, job, audit = self.cycle_fixture()
+        def runner(command, log, timeout, cwd):
+            folder = Path(command[command.index("--output") + 1])
+            folder.mkdir()
+            save(folder / "report.json", {"status": "blocked", "phase": "auditing", "error": "Provider fixture unavailable"})
+            return 1
+        with patch("unibrain_agent.experiment_suite.full_fold_audit", return_value=audit), \
+                patch("unibrain_agent.experiment_suite.run_logged", side_effect=runner):
+            result = run_job(config, job)
+        self.assertEqual(result["status"], "blocked")
+        self.assertFalse(summarize(config)["metrics"])
+
     def test_site_commands_use_native_runner_and_explicit_split_identity(self):
         from unibrain_agent.replacement_training import parser
         self.config["datasets"]["abide"]["sites"] = {"site A": "site_data"}
         self.config["source"] = "source"
-        self.config["adapters"]["synthstrip"] = "adapter.py"
+        self.config["adapters"].update({method: "adapter.py" for method in TRAIN_METHODS})
         (self.root / "source").mkdir()
         (self.root / "source/model.py").write_text("# CPU protocol fixture", encoding="utf-8")
         (self.root / "adapter.py").write_text("# CPU protocol fixture", encoding="utf-8")
@@ -179,6 +317,7 @@ class ExperimentSuiteTests(unittest.TestCase):
         self.config["plans"]["nnunet"] = "plans.json"
         for method in TRAIN_METHODS:
             self.config["weights"][method] = {**metadata, "provenance": "official"}
+            self.config["adapters"][method] = "adapter.py"
         config = self.load()
         jobs = [j for j in plan(config) if j["group"] in {"training", "ablation"} and j["fold"] == 1
                 and j["seed"] == 17 and j["dataset"] == "abide" and j["variant"] not in {"simultaneous", "sequential"}]
@@ -188,6 +327,41 @@ class ExperimentSuiteTests(unittest.TestCase):
             self.assertEqual(args.max_steps, 2)
             self.assertEqual(args.seed, job["seed"])
             self.assertEqual(args.method, job["method"])
+            if job["method"] in TRAIN_METHODS:
+                self.assertEqual(args.adapter, self.root / "adapter.py")
+
+    def test_training_retains_adapter_bytes_and_requires_execution_confirmation(self):
+        adapter = self.root / "adapter.py"
+        adapter.write_text("# accepted CPU fixture", encoding="utf-8")
+        weights = self.root / "weights.pt"
+        weights.write_bytes(b"CPU checkpoint fixture")
+        self.config["adapters"]["synthstrip"] = "adapter.py"
+        self.config["weights"]["synthstrip"] = {"path": "weights.pt", "provenance": "official", "origin": "CPU fixture",
+                                                  "sha256": hashlib.sha256(weights.read_bytes()).hexdigest()}
+        for active in (True, False):
+            self.config["output_root"] = "runs/" + str(active)
+            config = self.load()
+            job = next(job for job in plan(config) if job["group"] == "training" and job["method"] == "synthstrip" and job["variant"] == "joint")
+            def runner(command, log, timeout, cwd):
+                retained = Path(command[command.index("--adapter") + 1])
+                self.assertNotEqual(retained, adapter)
+                self.assertEqual(retained.read_bytes(), adapter.read_bytes())
+                checksum = hashlib.sha256(retained.read_bytes()).hexdigest()
+                adapter.write_text("# source changed after snapshot", encoding="utf-8")
+                folder = Path(command[command.index("--output") + 1])
+                folder.mkdir()
+                save(folder / "report.json", {"status": "complete", "method": "synthstrip", "setting": "joint", "seed": job["seed"],
+                                              "steps": 2, "config": {"dataset": job["dataset"], "fold": job["fold"]},
+                                              "audit": {"data_hashes": {}}, "architecture": {"generated_adapter_active_in_training": active,
+                                                                                              "generated_adapter_sha256": checksum}})
+                return 0
+            with patch("unibrain_agent.experiment_suite.preflight", return_value={"ready": True, "executor": "training"}), \
+                    patch("unibrain_agent.experiment_suite.full_fold_audit", return_value={"manifest_sha256": "fixture"}), \
+                    patch("unibrain_agent.experiment_suite.run_logged", side_effect=runner):
+                result = run_job(config, job, smoke_steps=2)
+            self.assertEqual(result["status"], "smoke_complete" if active else "failed")
+            if not active:
+                self.assertIn("unchanged accepted adapter", result["error"])
 
     def test_generated_index_links_all_candidates_without_agent_calls(self):
         directory = self.root / "generated"
@@ -227,7 +401,7 @@ class ExperimentSuiteTests(unittest.TestCase):
         metadata = {"path": "weights.pt", "origin": "Unit test", "sha256": hashlib.sha256(b"fixture").hexdigest()}
         self.config["hosts"]["abide:1"] = metadata
         self.config["weights"]["voxelmorph"] = {**metadata, "provenance": "official"}
-        self.config["adapters"]["synthstrip"] = "adapter.py"
+        self.config["adapters"].update({method: "adapter.py" for method in TRAIN_METHODS})
         for seed in self.config["seeds"]:
             self.config["sequential_runs"][f"abide:1:{seed}"] = {"checkpoint": "weights.pt", "report": "prior.json", "sha256": metadata["sha256"]}
         config = self.load()

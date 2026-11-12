@@ -35,7 +35,39 @@ def verify_previous(checkpoint, report, expected_sha256, dataset=None, fold=None
     declared = evidence.get("config", {})
     if dataset is not None and (declared.get("dataset") != dataset or declared.get("fold") != fold):
         raise ValueError("Sequential checkpoint must use the same dataset and training fold")
-    return {"checkpoint_sha256": actual, "report_sha256": fingerprint(report), "prior_optimizer_steps": steps,
+    try:
+        bundle = torch.load(checkpoint, map_location="cpu", weights_only=True, mmap=True)
+    except RuntimeError as error:
+        if "mmap can only be used" not in str(error):
+            raise
+        bundle = torch.load(checkpoint, map_location="cpu", weights_only=True)
+    if not isinstance(bundle, dict):
+        raise ValueError("Previous checkpoint must contain a state dictionary")
+    internal = "identity" in bundle or "progress" in bundle
+    trained_steps = steps
+    if internal:
+        identity, progress = bundle.get("identity", {}), bundle.get("progress", {})
+        if (not isinstance(identity, dict) or identity.get("method") != "synthstrip"
+                or identity.get("dataset") != declared.get("dataset") or identity.get("fold") != declared.get("fold")
+                or identity.get("split_id") is not None):
+            raise ValueError("Checkpoint identity contradicts the declared first-stage training fold")
+        for key in ("seed", "adapter_hash"):
+            expected = evidence.get("seed", declared.get("seed")) if key == "seed" else evidence.get("adapter_sha256", evidence.get("architecture", {}).get("generated_adapter_sha256"))
+            if expected is not None and identity.get(key) != expected:
+                raise ValueError("Previous report and checkpoint training identities differ")
+        trained_steps = progress.get("steps", 0) if isinstance(progress, dict) else 0
+        if type(trained_steps) is not int or not 1 <= trained_steps <= steps:
+            raise ValueError("Sequential composition requires an actually trained checkpoint with consistent progress")
+    else:
+        checkpoint_evidence = evidence.get("checkpoint", {})
+        checkpoint_evidence = checkpoint_evidence if isinstance(checkpoint_evidence, dict) else {}
+        binding = evidence.get("checkpoint_sha256") or checkpoint_evidence.get("sha256") or evidence.get("checkpoint_hashes", {}).get(Path(checkpoint).name)
+        if binding != actual:
+            raise ValueError("Raw first-stage weights require a report bound to their checkpoint SHA256")
+    if fingerprint(checkpoint) != actual:
+        raise ValueError("Previous checkpoint changed during provenance inspection")
+    return {"checkpoint_sha256": actual, "report_sha256": fingerprint(report), "prior_optimizer_steps": trained_steps,
+            "reported_optimizer_steps": steps, "internal_identity_verified": internal,
             "dataset": declared.get("dataset"), "fold": declared.get("fold"),
             "order": ["extraction", "registration"]}
 
@@ -120,6 +152,8 @@ def build_composed_model(source, registration, adapter, mode="simultaneous", reg
         previous_evidence["adapter_sha256"] = expected_adapter
         previous = bundle.get("model", bundle)
         host.load_state_dict(previous, strict=True)
+        if fingerprint(previous_checkpoint) != previous_evidence["checkpoint_sha256"] or fingerprint(previous_report) != previous_evidence["report_sha256"]:
+            raise ValueError("Previous checkpoint or training report changed during composition")
     else:
         previous = host.state_dict()
     original_modules = {name: module for name, module in host.named_children() if name != "reg_net"}

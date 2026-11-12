@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .paths import configured_path, PROJECT
+from .owned_process import OwnedProcessCleanupError, run_capture
 
 PROVIDERS = {
     "codex": {"name": "Codex CLI", "command": "codex login", "env": "", "base_url": ""},
@@ -202,10 +203,10 @@ def invoke(config, prompt, schema, folder, role):
         if config["model"]:
             command += ["--model", config["model"]]
     try:
-        completed = subprocess.run(command, input=prompt, text=True, encoding="utf-8", errors="replace",
-                                   capture_output=True, timeout=240, cwd=folder,
-                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    except (OSError, subprocess.TimeoutExpired):
+        completed = run_capture(command, input_text=prompt, timeout=240, cwd=folder)
+    except OwnedProcessCleanupError:
+        raise OwnedProcessCleanupError("CLI process cleanup could not be confirmed. Stop subsequent jobs and inspect the backend.") from None
+    except (OSError, subprocess.TimeoutExpired, RuntimeError):
         raise RuntimeError("CLI request failed or timed out. Check installation and login in AI settings.") from None
     if completed.returncode:
         raise RuntimeError(f"{PROVIDERS[provider]['name']} exited with code {completed.returncode}. Check login, model access and CLI version.")

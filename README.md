@@ -18,10 +18,11 @@ for full folds, controlled comparisons and result accounting. Implementation,
 measured acceptance and remaining work are listed in
 [research readiness](docs/research-readiness.md).
 
-The dashboard's custom composition action still uses its explicitly labeled
-compact profile. Launch the full research programs through their CLI; the
-new research cycle is not yet a dashboard action. The existing original
-baseline workflow remains independent.
+The dashboard's [Full model research panel](docs/full-research-workspace.md)
+launches the full research cycle and displays checks, accepted code, training
+losses and TaskForce policy updates. Its older custom stage editor retains its
+explicitly labeled compact profile. The original baseline workflow remains
+independent. Formal experiments use the CLI and preserved full folds.
 
 ## Start
 

@@ -8,6 +8,8 @@ import sys
 import time
 from pathlib import Path
 
+from .owned_process import OwnedProcessCleanupError, run_logged
+
 
 CHECKS = ("contract", "gradient", "spatial", "fidelity", "updates")
 VARIANTS = ("general", "checks", "workflow", "without_screening", "without_knowledge",
@@ -125,14 +127,12 @@ def evaluate(case, adapter, folder, seed):
     command = [item.format(**values) for item in spec["command"]]
     start = time.perf_counter()
     try:
-        with (folder / "evaluator.log").open("w", encoding="utf-8") as stream:
-            process = subprocess.run(command, cwd=spec.get("cwd"), stdout=stream, stderr=subprocess.STDOUT,
-                                     timeout=spec.get("timeout", 1200), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        exit_code = run_logged(command, folder / "evaluator.log", spec.get("timeout", 1200), cwd=spec.get("cwd"))
         result = json.loads(output.read_text(encoding="utf-8")) if output.is_file() else {
             "status": "infrastructure_failed", "error": "Evaluator did not write its result"}
-        if process.returncode and result.get("status") == "passed":
+        if exit_code and result.get("status") == "passed":
             result = {"status": "infrastructure_failed", "error": "Evaluator exit status contradicts its report"}
-    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+    except (OSError, ValueError, subprocess.TimeoutExpired, RuntimeError) as error:
         result = {}
         progress = (folder / spec.get("progress_file", "evaluation.json")).resolve()
         if progress == folder.resolve() or folder.resolve() in progress.parents:
@@ -143,6 +143,8 @@ def evaluate(case, adapter, folder, seed):
             except (OSError, ValueError):
                 pass
         result.update(status="infrastructure_failed", error=str(error))
+        if isinstance(error, OwnedProcessCleanupError):
+            result["cleanup_failed"] = True
     result["elapsed_seconds"] = time.perf_counter() - start
     save(output, result)
     return result
@@ -238,6 +240,8 @@ def run_trial(case, provider, variant, seed, repetition, folder, max_calls=4):
                 cache[code_hash] = evaluate(case, adapter, trial, seed)
                 row["optimizer_updates"] += cache[code_hash].get("optimizer_updates", 0)
             evaluated = cache[code_hash]
+            if evaluated.get("cleanup_failed"):
+                row["cleanup_failed"] = True
             accepted = verdict(evaluated)
             row["calls"].append({"role": "proposal", "usage": usage, "action": result["action"],
                                  "adapter_sha256": code_hash, "evaluation": evaluated})
@@ -261,6 +265,8 @@ def run_trial(case, provider, variant, seed, repetition, folder, max_calls=4):
             if variant == "checks" and result["action"] == "submit" or variant != "checks" and visible_pass:
                 break
             previous = code
+    except OwnedProcessCleanupError as error:
+        row.update(status="blocked", error=str(error), cleanup_failed=True)
     except Exception as error:
         row.update(status="blocked", error=str(error))
     finally:
@@ -284,6 +290,13 @@ def run_benchmark(config, output):
                         folder = output / f"trial_{len(results) + 1:05d}"
                         results.append(run_trial(case, provider, variant, seed, repetition, folder, config.get("max_calls", 4)))
                         save(output / "report.json", {"status": "running", "runs": results})
+                        if results[-1].get("cleanup_failed"):
+                            report = {"status": "blocked", "cleanup_failed": True, "runs": results,
+                                      "error": "Process cleanup could not be confirmed; remaining trials were not started",
+                                      "counts": {state: sum(row["status"] == state for row in results)
+                                                 for state in ("passed", "failed", "blocked", "rejected")}}
+                            save(output / "report.json", report)
+                            return report
     report = {"status": "complete", "runs": results,
               "counts": {state: sum(row["status"] == state for row in results) for state in ("passed", "failed", "blocked", "rejected")}}
     save(output / "report.json", report)

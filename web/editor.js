@@ -28,9 +28,9 @@ function toolName(option) {
 }
 
 function renderChoices() {
-  byId("profileLabel").textContent = '⚙ Customizable pipeline';
+  byId("profileLabel").textContent = isOriginal() ? '⚙ Original full UniBrain' : '○ Legacy compact pipeline';
   byId("budgetLabel").textContent = isOriginal() ? "Epochs" : "Steps";
-  byId("prepareBuild").textContent = isOriginal() ? "Prepare UniBrain" : "Apply changes";
+  byId("prepareBuild").textContent = isOriginal() ? "Prepare UniBrain" : "Prepare compact prototype";
   byId("resetPipeline").disabled = buildBusy;
   if (byId("teamTraining")) {
     byId("teamTraining").disabled = buildBusy;

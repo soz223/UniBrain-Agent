@@ -607,27 +607,52 @@
     }
   ],
   "windows_regression": {
-    "tests": 229,
+    "tests": 283,
     "failures": 0,
     "errors": 0,
-    "skipped": 0,
-    "log_sha256": "b2ca17e1504286fcd2cd63709890d067ddd5c7b6cbdf63a4580c6ec377157667",
-    "boundary": "The separate 251 second full preprocessing gradient check was not repeated in this regression suite"
+    "skipped": 2,
+    "seconds": 47.42200000002049,
+    "gpu_initialized": false,
+    "log_sha256": "daf56e08aebcb2214c09b59eb81d7e5ea1da03a63a3048382d14f908544beb5b",
+    "boundary": "Two Linux-specific tests skipped on Windows; the previously passed full preprocessing native gradient check was not repeated"
   },
   "linux_cpu": {
     "status": "passed",
-    "exit_code": 0,
-    "seconds": 9.384393628686666,
+    "python_tests": {
+      "run": 139,
+      "passed": 139,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    "frontend_tests": {
+      "tests": 6,
+      "pass": 6,
+      "fail": 0,
+      "skipped": 0
+    },
     "environment": {
       "python": "3.10.19 (main, Feb 12 2026, 00:42:18) [Clang 21.1.4 ]",
       "torch": "2.5.1+cu121",
       "numpy": "1.26.4",
       "system": "Linux",
-      "machine": "x86_64"
+      "machine": "x86_64",
+      "threads": 2,
+      "interop_threads": 2
     },
-    "source_archive_sha256": "f79ed44878aa9d631c3a30fe0b04733ad07f918f3da3c139b8eb376b49fb0e5a",
-    "scope": "Six lightweight CPU test modules; no GPU, scientific training, data access, dependency changes or service changes",
-    "threads": 2
+    "node": "v22.12.0",
+    "seconds": 19.817437829449773,
+    "source_archive_sha256": "6ebea3cfc9c108659cbbed2a7ab208955b33562a3a49acf5a256c25d6680c55b",
+    "source_file_count": 174,
+    "source_manifest_verified": true,
+    "cuda_visible_devices": "",
+    "scope": "Isolated CPU contract, process cleanup, provenance, experiment and UI/API tests. No cohort access, GPU work, dependency installation, service or baseline changes.",
+    "files_sha256": {
+      "source_manifest.json": "5cd27ff1936a0bd54c5028a798ce8b63ae061d1aa33c5787251da9b61de5081b",
+      "tests.log": "a4ff0476e90dd127f1c908fe0bba46079921d41f56e46aa9749f2c8795c9e988",
+      "frontend.log": "1177b378a86c76daedefdbfdb423f0388fe95663a8069ffd54bba2daecf97c31",
+      "report.json": "e0804cccaa8d19739550f3393958680278145e104dddc0ab671f247edb07c056"
+    }
   },
   "cohort_acceptance": [
     {
@@ -957,10 +982,9 @@
   "boundary": "Earlier gradient protocol checks and protocol 2 are distinguished in each report. Core checks are separate from full host evidence.",
   "pending": [
     "Remaining strict full host cohort checks",
-    "Short TaskForce policy learning trajectories",
+    "Full composition GPU checks on both datasets",
     "Matched scientific comparisons",
     "Named external Agent systems",
-    "Full research cycle dashboard action",
     "Full CUDA verification on Linux"
   ],
   "provider_cycles": [
@@ -1102,5 +1126,477 @@
       },
       "scope": "Actual provider selection, generated adapter evaluation and fresh joint training; tiny fold subset"
     }
-  ]
+  ],
+  "frontend_regression": {
+    "tests": 6,
+    "passed": 6,
+    "log_sha256": "7597694c3b2d167185ceb82c8247e8529388851cb0e6b84d79729e19a9cda080"
+  },
+  "taskforce_trajectories": [
+    {
+      "dataset": "abide",
+      "method": "brainnetcnn",
+      "status": "passed",
+      "fold": 1,
+      "seed": 17,
+      "optimizer_updates": 8,
+      "trajectory": {
+        "validation_reference_loss": [
+          7.67440390586853,
+          9.126524925231934,
+          9.360166549682617,
+          9.344722986221313
+        ],
+        "validation_components": {
+          "extraction_loss": [
+            5.5209126472473145,
+            6.9631507396698,
+            7.203561067581177,
+            7.2042396068573
+          ],
+          "registration_loss": [
+            0.7613984942436218,
+            0.9178151488304138,
+            0.9561492800712585,
+            0.95665243268013
+          ],
+          "segmentation_loss": [
+            1.3841694593429565,
+            1.378418207168579,
+            1.3678075075149536,
+            1.3516274094581604
+          ],
+          "classification_loss": [
+            0.6931819319725037,
+            0.6931743025779724,
+            0.6931831538677216,
+            0.6931910812854767
+          ]
+        },
+        "observed_trend": "did_not_decrease",
+        "boundary": "A small fixed validation probe is not evidence of cohort convergence or improved generalization"
+      },
+      "fixed_training_objective_per_update": [
+        2.7747898757457734,
+        2.8000881135463715,
+        2.8076661586761475,
+        2.7170689165592194,
+        2.7442488729953767,
+        2.761757493019104,
+        2.7116820991039274,
+        2.7829336702823637
+      ],
+      "fixed_training_objective_per_epoch": [
+        2.7874389946460725,
+        2.7623675376176835,
+        2.75300318300724,
+        2.7473078846931456
+      ],
+      "policy_checkpoint_audit": {
+        "status": "passed",
+        "device": "cpu",
+        "gpu_used": false,
+        "torch_version": "2.5.1+cu121",
+        "seed": 17,
+        "tasks": [
+          "extraction",
+          "registration",
+          "segmentation",
+          "classification"
+        ],
+        "batch_size": 4,
+        "base_weights": {
+          "extraction": 1,
+          "registration": 0.1,
+          "segmentation": 1,
+          "classification": 1
+        },
+        "training_steps": 8,
+        "policy_updates": 4,
+        "actor_optimizer_steps": 16,
+        "critic_optimizer_steps": 16,
+        "deltas": {
+          "actors": {
+            "extraction": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.28521570832526777,
+              "delta_max": 0.00040056626312434673,
+              "finite": true
+            },
+            "registration": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.11900503817014396,
+              "delta_max": 0.00039742878288961947,
+              "finite": true
+            },
+            "segmentation": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.25223489513155073,
+              "delta_max": 0.00040084245847538114,
+              "finite": true
+            },
+            "classification": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.22474951155891176,
+              "delta_max": 0.00040012423414736986,
+              "finite": true
+            }
+          },
+          "critics": {
+            "extraction": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 3.6438196449162206,
+              "delta_max": 0.0039733052253723145,
+              "finite": true
+            },
+            "registration": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 1.588248207182005,
+              "delta_max": 0.003930836915969849,
+              "finite": true
+            },
+            "segmentation": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 1.6353351370198652,
+              "delta_max": 0.003973815590143204,
+              "finite": true
+            },
+            "classification": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 2.2883099087921437,
+              "delta_max": 0.003948099911212921,
+              "finite": true
+            }
+          },
+          "target_actors": {
+            "extraction": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.005553241181587509,
+              "delta_max": 9.905492333928123e-06,
+              "finite": true
+            },
+            "registration": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.0022626993445555854,
+              "delta_max": 9.84972393780481e-06,
+              "finite": true
+            },
+            "segmentation": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.00483952098966256,
+              "delta_max": 9.911917913996149e-06,
+              "finite": true
+            },
+            "classification": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.004294214566471055,
+              "delta_max": 9.90368971542921e-06,
+              "finite": true
+            }
+          },
+          "target_critics": {
+            "extraction": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 0.1129377742199722,
+              "delta_max": 9.860284626483917e-05,
+              "finite": true
+            },
+            "registration": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 0.04480045162199531,
+              "delta_max": 9.778141975402832e-05,
+              "finite": true
+            },
+            "segmentation": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 0.061764973503159126,
+              "delta_max": 9.850971400737762e-05,
+              "finite": true
+            },
+            "classification": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 0.06507151469122618,
+              "delta_max": 9.799003601074219e-05,
+              "finite": true
+            }
+          }
+        },
+        "checkpoint_sha256": "e4c9a8da9b3a3f1d336d6d7ef00dacc5b2b070ff68730f18ba9b2cbd51c6c0d8",
+        "report_sha256": "f5bc51cf1e2e951aeaa93d1f93b7815baf1c045651d90ae8f0712d3cf5d8a62c",
+        "coordinator_source_sha256": "1a892b91079cb16ad4b062fd2508673e9cb76cca88c80f0a545012c54b4ccba8",
+        "scope": "Each actor and critic changed from its seeded initialization; this does not establish policy effectiveness"
+      },
+      "strict_current_gradient_verified": true,
+      "boundary": "Two training and two validation subjects; overall validation objective did not decrease. Policy parameter changes do not establish coordination benefit or cohort convergence."
+    },
+    {
+      "dataset": "adhd",
+      "method": "brainnetcnn",
+      "status": "passed",
+      "fold": 1,
+      "seed": 17,
+      "optimizer_updates": 8,
+      "trajectory": {
+        "validation_reference_loss": [
+          6.99495267868042,
+          9.10817003250122,
+          10.204471111297607,
+          10.3075270652771
+        ],
+        "validation_components": {
+          "extraction_loss": [
+            4.878461122512817,
+            6.974114179611206,
+            8.06749153137207,
+            8.184757709503174
+          ],
+          "registration_loss": [
+            0.39434128999710083,
+            0.6329115629196167,
+            0.7723877429962158,
+            0.7910521030426025
+          ],
+          "segmentation_loss": [
+            1.3838757276535034,
+            1.3775906562805176,
+            1.3665574789047241,
+            1.350471556186676
+          ],
+          "classification_loss": [
+            0.6931818127632141,
+            0.6931740641593933,
+            0.6931825578212738,
+            0.6931925117969513
+          ]
+        },
+        "observed_trend": "did_not_decrease",
+        "boundary": "A small fixed validation probe is not evidence of cohort convergence or improved generalization"
+      },
+      "fixed_training_objective_per_update": [
+        2.7799816370010375,
+        2.7754512786865235,
+        2.7841023743152618,
+        2.721911835670471,
+        2.7449033915996552,
+        2.7313355207443237,
+        2.7095238327980042,
+        2.756297838687897
+      ],
+      "fixed_training_objective_per_epoch": [
+        2.7777164578437805,
+        2.753007104992866,
+        2.7381194561719893,
+        2.732910835742951
+      ],
+      "policy_checkpoint_audit": {
+        "status": "passed",
+        "device": "cpu",
+        "gpu_used": false,
+        "torch_version": "2.5.1+cu121",
+        "seed": 17,
+        "tasks": [
+          "extraction",
+          "registration",
+          "segmentation",
+          "classification"
+        ],
+        "batch_size": 4,
+        "base_weights": {
+          "extraction": 1,
+          "registration": 0.1,
+          "segmentation": 1,
+          "classification": 1
+        },
+        "training_steps": 8,
+        "policy_updates": 4,
+        "actor_optimizer_steps": 16,
+        "critic_optimizer_steps": 16,
+        "deltas": {
+          "actors": {
+            "extraction": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.28708453011495294,
+              "delta_max": 0.0004011045675724745,
+              "finite": true
+            },
+            "registration": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.15007874394359533,
+              "delta_max": 0.0003990208497270942,
+              "finite": true
+            },
+            "segmentation": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.2561735928466078,
+              "delta_max": 0.0004010809352621436,
+              "finite": true
+            },
+            "classification": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.21864647790789604,
+              "delta_max": 0.0003971016267314553,
+              "finite": true
+            }
+          },
+          "critics": {
+            "extraction": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 1.916094779749983,
+              "delta_max": 0.003372371196746826,
+              "finite": true
+            },
+            "registration": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 0.5166311399225378,
+              "delta_max": 0.0009715557098388672,
+              "finite": true
+            },
+            "segmentation": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 1.488505602501391,
+              "delta_max": 0.0031382590532302856,
+              "finite": true
+            },
+            "classification": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 1.7202064191224054,
+              "delta_max": 0.0032536163926124573,
+              "finite": true
+            }
+          },
+          "target_actors": {
+            "extraction": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.005593484410383098,
+              "delta_max": 9.916953786159866e-06,
+              "finite": true
+            },
+            "registration": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.002812883576098102,
+              "delta_max": 9.883100574370474e-06,
+              "finite": true
+            },
+            "segmentation": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.0049249400644839625,
+              "delta_max": 9.916549970512278e-06,
+              "finite": true
+            },
+            "classification": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1281,
+              "delta_l1": 0.004177917162451195,
+              "delta_max": 9.85480255621951e-06,
+              "finite": true
+            }
+          },
+          "target_critics": {
+            "extraction": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 0.023908395712169295,
+              "delta_max": 8.922815322875977e-05,
+              "finite": true
+            },
+            "registration": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 0.016626648313831538,
+              "delta_max": 3.28943133354187e-05,
+              "finite": true
+            },
+            "segmentation": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 0.026284939609467983,
+              "delta_max": 8.344650268554688e-05,
+              "finite": true
+            },
+            "classification": {
+              "changed_tensors": 6,
+              "tensor_count": 6,
+              "parameters": 1889,
+              "delta_l1": 0.019305553752928972,
+              "delta_max": 8.94591212272644e-05,
+              "finite": true
+            }
+          }
+        },
+        "checkpoint_sha256": "4c879f752667ed23d817bb7c7058acec3e46726098dda254e9d38fa09ec4f92e",
+        "report_sha256": "93ae3d0d99289e956093c5c46aae29ac243e011e99d5692f6283f3790077dd7e",
+        "coordinator_source_sha256": "1a892b91079cb16ad4b062fd2508673e9cb76cca88c80f0a545012c54b4ccba8",
+        "scope": "Each actor and critic changed from its seeded initialization; this does not establish policy effectiveness"
+      },
+      "strict_current_gradient_verified": true,
+      "boundary": "Two training and two validation subjects; overall validation objective did not decrease. Policy parameter changes do not establish coordination benefit or cohort convergence."
+    }
+  ],
+  "dashboard_full_cycle": {
+    "implemented": true,
+    "scope": "Authenticated bounded cycle action with real checker and training progress; CPU/API and browser controls checked. No new GPU cycle was launched from the UI."
+  },
+  "formal_cycle_program": {
+    "implemented": true,
+    "selection_metric": "classification_loss",
+    "verification": "CPU fixtures cover actual test identity, metric recomputation, accepted adapter binding and validation selected checkpoint identity; full cohort execution remains pending"
+  }
 }

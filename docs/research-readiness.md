@@ -53,9 +53,11 @@ programs and method-specific interfaces are supplied and checked.
 
 Codex/Claude provider calls under the shared general, checking and workflow
 prompts are controlled prompting comparisons. They do not reproduce all tools
-or behavior of a general external Agent system. The new experiment suite,
-14-candidate evaluators and research-cycle runner are CLI programs. The current
-dashboard has not yet been connected to these new command paths.
+or behavior of a general external Agent system. The experiment suite and direct
+14-candidate evaluators remain CLI programs. The dashboard's
+[full research panel](full-research-workspace.md) now launches the real bounded
+research cycle and shows checks, accepted code and joint-training progress.
+Its older custom stage editor remains explicitly labeled as a compact prototype.
 
 Consequently, the repository must not yet be described as a complete execution
 of every paper baseline. Neither a planned row nor a configured command proves
@@ -93,13 +95,17 @@ short check establishes execution and measured paths, not accuracy or the
 effectiveness of Agent decisions. Retain all failures and account for previous
 standalone or sequential training when comparing compute budgets.
 
-The comparison runner currently selects validation checkpoints using a reference
-loss that includes extraction BCE on the last thresholded mask. Brain Dice uses
+New matched comparison runs select the earliest minimum validation diagnosis
+cross entropy checkpoint by default. The declared selection metric is included
+in the report and checkpoint identity. The optional historical reference loss
+includes extraction BCE on the last thresholded mask. Brain Dice uses
 the product of all extraction masks. The original five stage extraction and
 single stage SynthStrip therefore contribute different mask objects to that
-selection loss. Hard mask BCE can dominate the other validation terms. This
-protocol is retained for execution checks; scientific comparisons need a
-prespecified common checkpoint selection rule before their results are reported.
+selection loss. Hard mask BCE can dominate the other validation terms. Existing
+reference loss runs retain that scope; their results are not relabeled under
+the new selection rule. Full research cycles verify the selected checkpoint's
+method, adapter, cohort hashes, fold and seed against its internal metadata and
+validation history. Test aggregates are recomputed from the recorded subjects.
 The nnU-Net tissue head receives its segmentation objective, while diagnosis
 does not consume its logits. Its report records the missing diagnosis gradient
 path explicitly instead of claiming that diagnosis trains every stage.

@@ -13,7 +13,7 @@ another dataset to the running dashboard.
 | Checker fixtures | Known tensor, gradient and spatial faults | CPU benchmark command; not a real candidate integration benchmark |
 | Integration | 14 candidates, coding agents, checks as tools, full workflow, all six functional ablations and alternate LLMs | One configured case and provider per job through `benchmark_integration.py` |
 | Main training | ABIDE and ADHD, five preserved folds, explicit seeds, original and three settings for four replacements | `train_replacement.py`; prerequisites and supported interventions are checked |
-| Systems | Human or OpenClaw execution, NeuroPilot, NEXUS, NEURA, MLE STAR, coding agents and ours | Explicit external executor registrations |
+| Systems | Our complete research cycle and named external systems | Native research cycle for ours; explicit external executors for other systems |
 | Pipeline ablations | Gradient cuts, repair strategies, trained components, initialization, loss scaling and composition | Full training and composition commands; resource checks apply |
 | Site generalization | Named site splits from ABIDE | Native original and SynthStrip independent or joint training through `run_site_experiment.py` |
 | Longer training | One case and fold under original, independent and joint settings | Explicit `long_epochs` budget |
@@ -185,6 +185,21 @@ its digest, so use a new output root for a revised experimental protocol.
 
 ## Explicit execution
 
+The `systems:ours` jobs use the native research cycle. Configure
+`research_cycle.task`, `provider`, an explicit `model` when available, optional
+`stage`, acceptance update and call budgets, and `coordination`. Formal jobs
+select a candidate, validate generated code, train the complete preserved fold
+for the declared epochs, and evaluate the full test split after validation
+selection. Bounded executions remain `smoke_complete` and are excluded from
+formal summaries. Nested reports, accepted code, input hashes and checkpoints
+must agree before an execution is accepted.
+
+All four main replacement comparisons receive a retained copy of their
+accepted adapter. Training must confirm that this exact code was active.
+The common `selection_metric` defaults to `classification_loss` for all new
+matched comparisons. Historical `reference_loss` is explicit; the unchanged
+original entry point remains a separate reproduction experiment.
+
 ```sh
 python scripts/experiment_suite.py run --config runs/paper/config.json --job JOB_ID
 python scripts/experiment_suite.py run --config runs/paper/config.json --job JOB_ID --smoke-steps 2 --execute
@@ -200,6 +215,11 @@ Compute jobs must use an allocation owned by the experiment. Training workers
 check GPU availability and respect the visible allocation. A preflight does
 not reserve a device or authorize terminating another process. The suite does
 not modify or restart the current baseline service.
+
+Timeouts terminate only the launched process family. Windows uses Job Objects;
+Linux tracks an inherited per-execution ownership token and process start times,
+including nested workers with independent sessions. Cleanup failures halt
+subsequent integration work. No process is selected by executable name.
 
 ## External command protocol
 

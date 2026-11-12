@@ -1,13 +1,16 @@
 import json
 import hashlib
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from unibrain_agent.integration_benchmark import CHECKS, case_blockers, evaluate, fault_selftest, run_trial, verdict, visible_feedback
+from unibrain_agent.integration_benchmark import CHECKS, case_blockers, evaluate, fault_selftest, run_benchmark, run_trial, verdict, visible_feedback
+from unibrain_agent.owned_process import OwnedProcessCleanupError
 
 
 def result(**changes):
@@ -17,13 +20,49 @@ def result(**changes):
 
 
 class IntegrationBenchmarkTests(unittest.TestCase):
+    def test_uncertain_cleanup_stops_the_benchmark_before_the_next_trial(self):
+        with tempfile.TemporaryDirectory() as temporary, patch("unibrain_agent.integration_benchmark.run_trial",
+                return_value={"status": "blocked", "cleanup_failed": True}) as trial:
+            report = run_benchmark({"cases": [{"id": "one"}, {"id": "two"}], "providers": [{"provider": "codex"}]},
+                                   Path(temporary) / "benchmark")
+        self.assertEqual(trial.call_count, 1)
+        self.assertEqual(report["status"], "blocked")
+        self.assertTrue(report["cleanup_failed"])
+
+    def test_evaluator_cleanup_failure_is_preserved_for_batch_abort(self):
+        with tempfile.TemporaryDirectory() as temporary, patch("unibrain_agent.integration_benchmark.run_logged",
+                side_effect=OwnedProcessCleanupError("Could not terminate owned descendants")):
+            folder = Path(temporary)
+            report = evaluate({"evaluator": {"command": ["fixture"]}}, folder / "adapter.py", folder, 17)
+        self.assertEqual(report["status"], "infrastructure_failed")
+        self.assertTrue(report["cleanup_failed"])
+
+    def test_evaluator_timeout_cleans_descendant_and_retains_partial_updates(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            marker = folder / "orphan.txt"
+            child = "import time; from pathlib import Path; time.sleep(2); Path(" + repr(str(marker)) + ").write_text('orphan')"
+            fixture = folder / "fixture.py"
+            fixture.write_text("import json,sys,subprocess,time\nfrom pathlib import Path\n"
+                               "Path(sys.argv[1]).write_text(json.dumps({'status':'checking','optimizer_updates':1}))\n"
+                               "subprocess.Popen([sys.executable,'-c'," + repr(child) + "])\n"
+                               "time.sleep(10)\n", encoding="utf-8")
+            case = {"evaluator": {"command": [sys.executable, str(fixture), "{output}"], "timeout": 1}}
+            report = evaluate(case, folder / "adapter.py", folder, 17)
+            self.assertEqual(report["status"], "infrastructure_failed")
+            self.assertEqual(report["optimizer_updates"], 1)
+            time.sleep(2.2)
+            self.assertFalse(marker.exists())
+
     def test_timeout_preserves_observed_optimizer_updates(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
             (folder / "progress.json").write_text(json.dumps({"status": "checking", "updates": [{"step": 1}]}))
             case = {"evaluator": {"command": ["{python}", "fixture.py"], "progress_file": "progress.json"}}
-            with patch("unibrain_agent.integration_benchmark.subprocess.run", side_effect=subprocess.TimeoutExpired("fixture", 1)):
+            with patch("unibrain_agent.integration_benchmark.run_logged", side_effect=subprocess.TimeoutExpired("fixture", 1)) as execute:
                 report = evaluate(case, folder / "adapter.py", folder, 17)
+            self.assertEqual(execute.call_args.args[1], folder / "evaluator.log")
+            self.assertEqual(execute.call_args.args[2], 1200)
             self.assertEqual(report["status"], "infrastructure_failed")
             self.assertEqual(report["optimizer_updates"], 1)
 

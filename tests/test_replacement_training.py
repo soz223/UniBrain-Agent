@@ -11,7 +11,9 @@ from unibrain_agent.replacement_training import configure_boundaries, configure_
 from unibrain_agent.replacement_training import rng_state, restore_rng, train_mode, original_losses
 from unibrain_agent.replacement_training import checkpoint_state, check_checkpoint_space, trained_host_evidence, write_checkpoint
 from unibrain_agent.replacement_training import classification_gradients, classification_gradient_paths, total_candidate_gradients, atlas_class_indices
+from unibrain_agent.replacement_training import resume_identity_matches, selection_value, LEGACY_REFERENCE_TRAINER
 from unibrain_agent.full_connectivity import connect_model
+from unibrain_agent.full_model import host_file_hash
 
 
 class Toy(nn.Module):
@@ -23,6 +25,26 @@ class Toy(nn.Module):
 
 
 class ReplacementTrainingTests(unittest.TestCase):
+    def test_selection_defaults_to_diagnosis_loss(self):
+        args = parser().parse_args(["--source", "source", "--data", "data", "--output", "output"])
+        self.assertEqual(args.selection_metric, "classification_loss")
+        self.assertEqual(selection_value({"classification_loss": .2, "reference_loss": 8.}, args.selection_metric), .2)
+        for invalid in (None, float("nan"), float("inf"), True):
+            with self.assertRaises(ValueError):
+                selection_value({"classification_loss": invalid}, "classification_loss")
+
+    def test_legacy_selection_resume_requires_verified_reference_protocol(self):
+        previous = {"dataset": "abide", "fold": 1, "implementation_hashes": {
+            "replacement_training.py": LEGACY_REFERENCE_TRAINER, "full_model.py": "same"}}
+        current = {"dataset": "abide", "fold": 1, "selection_metric": "reference_loss", "implementation_hashes": {
+            "replacement_training.py": "current", "full_model.py": "same"}}
+        self.assertTrue(resume_identity_matches(previous, current))
+        self.assertFalse(resume_identity_matches(current, current))
+        for changed in ({**current, "selection_metric": "classification_loss"}, {**current, "fold": 2},
+                        {**current, "implementation_hashes": {"replacement_training.py": "current", "full_model.py": "changed"}}):
+            with self.assertRaises(ValueError):
+                resume_identity_matches(previous, changed)
+
     def test_stagewise_trains_classifier_only_and_detaches_stages(self):
         model = Toy()
         model.ext_net = nn.Sequential(nn.Linear(2, 2), nn.BatchNorm1d(2))
@@ -45,9 +67,11 @@ class ReplacementTrainingTests(unittest.TestCase):
     def test_host_checkpoint_requires_trained_matching_fold(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "host.pt"
-            args = SimpleNamespace(host_report=None, host_checkpoint=path, host_sha256="expected", dataset="abide", fold=1)
-            payload = {"identity": {"dataset": "abide", "fold": 1, "method": "original"}, "progress": {"steps": 3}}
+            args = SimpleNamespace(host_report=None, host_checkpoint=path, host_sha256=None, dataset="abide", fold=1)
+            payload = {"identity": {"dataset": "abide", "fold": 1, "method": "original"}, "progress": {"steps": 3},
+                       "model": {"weight": torch.ones(1)}}
             torch.save(payload, path)
+            args.host_sha256 = host_file_hash(path)
             self.assertEqual(trained_host_evidence(args)["updates"], 3)
             args.fold = 2
             with self.assertRaisesRegex(ValueError, "this dataset and fold"):
@@ -55,6 +79,7 @@ class ReplacementTrainingTests(unittest.TestCase):
             args.fold = 1
             payload["progress"]["steps"] = 0
             torch.save(payload, path)
+            args.host_sha256 = host_file_hash(path)
             with self.assertRaisesRegex(ValueError, "trained original"):
                 trained_host_evidence(args)
 

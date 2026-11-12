@@ -1,4 +1,5 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -91,9 +92,9 @@ class FullCompositionTests(unittest.TestCase):
     def test_prior_training_hash_and_fold_are_mandatory(self):
         with tempfile.TemporaryDirectory() as directory:
             checkpoint, report = Path(directory) / "model.pt", Path(directory) / "report.json"
-            checkpoint.write_bytes(b"Test checkpoint")
+            torch.save({"weight": torch.ones(1)}, checkpoint)
             value = {"status": "complete", "method": "synthstrip", "steps": 2,
-                     "config": {"dataset": "abide", "fold": 1}}
+                     "config": {"dataset": "abide", "fold": 1}, "checkpoint_sha256": fingerprint(checkpoint)}
             report.write_text(json.dumps(value), encoding="utf-8")
             evidence = verify_previous(checkpoint, report, fingerprint(checkpoint), "abide", 1)
             self.assertEqual(evidence["prior_optimizer_steps"], 2)
@@ -105,6 +106,59 @@ class FullCompositionTests(unittest.TestCase):
             report.write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "actually trained"):
                 verify_previous(checkpoint, report, fingerprint(checkpoint))
+
+    def test_sequential_report_cannot_override_zero_step_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint, report = Path(directory) / "model.pt", Path(directory) / "report.json"
+            payload = {"identity": {"method": "synthstrip", "dataset": "abide", "fold": 1},
+                       "progress": {"steps": 0}, "model": {"weight": torch.ones(1)}}
+            torch.save(payload, checkpoint)
+            value = {"status": "complete", "method": "synthstrip", "steps": 2,
+                     "config": {"dataset": "abide", "fold": 1}}
+            report.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "actually trained checkpoint"):
+                verify_previous(checkpoint, report, fingerprint(checkpoint), "abide", 1)
+            payload["progress"]["steps"] = 1
+            torch.save(payload, checkpoint)
+            result = verify_previous(checkpoint, report, fingerprint(checkpoint), "abide", 1)
+            self.assertEqual(result["prior_optimizer_steps"], 1)
+            self.assertEqual(result["reported_optimizer_steps"], 2)
+            payload["identity"]["fold"] = 2
+            torch.save(payload, checkpoint)
+            with self.assertRaisesRegex(ValueError, "identity contradicts"):
+                verify_previous(checkpoint, report, fingerprint(checkpoint), "abide", 1)
+
+    def test_raw_first_stage_requires_report_hash_binding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint, report = Path(directory) / "model.pt", Path(directory) / "report.json"
+            torch.save({"weight": torch.ones(1)}, checkpoint)
+            report.write_text(json.dumps({"status": "complete", "method": "synthstrip", "steps": 2,
+                                          "config": {"dataset": "abide", "fold": 1}}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "report bound"):
+                verify_previous(checkpoint, report, fingerprint(checkpoint), "abide", 1)
+
+    def test_build_only_uses_training_adapter_and_connection_finalizer(self):
+        from scripts.run_composition import main
+        from unibrain_agent.candidate_integration import GeneratedCore
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            adapter = root / "registration.py"
+            adapter.write_text("def adapt(core, moving, fixed):\n    return core(moving)\n")
+            model = nn.Module()
+            model.reg_net = nn.Module()
+            model.reg_net.core = nn.Linear(2, 2)
+            command = ["run_composition", "--source", str(root), "--data", str(root), "--output", str(root / "built"),
+                       "--method", "voxelmorph", "--secondary-extraction", str(root / "extraction.py"),
+                       "--adapter", str(adapter), "--connect-paths", "--cut-boundary", "registration",
+                       "--repair-strategy", "straight_through", "--build-only"]
+            with patch.object(sys, "argv", command), patch("scripts.run_composition.preflight", return_value={"status": "ready"}), \
+                    patch("scripts.run_composition.build_composed_model", return_value=(model, {}, {})), \
+                    patch("unibrain_agent.full_connectivity.connect_model", side_effect=lambda value, **kwargs: value) as connect:
+                main()
+            connect.assert_called_once_with(model, cut="registration", repair="straight_through", undo="none")
+            self.assertIsInstance(model.reg_net.core, GeneratedCore)
+            record = json.loads((root / "built/build_report.json").read_text())
+            self.assertEqual(record["architecture"]["generated_adapter_sha256"], fingerprint(adapter))
 
 
 if __name__ == "__main__":

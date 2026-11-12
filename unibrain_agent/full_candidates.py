@@ -151,6 +151,8 @@ class DenseHost(nn.Module):
 
 def build_candidate_model(source, method, adapter=None, weights=None, plans=None, host_checkpoint=None):
     from scripts.evaluate_upstream import original_config
+    from .full_model import load_host_checkpoint, verify_host_file
+    host_state, host_evidence = load_host_checkpoint(host_checkpoint) if host_checkpoint is not None else (None, None)
     source = Path(source).resolve()
     verify_original(source)
     repositories = {"voxelmorph": "reg_voxelmorph_master", "lapirn": "reg_lapirn", "nnunet": "dynamic-network-architectures"}
@@ -170,9 +172,8 @@ def build_candidate_model(source, method, adapter=None, weights=None, plans=None
     if original != 305812248:
         raise ValueError("Original full host parameter contract changed")
     if host_checkpoint:
-        state = torch.load(host_checkpoint, map_location="cpu", weights_only=True)
-        state = state.get("model", state.get("model_state_dict", state))
-        model.load_state_dict(state, strict=True)
+        model.load_state_dict(host_state, strict=True)
+        verify_host_file(host_checkpoint)
     if method == "nnunet":
         model.seg_net = planned_unet(plans)
         target = model.seg_net
@@ -188,6 +189,7 @@ def build_candidate_model(source, method, adapter=None, weights=None, plans=None
                     "source": provenance, "input_shape": [96, 96, 96], "compact": False,
                     "weights_sha256": digest(weights) if weights else None,
                     "host_checkpoint_sha256": digest(host_checkpoint) if host_checkpoint else None,
+                    "host_training_evidence": host_evidence,
                     "plans_sha256": digest(plans) if plans else None,
                     "adaptation": "Planned tissue head with native auxiliary outputs and normalized multi-scale tissue CE" if method == "nnunet" else
                     "Five original affine stages plus full dense core; soft atlas sampling for ROI features; original graph augmentation",

@@ -86,7 +86,7 @@ writing, and accumulates across resumptions; it is not pure CUDA kernel time.
 Compare total computation or an explicit joint budget rather than calling equal
 pipeline epoch counts equal cost.
 `--patience N` stops pipeline training after N validation epochs without a
-strictly lower reference loss. Zero disables early stopping. Use this for the
+strictly lower declared selection metric. Zero disables early stopping. Use this for the
 longer budget sensitivity experiment with a declared maximum epoch limit.
 
 ## Checkpoints and evaluation
@@ -113,7 +113,16 @@ stored file. Filesystems without hard link support use normal serialization.
 Later updates replace the last path atomically and preserve the previous best.
 Existing runs are never scanned or rewritten to deduplicate their checkpoints.
 
-`best.pt` is selected only by the fixed validation reference loss. Test evaluation
+`--selection-metric classification_loss` is the default for new matched runs.
+It selects the earliest checkpoint with the lowest validation diagnosis cross
+entropy. `--selection-metric reference_loss` explicitly retains the historical
+composite selection rule. The choice is fixed in the run identity and report;
+it cannot change on resume. A legacy checkpoint can resume with explicit
+`reference_loss` only when its trainer hash matches the verified predecessor,
+all other identities agree, and its retained validation history establishes the
+best value. Historical checkpoints and reports are not retroactively relabeled.
+
+Test evaluation
 requires `--evaluate-test`, runs after training, and loads the validation selected
 checkpoint. Per subject test probabilities and metrics are stored in `test.json`.
 The test split never selects weights, repairs, stopping points or hyperparameters.
@@ -205,12 +214,13 @@ Learned parcellation heads use 117 classes including background. Subject AAL
 targets must be integers drawn exactly from the template vocabulary; unknown
 labels are rejected instead of being silently mapped to a neighboring class.
 
-The current validation reference loss retains the upstream style extraction
+The optional validation reference loss retains the upstream style extraction
 BCE on the last thresholded mask, whereas brain Dice evaluates the product of
 all masks. Different extraction stage counts can therefore affect checkpoint
-selection. Final scientific comparisons should prespecify a common selection
-protocol; acceptance checks establish executable behavior, not comparable
-clinical performance.
+selection under that historical rule. New matched comparisons use the common
+diagnosis selection rule above. Both losses remain reported, and the unchanged
+upstream reproduction keeps its own protocol. Acceptance checks establish
+executable behavior, not comparable clinical performance.
 
 Paths and device allocations are external arguments. The code is designed for
 Windows and Linux and respects `CUDA_VISIBLE_DEVICES`. Publication claims still

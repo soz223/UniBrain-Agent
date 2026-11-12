@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import shutil
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -63,9 +62,14 @@ def training_command(args, method, adapter, output):
     command = [sys.executable, str(ROOT / "scripts/train_replacement.py"), "--source", str(args.source.resolve()),
                "--data", str(args.data.resolve()), "--output", str(output.resolve()), "--method", method,
                "--setting", "joint", "--initialization", "random", "--adapter", str(adapter.resolve()),
-               "--epochs", str(args.epochs), "--max-steps", str(args.train_steps), "--seed", str(args.seed),
-               "--gpu", str(args.gpu), "--eval-limit", str(args.eval_limit), "--coordination", args.coordination,
+               "--epochs", str(args.epochs), "--seed", str(args.seed),
+               "--gpu", str(args.gpu), "--coordination", args.coordination,
+               "--selection-metric", args.selection_metric,
                "--checkpoint-mode", args.checkpoint_mode, "--verify-gradients", "--connect-paths"]
+    if not args.full_training:
+        command.extend(("--max-steps", str(args.train_steps), "--eval-limit", str(args.eval_limit)))
+    if args.evaluate_test:
+        command.append("--evaluate-test")
     if method == "nnunet":
         command.extend(("--plans", str(args.plans.resolve())))
     if args.dataset:
@@ -76,10 +80,132 @@ def training_command(args, method, adapter, output):
 
 
 def execute(command, log, timeout):
-    with Path(log).open("w", encoding="utf-8") as stream:
-        result = subprocess.run(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT, timeout=timeout,
-                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    return result.returncode
+    from .owned_process import run_logged
+    return run_logged(command, log, timeout, cwd=ROOT)
+
+
+def audit_full_fold(args):
+    from .cohort_provenance import validate_cohort
+    from .data import digest
+    validate_cohort(args.data, args.dataset, args.fold, required_scope="full_fold", allow_missing=False)
+    names = [f"adhd_{split}_sample.npy" for split in ("train", "val", "test")]
+    names += ["template_img_orig_96.npy", "template_img_gm_mask_orig_96.npy", "template_img_aal_mask_orig_96.npy"]
+    hashes = {name: digest(args.data / name) for name in names}
+    return validate_cohort(args.data, args.dataset, args.fold, hashes, required_scope="full_fold", allow_missing=False)
+
+
+def validate_full_training(report, args, split_sizes, data_audit):
+    import math
+    import numpy as np
+    from .replacement_training import metrics_from_cases
+
+    metrics = ("accuracy", "balanced_accuracy", "macro_f1", "auc", "sensitivity", "specificity",
+               "brain_dice", "tissue_dice", "atlas_dice", "registration_dice", "reference_loss", "classification_loss")
+
+    def check_metrics(values):
+        if not isinstance(values, dict) or any(name not in values for name in metrics):
+            raise ValueError("Full evaluation lacks required validation or test metrics")
+        for name in metrics:
+            value = values[name]
+            if value is None and name in ("auc", "sensitivity", "specificity"):
+                continue
+            if type(value) not in (int, float) or not math.isfinite(value):
+                raise ValueError("Full evaluation contains nonfinite required metrics")
+
+    config = report.get("config", {})
+    expected = split_sizes["train"] * args.epochs
+    if (report.get("status") != "complete" or report.get("steps") != expected
+            or config.get("max_steps") is not None or config.get("eval_limit") is not None
+            or config.get("epochs") != args.epochs or config.get("dataset") != args.dataset
+            or config.get("fold") != args.fold):
+        raise ValueError("Full training did not complete the declared cohort and epoch budget")
+    if report.get("audit", {}).get("data_hashes") != data_audit["data_hashes"]:
+        raise ValueError("Full training used a different cohort export")
+    history = report.get("history", [])
+    if [row.get("epoch") for row in history] != list(range(1, args.epochs + 1)):
+        raise ValueError("Full training lacks validation for every epoch")
+    for row in history:
+        check_metrics(row.get("validation"))
+    if args.evaluate_test:
+        result = report.get("test", {})
+        cases = result.get("cases", [])
+        if (config.get("evaluate_test") is not True or result.get("sample_count") != split_sizes["test"]
+                or result.get("full_split_count") != split_sizes["test"] or len(cases) != split_sizes["test"]
+                or len({row.get("id") for row in cases}) != len(cases) or not result.get("checkpoint_sha256")):
+            raise ValueError("Full training did not evaluate the complete held out test split")
+        check_metrics(result.get("metrics"))
+        array = np.load(args.data / "adhd_test_sample.npy", mmap_mode="r", allow_pickle=False)
+        expected = {str(row["id"]): int(row["label"]) for row in array}
+        if len(expected) != split_sizes["test"] or set(expected) != {row["id"] for row in cases}:
+            raise ValueError("Test cases do not match the actual held out subject IDs")
+        for row in cases:
+            if (type(row.get("label")) is not int or row["label"] != expected[row["id"]]
+                    or type(row.get("prediction")) is not int or row["prediction"] not in (0, 1)):
+                raise ValueError("Test case labels or predictions do not match the held out data")
+            for name in ("probability", "brain_dice", "tissue_dice", "atlas_dice", "registration_dice", "reference_loss", "classification_loss"):
+                value = row.get(name)
+                if type(value) not in (int, float) or not math.isfinite(value):
+                    raise ValueError("Test cases lack finite prediction or imaging metrics")
+                if name not in ("reference_loss", "classification_loss") and not 0 <= value <= 1:
+                    raise ValueError("Test probabilities and overlap metrics must lie in the unit interval")
+                if name == "classification_loss" and value < 0:
+                    raise ValueError("Test classification losses must be nonnegative")
+        recomputed = metrics_from_cases(cases)
+        for name, value in recomputed.items():
+            observed = result["metrics"].get(name)
+            if value is None:
+                valid = observed is None
+            else:
+                valid = type(observed) in (int, float) and math.isclose(observed, value, rel_tol=1e-9, abs_tol=1e-10)
+            if not valid:
+                raise ValueError("Test aggregate metric disagrees with its subject records: " + name)
+    return validate_best_checkpoint(report, args, split_sizes, data_audit)
+
+
+def validate_best_checkpoint(report, args, split_sizes, data_audit):
+    import math
+    import torch
+    from .data import digest
+
+    config, selection = report.get("config", {}), report.get("selection", {})
+    metric = args.selection_metric
+    if (metric not in ("classification_loss", "reference_loss") or config.get("selection_metric") != metric
+            or selection.get("metric") != metric or selection.get("direction") != "minimize"
+            or selection.get("scope") != "validation_only"):
+        raise ValueError("Validation checkpoint selection was not prespecified consistently")
+    history = report.get("history", [])
+    if not history or any(type(row.get("validation", {}).get(metric)) not in (int, float)
+                          or not math.isfinite(row["validation"][metric]) for row in history):
+        raise ValueError("Validation history lacks a finite checkpoint selection metric")
+    selected = min(history, key=lambda row: row["validation"][metric])
+    epoch, value = selected["epoch"], selected["validation"][metric]
+    if (selection.get("best_epoch") != epoch or selection.get("best_value") != value
+            or report.get("best_validation") != selected["validation"]):
+        raise ValueError("Best checkpoint selection disagrees with the validation history")
+    directory = args.output.resolve() / "training"
+    if Path(config.get("output", "")).resolve() != directory:
+        raise ValueError("Best checkpoint output location differs from the current cycle")
+    path = directory / "best.pt"
+    checksum = digest(path)
+    bundle = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
+    if bundle.get("checkpoint_kind") not in ("evaluation", "evaluation_weights_only") or not isinstance(bundle.get("model"), dict):
+        raise ValueError("A validation selected model checkpoint is required")
+    identity, progress = bundle.get("identity", {}), bundle.get("progress", {})
+    expected = {"method": report.get("method"), "setting": "joint", "seed": args.seed,
+                "dataset": args.dataset, "fold": args.fold, "selection_metric": metric,
+                "adapter_hash": fingerprint(Path(config.get("adapter", ""))), "data_hashes": data_audit["data_hashes"]}
+    if any(identity.get(key) != expected_value for key, expected_value in expected.items()):
+        raise ValueError("Best checkpoint identity differs from the method, adapter, data or training fold")
+    if (progress.get("epoch") != epoch or progress.get("best_epoch") != epoch or progress.get("best_value") != value
+            or progress.get("best_loss") != value or progress.get("selection_metric") != metric
+            or progress.get("steps") != epoch * split_sizes["train"] or progress.get("pretrain_steps") != 0):
+        raise ValueError("Best checkpoint progress does not establish the selected validation epoch and value")
+    if args.evaluate_test and report.get("test", {}).get("checkpoint_sha256") != checksum:
+        raise ValueError("Test results do not match the validation selected checkpoint")
+    if digest(path) != checksum:
+        raise ValueError("Best checkpoint changed during identity verification")
+    return {"status": "passed", "metric": metric, "selected_epoch": epoch, "selected_value": value,
+            "checkpoint_sha256": checksum, "identity_verified": True, "selection_source": "validation_history"}
 
 
 def provider_preflight(configuration):
@@ -131,6 +257,12 @@ def validate_training(report, method, adapter, seed, budget, source=None, data=N
         raise ValueError("Training did not verify every update under the connected host protocol")
     if method != "nnunet" and gradients.get("diagnosis_reaches_all_candidates") is not True:
         raise ValueError("Training did not establish diagnosis gradients into all selected candidates")
+    if gradients.get("protocol_version", 1) < 2:
+        raise ValueError("Training lacks the classification to input gradient check")
+    boundary = gradients.get("last_step", {}).get("classification_to_input", {})
+    if method != "nnunet" and (boundary.get("required") is not True or boundary.get("finite") is not True
+                              or boundary.get("nonzero") is not True):
+        raise ValueError("Diagnosis gradients do not reach the original input image")
 
 
 def preflight_ready(log):
@@ -148,6 +280,10 @@ def run_cycle(args):
     if (args.acceptance_steps not in (1, 2) or args.train_steps < 1 or args.epochs < 1 or args.eval_limit < 1
             or not 2 <= args.max_calls <= 20 or args.timeout < 1 or not args.task.strip()):
         raise ValueError("Invalid task or execution budget")
+    if args.evaluate_test and not args.full_training:
+        raise ValueError("Test evaluation requires explicit full training")
+    if args.full_training and (args.dataset not in ("abide", "adhd") or args.fold not in range(1, 6)):
+        raise ValueError("Full training requires the dataset and original fold")
     root = args.output.resolve()
     if any(root == path.resolve() or path.resolve() in root.parents for path in (args.source, args.data)):
         raise ValueError("Cycle output must be separate from source and data")
@@ -156,15 +292,23 @@ def run_cycle(args):
     report = {"status": "running", "phase": "auditing", "task": args.task, "stage": args.stage,
               "provider": {"provider": args.provider, "model": args.model}, "seed": args.seed,
               "budgets": {"selection_calls": 1, "integration_calls": args.max_calls,
-                          "acceptance_updates": args.acceptance_steps, "training_updates": args.train_steps},
+                          "acceptance_updates": args.acceptance_steps,
+                          "training_updates": None if args.full_training else args.train_steps,
+                          "training_epochs": args.epochs},
               "actual_updates": {"acceptance": 0, "training": 0}, "validation_weights_reused": False,
               "training_protocol": {"coordination": args.coordination, "checkpoint_mode": args.checkpoint_mode,
+                                    "selection_metric": args.selection_metric,
+                                    "full_training": args.full_training, "evaluate_test": args.evaluate_test,
                                     "verify_gradients": True, "connect_paths": True,
                                     "connection_scope": "Joint training adds continuous atlas and graph paths; acceptance retains each evaluator's declared connection contract"},
-              "scope": "Curated candidate selection, constrained generated adapter validation and bounded full-model joint training"}
+              "scope": "Curated candidate selection and generated adapter validation followed by "
+                       + ("complete preserved-fold joint training" if args.full_training else "bounded full-model joint training")}
     save(root / "report.json", report)
     try:
         report["input_audit"] = audit_inputs(args.source, args.data)
+        if args.full_training:
+            report["cohort_audit"] = audit_full_fold(args)
+            report["budgets"]["training_updates"] = report["input_audit"]["split_sizes"]["train"] * args.epochs
         cases = audit_cases(args, root)
         save(root / "source_audit.json", cases)
         configuration = provider_settings().snapshot(args.provider)
@@ -271,8 +415,10 @@ def run_cycle(args):
         report["accepted_adapter_unchanged_after_training"] = fingerprint(adapter) == accepted_hash
         if not report["accepted_adapter_unchanged_after_training"]:
             raise ValueError("Accepted adapter changed during joint training")
-        validate_training(training, method, adapter, args.seed, args.train_steps, args.source, args.data,
+        validate_training(training, method, adapter, args.seed, report["budgets"]["training_updates"], args.source, args.data,
                           data_sha256, args.coordination, args.checkpoint_mode)
+        if args.full_training:
+            report["best_checkpoint_audit"] = validate_full_training(training, args, report["input_audit"]["split_sizes"], report["cohort_audit"])
         report.update(status="complete", phase="complete")
         return report
     except Exception as error:
@@ -304,6 +450,8 @@ def parser():
     result.add_argument("--fold", type=int)
     result.add_argument("--acceptance-steps", type=int, choices=(1, 2), default=1)
     result.add_argument("--train-steps", type=int, default=2)
+    result.add_argument("--full-training", action="store_true")
+    result.add_argument("--evaluate-test", action="store_true")
     result.add_argument("--epochs", type=int, default=20)
     result.add_argument("--eval-limit", type=int, default=2)
     result.add_argument("--max-calls", type=int, default=4)
@@ -312,6 +460,7 @@ def parser():
     result.add_argument("--timeout", type=int, default=3600)
     result.add_argument("--coordination", choices=("none", "taskforce"), default="none")
     result.add_argument("--checkpoint-mode", choices=("weights", "resume"), default="weights")
+    result.add_argument("--selection-metric", choices=("classification_loss", "reference_loss"), default="classification_loss")
     mode = result.add_mutually_exclusive_group()
     mode.add_argument("--preflight", action="store_true")
     mode.add_argument("--selection-only", action="store_true")

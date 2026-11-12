@@ -14,6 +14,8 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+from .owned_process import run_logged
+
 ROOT = Path(__file__).resolve().parents[1]
 METHODS = ("redwgan", "deepn4", "synthstrip", "ernet", "deepnormalize", "harmonizing_flows",
            "voxelmorph", "lapirn", "nnunet", "fastsurfer", "nobrainer", "fbnetgen", "brainnetcnn", "bnt")
@@ -50,8 +52,11 @@ def example_config():
     return {"version": 1, "python": "", "source": "", "output_root": "./runs/paper",
             "datasets": {name: {"folds": {str(f): "" for f in range(1, 6)}, "sites": {}} for name in ("abide", "adhd")},
             "seeds": [17, 29, 43], "repetitions": 3, "epochs": 20, "long_epochs": 1000, "pretrain_epochs": 20,
+            "selection_metric": "classification_loss",
             "gpu": 0, "adapters": {}, "weights": {}, "hosts": {}, "plans": {}, "sequential_runs": {},
-            "integration_configs": {}, "case_study_run": "", "site_initialization": "random", "executors": {}}
+            "integration_configs": {}, "case_study_run": "", "site_initialization": "random",
+            "research_cycle": {"task": "", "provider": "codex", "model": "", "stage": "",
+                               "acceptance_steps": 1, "max_calls": 4, "coordination": "none"}, "executors": {}}
 
 
 def load_config(path):
@@ -63,6 +68,8 @@ def load_config(path):
         raise ValueError("Explicit integer random seeds are required")
     if len(set(config["seeds"])) != len(config["seeds"]):
         raise ValueError("Duplicate seeds would double count runs")
+    if config.get("selection_metric", "classification_loss") not in {"classification_loss", "reference_loss"}:
+        raise ValueError("Unsupported validation checkpoint selection metric")
     for key in ("epochs", "long_epochs", "repetitions"):
         if type(config.get(key)) is not int or config[key] < 1:
             raise ValueError("Positive integer required: " + key)
@@ -142,6 +149,101 @@ def full_fold_audit(config, job, data_hashes=None):
 def site_audit(config, job, data_hashes=None):
     from .cohort_provenance import validate_site
     return validate_site(data_path(config, job), job["dataset"], str(job["fold"]), data_hashes)
+
+
+def file_hash(path):
+    value = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            value.update(block)
+    return value.hexdigest()
+
+
+def cycle_options(config):
+    options = config.get("research_cycle", {})
+    if not isinstance(options.get("task"), str) or not options["task"].strip():
+        raise ValueError("The native research cycle requires an explicit task")
+    from .research_cycle import parser
+    arguments = ["--source", "source", "--data", "data", "--output", "output", "--task", options["task"],
+                 "--provider", options.get("provider", "codex")]
+    if options.get("stage"):
+        arguments += ["--stage", options["stage"]]
+    try:
+        parser().parse_args(arguments)
+    except SystemExit as error:
+        raise ValueError("Unsupported research cycle provider or stage") from error
+    if type(options.get("acceptance_steps", 1)) is not int or options.get("acceptance_steps", 1) not in (1, 2):
+        raise ValueError("Research cycle acceptance uses one or two updates")
+    if type(options.get("max_calls", 4)) is not int or not 2 <= options.get("max_calls", 4) <= 20:
+        raise ValueError("Research cycle integration call budget must be between 2 and 20")
+    if options.get("coordination", "none") not in {"none", "taskforce"}:
+        raise ValueError("Unsupported research cycle coordination")
+    return options
+
+
+def cycle_result(config, job, folder, outcome, smoke_steps=None):
+    from types import SimpleNamespace
+    from .integration_benchmark import verdict
+    from .research_cycle import validate_full_training, validate_training
+
+    options = cycle_options(config)
+    method = outcome.get("method")
+    if (outcome.get("status") != "complete" or outcome.get("phase") != "complete"
+            or method not in METHODS or outcome.get("seed") != job["seed"]):
+        raise ValueError("Research cycle did not complete the planned selection and training")
+    if (outcome.get("provider", {}).get("provider") != options.get("provider", "codex")
+            or options.get("model") and outcome.get("provider", {}).get("model") != options["model"]
+            or outcome.get("task") != options["task"]):
+        raise ValueError("Research cycle provider or task differs from the plan")
+    accepted = outcome.get("accepted_adapter", {})
+    if accepted.get("file") != "accepted_adapter.py":
+        raise ValueError("Research cycle did not retain its accepted adapter")
+    adapter = folder / "accepted_adapter.py"
+    accepted_hash = file_hash(adapter)
+    if accepted_hash != accepted.get("sha256") or outcome.get("accepted_adapter_unchanged_after_training") is not True:
+        raise ValueError("Accepted research cycle code changed")
+    trial = outcome.get("integration", {})
+    if (trial.get("status") != "passed" or trial.get("final_valid") is not True
+            or not any(call.get("adapter_sha256") == accepted_hash and verdict(call.get("evaluation", {})) == "passed"
+                       for call in trial.get("calls", []))):
+        raise ValueError("The accepted adapter lacks a matching successful validation")
+    training_path = folder / "training/report.json"
+    training = json.loads(training_path.read_text(encoding="utf-8"))
+    if training != outcome.get("training"):
+        raise ValueError("Research cycle and retained training report disagree")
+    declared = training.get("config", {})
+    if declared.get("dataset") != job["dataset"] or declared.get("fold") != job["fold"]:
+        raise ValueError("Research cycle trained a different dataset or fold")
+    audit = full_fold_audit(config, job, training.get("audit", {}).get("data_hashes", {}))
+    budget = smoke_steps or audit["split_counts"]["train"] * job["epochs"]
+    updates = outcome.get("actual_updates", {})
+    if (type(updates.get("acceptance")) is not int or not 1 <= updates["acceptance"] <= options.get("acceptance_steps", 1)
+            or updates.get("training") != training.get("steps")):
+        raise ValueError("Research cycle update accounting does not match its retained evidence")
+    validate_training(training, method, adapter, job["seed"], budget, resolve(config, config["source"]),
+                      data_path(config, job), audit["data_hashes"]["adhd_train_sample.npy"],
+                      options.get("coordination", "none"), "weights")
+    protocol = outcome.get("training_protocol", {})
+    if protocol.get("full_training", False) is not (smoke_steps is None):
+        raise ValueError("Bounded and complete research cycles cannot share a result category")
+    artifacts = [adapter, training_path, folder / "training/updates.jsonl", folder / "training/last.pt"]
+    if not smoke_steps:
+        if protocol.get("evaluate_test") is not True or outcome.get("budgets", {}).get("training_epochs") != job["epochs"]:
+            raise ValueError("Full research cycle did not retain the requested epoch and test protocol")
+        validate_full_training(training, SimpleNamespace(epochs=job["epochs"], dataset=job["dataset"], fold=job["fold"],
+                                                         seed=job["seed"], data=data_path(config, job), output=folder,
+                                                         selection_metric=config.get("selection_metric", "classification_loss"),
+                                                         evaluate_test=True), audit["split_counts"], audit)
+        best = folder / "training/best.pt"
+        if file_hash(best) != training["test"]["checkpoint_sha256"]:
+            raise ValueError("Research cycle test checkpoint changed")
+        artifacts.append(best)
+        outcome["test"] = training["test"]
+    elif declared.get("max_steps") != smoke_steps:
+        raise ValueError("Bounded research cycle changed the requested step limit")
+    return {"cohort_provenance": audit, "selected_method": method,
+            "artifact_hashes": {path.relative_to(folder.parent).as_posix(): file_hash(path) for path in artifacts},
+            "research_cycle_updates": updates}
 
 
 def executor_for(config, job):
@@ -286,6 +388,20 @@ def preflight(config, job):
                     reasons.append("Integration case requires an adjudicated applicability label")
             except (ValueError, KeyError, TypeError) as error:
                 reasons.append(str(error))
+    elif job["group"] == "systems" and job["variant"] == "ours":
+        kind = "research_cycle"
+        source, data = resolve(config, config.get("source")), data_path(config, job)
+        if source is None or not (source / "model.py").is_file():
+            reasons.append("Pinned original source is not configured")
+        try:
+            cycle_options(config)
+            if data is None:
+                raise ValueError("A preserved full fold is required for the native research cycle")
+            full_fold_audit(config, job)
+        except (ValueError, KeyError, OSError, TypeError) as error:
+            reasons.append(str(error))
+        if not (ROOT / "scripts/run_research_cycle.py").is_file():
+            reasons.append("Native research cycle executable is not installed")
     elif is_composition(job):
         kind = "composition"
         adapter = resolve(config, config.get("adapters", {}).get("synthstrip"))
@@ -326,10 +442,10 @@ def preflight(config, job):
                 (site_audit if job["group"] == "site" else full_fold_audit)(config, job)
             except (ValueError, KeyError, OSError, TypeError) as error:
                 reasons.append(("Site provenance: " if job["group"] == "site" else "Full fold provenance: ") + str(error))
-        if job["method"] == "synthstrip":
+        if job["method"] in TRAIN_METHODS:
             adapter = resolve(config, config.get("adapters", {}).get(job["method"]))
             if adapter is None or not adapter.is_file():
-                reasons.append("Accepted generated SynthStrip adapter is not configured")
+                reasons.append("Accepted generated adapter is not configured: " + job["method"])
         if job["method"] == "nnunet":
             plans = resolve(config, config.get("plans", {}).get("nnunet"))
             if plans is None or not plans.is_file():
@@ -379,6 +495,22 @@ def command_for(config, job, folder, smoke_steps=None):
         benchmark["cases"][0]["max_optimizer_updates"] = smoke_steps or 2
         save(path, benchmark)
         return [python, str(ROOT / "scripts/benchmark_integration.py"), "run", "--config", str(path), "--output", str(folder / "payload")]
+    if job["group"] == "systems" and job["variant"] == "ours":
+        options = cycle_options(config)
+        command = [python, str(ROOT / "scripts/run_research_cycle.py"), "--source", str(source), "--data", str(data),
+                   "--output", str(folder / "payload"), "--task", options["task"], "--provider", options.get("provider", "codex"),
+                   "--dataset", job["dataset"], "--fold", str(job["fold"]), "--seed", str(job["seed"]),
+                   "--epochs", str(job["epochs"]), "--gpu", str(config.get("gpu", 0)),
+                   "--selection-metric", config.get("selection_metric", "classification_loss"),
+                   "--acceptance-steps", str(options.get("acceptance_steps", 1)), "--max-calls", str(options.get("max_calls", 4)),
+                   "--coordination", options.get("coordination", "none"), "--checkpoint-mode", "weights"]
+        for field in ("model", "stage"):
+            if options.get(field):
+                command += ["--" + field, options[field]]
+        if config.get("plans", {}).get("nnunet"):
+            command += ["--plans", str(resolve(config, config["plans"]["nnunet"]))]
+        command += ["--train-steps", str(smoke_steps), "--eval-limit", "2"] if smoke_steps else ["--full-training", "--evaluate-test"]
+        return command
     if is_composition(job):
         registration = {**job, "group": "training", "method": "voxelmorph", "variant": "joint"}
         temporary = dict(config)
@@ -404,11 +536,12 @@ def command_for(config, job, folder, smoke_steps=None):
     command = [python, str(ROOT / "scripts" / script), "--source", str(source), "--data", str(data),
                "--output", str(folder / "payload"), "--method", job["method"], "--setting", setting,
                "--epochs", str(job["epochs"]), "--seed", str(job["seed"]), "--gpu", str(config.get("gpu", 0)),
+               "--selection-metric", config.get("selection_metric", "classification_loss"),
                "--dataset", job["dataset"], "--split-id" if job["group"] == "site" else "--fold", str(job["fold"])]
     if setting == "independent_finetuned":
         command += ["--pretrain-epochs", str(config.get("pretrain_epochs", config["epochs"]))]
-    if job["method"] == "synthstrip":
-        command += ["--adapter", str(resolve(config, config["adapters"]["synthstrip"]))]
+    if job["method"] in TRAIN_METHODS:
+        command += ["--adapter", str(resolve(config, config["adapters"][job["method"]]))]
     if job["method"] == "nnunet":
         command += ["--plans", str(resolve(config, config["plans"]["nnunet"]))]
     needs_weights = job["group"] != "site" or config.get("site_initialization", "random") == "official"
@@ -460,17 +593,29 @@ def run_job(config, job, smoke_steps=None, timeout=86400):
               "command": None, "started_unix": time.time()}
     save(folder / "execution.json", record)
     try:
-        if external is None and readiness["executor"] in {"training", "composition", "site_training"}:
+        if external is None and readiness["executor"] in {"training", "composition", "site_training", "research_cycle"}:
             audit = site_audit if job["group"] == "site" else full_fold_audit
             record["cohort_provenance"] = audit(config, job)
         command = command_for(config, job, folder, smoke_steps)
+        if external is None and "--adapter" in command:
+            index = command.index("--adapter") + 1
+            adapter = folder / "input_adapter.py"
+            adapter.write_bytes(Path(command[index]).read_bytes())
+            command[index] = str(adapter)
+            record["accepted_adapter_sha256"] = file_hash(adapter)
+            record["artifact_hashes"] = {adapter.name: record["accepted_adapter_sha256"]}
         record["command"] = command
         save(folder / "execution.json", record)
-        with (folder / "execution.log").open("w", encoding="utf-8") as stream:
-            result = subprocess.run(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT, timeout=timeout,
-                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        record["returncode"] = result.returncode
-        if result.returncode:
+        returncode = run_logged(command, folder / "execution.log", timeout, ROOT)
+        record["returncode"] = returncode
+        if returncode:
+            cycle_path = folder / "payload/report.json"
+            if external is None and readiness["executor"] == "research_cycle" and cycle_path.is_file():
+                incomplete = json.loads(cycle_path.read_text(encoding="utf-8"))
+                if incomplete.get("status") in {"blocked", "rejected"}:
+                    record.update(status=incomplete["status"], outcome=incomplete, raw_report="payload/report.json",
+                                  raw_report_sha256=file_hash(cycle_path))
+                    return record
             raise RuntimeError("Executor failed; inspect retained execution.log")
         external_result = folder / "result.json"
         if external_result.exists():
@@ -487,7 +632,7 @@ def run_job(config, job, smoke_steps=None, timeout=86400):
             if path is None:
                 raise ValueError("Executor produced no recognized result report")
             outcome = json.loads(path.read_text(encoding="utf-8"))
-            record["raw_report"] = str(path.relative_to(folder))
+            record["raw_report"] = path.relative_to(folder).as_posix()
             record["raw_report_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
             if job["group"] == "checker_fixtures":
                 outcome["status"] = "passed" if outcome.get("passed") is True else "failed"
@@ -507,6 +652,17 @@ def run_job(config, job, smoke_steps=None, timeout=86400):
             if cohort["manifest_sha256"] != record["cohort_provenance"]["manifest_sha256"]:
                 raise ValueError("Cohort manifest changed while the experiment was running")
             record["cohort_provenance"] = cohort
+            if "accepted_adapter_sha256" in record:
+                architecture = outcome.get("architecture", {})
+                if (file_hash(adapter) != record["accepted_adapter_sha256"]
+                        or architecture.get("generated_adapter_active_in_training") is not True
+                        or architecture.get("generated_adapter_sha256") != record["accepted_adapter_sha256"]):
+                    raise ValueError("Training did not execute the unchanged accepted adapter")
+        if external is None and readiness["executor"] == "research_cycle":
+            evidence = cycle_result(config, job, folder / "payload", outcome, smoke_steps)
+            if evidence["cohort_provenance"]["manifest_sha256"] != record["cohort_provenance"]["manifest_sha256"]:
+                raise ValueError("Cohort manifest changed during the research cycle")
+            record.update(evidence)
         if job["group"] == "integration":
             runs = outcome.get("runs", [])
             if len(runs) != 1 or runs[0].get("seed") != job["seed"] or runs[0].get("case_id") != job["method"]:
@@ -520,6 +676,11 @@ def run_job(config, job, smoke_steps=None, timeout=86400):
         if status not in {"complete", "completed", "passed", "budget_exhausted"}:
             raise ValueError("Executor did not report a recognized completion status")
         record["status"] = "smoke_complete" if smoke_steps or status == "budget_exhausted" else "complete"
+    except subprocess.TimeoutExpired:
+        record.update(status="timeout", error="Owned execution tree exceeded the timeout and was terminated")
+    except KeyboardInterrupt:
+        record.update(status="interrupted", error="Owned execution tree was interrupted and terminated")
+        raise
     except Exception as error:
         record.update(status="failed", error=str(error))
     finally:
@@ -541,9 +702,15 @@ def summarize(config):
         if record and (record.get("config_hash") != config["_hash"] or record.get("job", {}).get("job_hash") != job["job_hash"]):
             status = "stale_config"
         if status == "complete" and record.get("raw_report"):
-            raw = path.parent / record["raw_report"]
-            if not raw.is_file() or hashlib.sha256(raw.read_bytes()).hexdigest() != record.get("raw_report_sha256"):
+            raw = (path.parent / record["raw_report"].replace("\\", "/")).resolve()
+            if path.parent.resolve() not in raw.parents or not raw.is_file() or file_hash(raw) != record.get("raw_report_sha256"):
                 status = "changed_report"
+        if status == "complete":
+            for relative, expected in record.get("artifact_hashes", {}).items():
+                artifact = (path.parent / relative.replace("\\", "/")).resolve()
+                if path.parent.resolve() not in artifact.parents or not artifact.is_file() or file_hash(artifact) != expected:
+                    status = "changed_artifact"
+                    break
         row = {k: job[k] for k in ("id", "group", "dataset", "method", "variant", "fold", "seed", "repetition")}
         row["status"] = status
         row["blocked_reasons"] = "; ".join(readiness["reasons"]) if readiness else ""

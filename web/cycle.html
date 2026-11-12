@@ -1,0 +1,31 @@
+<section class="panel cycle-panel" id="fullCyclePanel" aria-label="Full model research cycle">
+  <div class="panel-head"><h2>Full model research</h2><span class="badge neutral">14 candidate methods</span></div>
+  <p class="disclosure-note">Select a method, generate and repair its adapter, then jointly train the full UniBrain model. This bounded check uses the backend GPU.</p>
+  <form id="cycleForm">
+    <label for="cycleTask">Research task</label>
+    <textarea id="cycleTask" rows="2" maxlength="4000" required placeholder="Find a classifier for the structural brain graph and verify its diagnosis gradients."></textarea>
+    <div class="cycle-controls"><label>Stage <select id="cycleStage"><option value="classification">Classification</option></select></label><label class="check"><input id="cycleCoordination" type="checkbox">TaskForce training coordination</label></div>
+    <p id="cyclePolicyHint" class="disclosure-note" hidden>Policy learning starts at update 5. Shorter runs collect experience.</p>
+    <details class="disclosure cycle-config"><summary>Backend data & budget <span>1 acceptance + 2 training updates by default</span></summary>
+      <div class="cycle-fields">
+        <label class="wide">Source directory<input id="cycleSource" type="text" required placeholder="Pinned UniBrain source on your backend"></label>
+        <label class="wide">Prepared fold directory<input id="cycleData" type="text" required placeholder="Train, validation, test arrays and templates"></label>
+        <label>Dataset<select id="cycleDataset"><option value="">Unspecified</option><option value="abide">ABIDE</option><option value="adhd">ADHD</option></select></label>
+        <label>Fold<input id="cycleFold" type="number" min="1" max="5" placeholder="Optional"></label>
+        <label>GPU index<input id="cycleGpu" type="number" min="0" max="1024" value="0" required></label>
+        <label>Acceptance updates<input id="cycleAcceptance" type="number" min="1" max="2" value="1" required></label>
+        <label>Training updates<input id="cycleTraining" type="number" min="1" max="1000" value="2" required></label>
+        <label class="wide">nnU-Net plans, if needed<input id="cyclePlans" type="text" placeholder="Optional backend plans file"></label>
+      </div>
+      <p class="disclosure-note">Paths refer to the connected backend. Existing data and baseline runs are preserved. AI uses the account connected in AI settings.</p>
+    </details>
+    <div class="cycle-actions"><button id="cycleCheck" type="button">Check prerequisites</button><button id="cycleRun" class="primary" type="submit">Run full research cycle</button><span id="cycleNotice" role="status" aria-live="polite">○ Connect your backend to begin</span></div>
+  </form>
+  <div id="cycleProgress" hidden>
+    <ol id="cyclePhases" class="cycle-phases" aria-label="Full research cycle phases"></ol>
+    <div id="cycleSummary" role="status" aria-live="polite"></div>
+    <div id="cycleChart" class="loss-chart"></div>
+    <div class="cycle-actions"><button id="cycleCode" class="text-button" disabled>Review accepted code</button><button id="cycleExport" class="text-button">Export progress</button></div>
+    <details class="disclosure"><summary>Checks, model calls & training policy</summary><div id="cycleEvidence"></div></details>
+  </div>
+</section>

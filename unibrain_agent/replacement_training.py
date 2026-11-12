@@ -1,8 +1,10 @@
 """Reproducible full model comparisons with separate validation and test."""
 
 import argparse
+import copy
 import hashlib
 import json
+import math
 import os
 import random
 import shutil
@@ -15,6 +17,7 @@ from .full_extended import TARGETS, REPOSITORIES
 METHODS.update(TARGETS)
 
 SETTINGS = ("original", "original_completed", "original_frozen_stages", "joint", "independent_official", "independent_pretrained", "independent_finetuned")
+LEGACY_REFERENCE_TRAINER = "4977739c34f4b8cbb7326052e23a9cc77199a40297db8e28bfe95bee2bd60904"
 
 
 def fingerprint(path):
@@ -31,30 +34,52 @@ def save_json(path, value):
     temporary.replace(path)
 
 
+def host_checkpoint_spec(args):
+    from .full_model import VerifiedHostCheckpoint
+    return (VerifiedHostCheckpoint(args.host_checkpoint, args.dataset, args.fold, args.host_sha256, args.host_report)
+            if args.host_checkpoint else None)
+
+
+def resume_identity_matches(previous, current):
+    if previous == current:
+        return False
+    migrated = copy.deepcopy(previous)
+    hashes = migrated.get("implementation_hashes", {})
+    if ("selection_metric" not in previous and current.get("selection_metric") == "reference_loss"
+            and hashes.get("replacement_training.py") == LEGACY_REFERENCE_TRAINER):
+        migrated["selection_metric"] = "reference_loss"
+        hashes["replacement_training.py"] = current.get("implementation_hashes", {}).get("replacement_training.py")
+        if migrated == current:
+            return True
+    raise ValueError("Resume configuration, sources or data differ from the checkpoint; legacy selection requires explicit reference_loss and a verified compatible trainer")
+
+
+def selection_value(metrics, name):
+    value = metrics.get(name)
+    if type(value) not in (int, float) or not math.isfinite(value):
+        raise ValueError("Validation selection metric must be present and finite: " + name)
+    return value
+
+
+def finalize_pipeline(model, architecture, args):
+    if args.connect_paths or args.setting == "original_completed":
+        from .full_connectivity import connect_model
+        model = connect_model(model, cut=args.cut_boundary, repair=args.repair_strategy, undo=args.undo_repair)
+    if args.adapter is not None and args.method not in ("original", "synthstrip"):
+        from .candidate_integration import bind_adapter, bind_extended_adapters
+        if args.method in TARGETS:
+            bind_extended_adapters(model, args.method, args.adapter)
+        else:
+            bind_adapter(model, args.method, args.adapter)
+        architecture["generated_adapter_sha256"] = fingerprint(args.adapter)
+        architecture["generated_adapter_active_in_training"] = True
+    return model
+
+
 def trained_host_evidence(args):
-    import torch
-    if args.host_report:
-        record = json.loads(args.host_report.read_text(encoding="utf-8"))
-        config = record.get("config", {})
-        dataset, fold = record.get("dataset", config.get("dataset")), record.get("fold", config.get("fold"))
-        updates = record.get("optimizer_updates", record.get("steps", record.get("updates", 0)))
-        expected = record.get("checkpoint_sha256", record.get("checkpoint", {}).get("sha256"))
-        expected = expected or record.get("checkpoint_hashes", {}).get(args.host_checkpoint.name)
-        if record.get("status") not in ("complete", "passed", "budget_exhausted") or expected != args.host_sha256:
-            raise ValueError("Host report must verify the trained checkpoint hash and successful updates")
-        method = record.get("method", "original")
-        evidence = {"kind": "external_training_report", "report_sha256": fingerprint(args.host_report)}
-    else:
-        checkpoint = torch.load(args.host_checkpoint, map_location="cpu", weights_only=True)
-        identity = checkpoint.get("identity", {})
-        dataset, fold = identity.get("dataset"), identity.get("fold")
-        updates = checkpoint.get("progress", {}).get("steps", 0)
-        method = identity.get("method")
-        evidence = {"kind": "trainer_checkpoint_metadata"}
-    if (method != "original" or dataset != args.dataset or fold != args.fold
-            or not isinstance(updates, int) or isinstance(updates, bool) or updates < 1):
-        raise ValueError("Frozen stages require a trained original host from this dataset and fold; raw states need --host-report")
-    return {**evidence, "updates": updates, "dataset": dataset, "fold": fold, "checkpoint_sha256": args.host_sha256}
+    from .full_model import load_host_checkpoint
+    _, evidence = load_host_checkpoint(host_checkpoint_spec(args))
+    return evidence
 
 
 def preflight(args):
@@ -114,8 +139,6 @@ def preflight(args):
         if (not args.dataset or args.fold is None or args.host_dataset != args.dataset or args.host_fold != args.fold
                 or not args.host_origin or not args.host_sha256):
             raise ValueError("Host checkpoint needs origin, hash and matching training dataset/fold")
-        if fingerprint(args.host_checkpoint) != args.host_sha256:
-            raise ValueError("Host checkpoint hash mismatch")
     if args.method == "synthstrip":
         if args.adapter is None:
             raise ValueError("SynthStrip requires a validated generated adapter")
@@ -145,7 +168,9 @@ def preflight(args):
         raise ValueError("Official checkpoint hash mismatch")
     if args.extraction_weights and (not args.extraction_weights_origin or not args.extraction_weights_sha256 or fingerprint(args.extraction_weights) != args.extraction_weights_sha256):
         raise ValueError("Composition extraction weights require origin and matching SHA256")
-    host_evidence = trained_host_evidence(args) if args.setting == "original_frozen_stages" else None
+    if args.host_report and not args.host_checkpoint:
+        raise ValueError("A host training report requires its checkpoint")
+    host_evidence = trained_host_evidence(args) if args.host_checkpoint else None
     source = verify_original(args.source)
     repositories = {"synthstrip": "freesurfer_synthstrip", "voxelmorph": "reg_voxelmorph_master", "lapirn": "reg_lapirn", "nnunet": "dynamic-network-architectures"}
     repositories.update(REPOSITORIES)
@@ -462,6 +487,7 @@ def train(args):
     args.output.mkdir(parents=True, exist_ok=True)
     settings = {k: str(v.resolve()) if isinstance(v, Path) else v for k, v in vars(args).items()}
     identity = {k: settings[k] for k in ("method", "setting", "initialization", "seed", "epochs", "pretrain_epochs", "trainable", "cut_extraction", "loss_scale", "regularization", "dataset", "fold", "split_id", "weights_origin", "connect_paths", "cut_boundary", "repair_strategy", "undo_repair", "patience", "coordination", "coordination_batch_size", "probe_budget", "probe_modules", "verify_gradients", "checkpoint_mode")}
+    identity["selection_metric"] = args.selection_metric
     identity.update(data_hashes=audit["data_hashes"], adapter_hash=fingerprint(args.adapter) if args.adapter else None,
                     weights_hash=fingerprint(args.weights) if args.weights else None, plans_hash=fingerprint(args.plans) if args.plans else None,
                     host_hash=fingerprint(args.host_checkpoint) if args.host_checkpoint else None,
@@ -472,15 +498,16 @@ def train(args):
     identity["implementation_hashes"] = {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
                                           for name in ("replacement_training.py", "full_model.py", "full_candidates.py", "full_connectivity.py", "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py", "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py", "full_replacement.py", "sources.py", "site_training.py")}
     identity["source"] = audit["source"]
+    host_checkpoint = host_checkpoint_spec(args)
     if args.secondary_extraction:
         from .full_composition import build_composed_model
         model, config, architecture = build_composed_model(args.source, args.method, adapter=args.secondary_extraction,
                                                           mode=args.composition_mode, registration_weights=args.weights,
                                                           extraction_weights=args.extraction_weights, previous_checkpoint=args.previous_checkpoint,
                                                           previous_report=args.previous_report, previous_sha256=args.previous_sha256,
-                                                          dataset=args.dataset, fold=args.fold, host_checkpoint=args.host_checkpoint)
+                                                          dataset=args.dataset, fold=args.fold, host_checkpoint=host_checkpoint)
     elif args.method in ("original", "synthstrip"):
-        model, config, architecture = build_full_model(args.source, args.adapter if args.method == "synthstrip" else None, host_checkpoint=args.host_checkpoint)
+        model, config, architecture = build_full_model(args.source, args.adapter if args.method == "synthstrip" else None, host_checkpoint=host_checkpoint)
         if args.method == "synthstrip":
             architecture.update(generated_adapter_active_in_training=True, generated_adapter_sha256=fingerprint(args.adapter))
         if args.weights:
@@ -488,21 +515,11 @@ def train(args):
             model.ext_net.core.load_state_dict(state.get("model_state_dict", state), strict=True)
     elif args.method in TARGETS:
         from .full_extended import build_extended_model
-        model, config, architecture = build_extended_model(args.source, args.method, args.host_checkpoint, args.weights)
+        model, config, architecture = build_extended_model(args.source, args.method, host_checkpoint, args.weights)
     else:
         from .full_candidates import build_candidate_model
-        model, config, architecture = build_candidate_model(args.source, args.method, adapter=args.adapter, weights=args.weights, plans=args.plans, host_checkpoint=args.host_checkpoint)
-    if args.connect_paths or args.setting == "original_completed":
-        from .full_connectivity import connect_model
-        model = connect_model(model, cut=args.cut_boundary, repair=args.repair_strategy, undo=args.undo_repair)
-    if args.adapter is not None and args.method not in ('original', 'synthstrip'):
-        from .candidate_integration import bind_adapter, bind_extended_adapters
-        if args.method in TARGETS:
-            bind_extended_adapters(model, args.method, args.adapter)
-        else:
-            bind_adapter(model, args.method, args.adapter)
-        architecture['generated_adapter_sha256'] = fingerprint(args.adapter)
-        architecture['generated_adapter_active_in_training'] = True
+        model, config, architecture = build_candidate_model(args.source, args.method, adapter=args.adapter, weights=args.weights, plans=args.plans, host_checkpoint=host_checkpoint)
+    model = finalize_pipeline(model, architecture, args)
     model.cuda()
     from model import GCC
     from utils import train_aug
@@ -513,23 +530,29 @@ def train(args):
     base_weights = task_weights(config, args.method, args.loss_scale)
     team = GradientTeam(tuple(base_weights[name] for name in TASKS), seed=args.seed,
                         batch_size=args.coordination_batch_size) if args.coordination == "taskforce" else None
-    progress = {"phase": 0, "epoch": 0, "position": 0, "steps": 0, "pretrain_steps": 0, "best_loss": float("inf"), "bad_epochs": 0}
+    progress = {"phase": 0, "epoch": 0, "position": 0, "steps": 0, "pretrain_steps": 0, "best_loss": float("inf"), "bad_epochs": 0,
+                "selection_metric": args.selection_metric, "best_epoch": None, "best_value": None}
+    migrated_selection = False
     resumed = torch.load(args.resume, map_location="cpu", weights_only=True) if args.resume else None
     if resumed:
         if resumed.get("checkpoint_kind") != "resume":
             raise ValueError("This is an evaluation checkpoint; resume requires the complete last.pt state")
-        if resumed["identity"] != identity:
-            raise ValueError("Resume configuration, sources or data differ from the checkpoint")
+        migrated_selection = resume_identity_matches(resumed["identity"], identity)
         model.load_state_dict(resumed["model"], strict=True)
         if team is not None:
             if resumed.get("coordination") is None:
                 raise ValueError("The checkpoint lacks the requested gradient coordinator state")
             team.load_state_dict(resumed["coordination"])
         progress = resumed["progress"]
+        if migrated_selection:
+            progress.update(selection_metric=args.selection_metric, best_epoch=None, best_value=None)
         restore_rng(resumed["rng"])
     report = {"status": "running", "method": args.method, "setting": args.setting, "seed": args.seed, "config": settings,
               "architecture": architecture, "audit": audit, "gpu": gpu, "history": [], "steps": progress["steps"], "pretrain_steps": progress["pretrain_steps"]}
     report["trainer_scope"] = "Matched full-model training loop; original main.py reproduction remains a separate baseline"
+    report["selection"] = {"metric": args.selection_metric, "direction": "minimize", "scope": "validation_only",
+                           "best_epoch": progress.get("best_epoch"), "best_value": progress.get("best_value"),
+                           "legacy_reference_resume": migrated_selection}
     report["checkpoint_policy"] = {"mode": args.checkpoint_mode, "resume_allowed": args.checkpoint_mode == "resume", "hardlinked_saves": 0}
     report["auxiliary_loss"] = "Normalized inverse powers of two over tissue output scales" if args.method == "nnunet" else None
     report["coordination"] = {"mode": args.coordination, "policy_updates": team.updates if team else 0,
@@ -545,12 +568,24 @@ def train(args):
     if args.setting == "original_frozen_stages":
         report["stagewise_control"] = "Fixed trained UniBrain stages and trainable original classifier; not an ANTs or FSL toolchain"
     previous_seconds = 0.
+    if migrated_selection and math.isfinite(progress["best_loss"]) and not (args.output / "report.json").is_file():
+        raise ValueError("Legacy reference selection requires its retained validation report")
     if args.resume and (args.output / "report.json").exists():
         previous = json.loads((args.output / "report.json").read_text(encoding="utf-8"))
         report["history"] = previous.get("history", [])
         if "best_validation" in previous:
             report["best_validation"] = previous["best_validation"]
         previous_seconds = previous.get("train_seconds", 0.)
+        if migrated_selection:
+            if not report["history"] and math.isfinite(progress["best_loss"]):
+                raise ValueError("Legacy checkpoint lacks its validation selection history")
+            if report["history"]:
+                selected = min(report["history"], key=lambda row: selection_value(row["validation"], args.selection_metric))
+                value = selection_value(selected["validation"], args.selection_metric)
+                if value != progress["best_loss"]:
+                    raise ValueError("Legacy checkpoint selection disagrees with retained validation history")
+                progress.update(best_epoch=selected["epoch"], best_value=value)
+                report["selection"].update(best_epoch=selected["epoch"], best_value=value)
         with (args.output / "updates.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps({"event": "resume", "checkpoint_step": progress["steps"],
                                      "note": "Earlier attempted updates are retained; this run resumes checkpoint state"}) + "\n")
@@ -685,10 +720,11 @@ def train(args):
                 progress.update(epoch=epoch + 1, position=0)
                 if not standalone:
                     validation = evaluate(model, datasets["val"], templates, args.eval_limit)
-                    loss = validation["metrics"]["reference_loss"]
+                    loss = selection_value(validation["metrics"], args.selection_metric)
                     report["history"].append({"epoch": epoch + 1, "validation": validation["metrics"]})
                     if loss < progress["best_loss"]:
-                        progress["best_loss"] = loss
+                        progress.update(best_loss=loss, best_value=loss, best_epoch=epoch + 1, selection_metric=args.selection_metric)
+                        report["selection"].update(best_epoch=epoch + 1, best_value=loss)
                         progress["bad_epochs"] = 0
                         checkpoint(args.output / "best.pt")
                         report["best_validation"] = validation["metrics"]
@@ -776,6 +812,7 @@ def parser():
     result.add_argument("--probe-modules", nargs="+")
     result.add_argument("--verify-gradients", action="store_true")
     result.add_argument("--checkpoint-mode", choices=("resume", "weights"), default="resume")
+    result.add_argument("--selection-metric", choices=("classification_loss", "reference_loss"), default="classification_loss")
     result.add_argument("--trainable", choices=("all", "new", "host"), default="all")
     result.add_argument("--cut-extraction", action="store_true")
     result.add_argument("--connect-paths", action="store_true")

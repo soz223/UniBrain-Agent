@@ -19,15 +19,26 @@ def create_server(port=8777, host="127.0.0.1", access=None):
     from .providers import provider_settings
     from .accounts import login_status, logout
     from .data_workspace import DataWorkspace
+    from .cycle_workspace import CycleWorkspace
     policy = access or AccessPolicy(host)
     assistant = AssistantWorkspace()
     ai = provider_settings()
     data_workspace = DataWorkspace()
+    cycles = CycleWorkspace()
     ai_sessions = {}
     state = {"app": "unibrain_agent", "version": "0.9", "api_version": 2, "running": False, "completed": False,
              "message": "Ready", "error": None, "job": None, "build_id": None}
     lock = threading.RLock()
     monitor = RunMonitor()
+
+    def execute_cycle(identifier, configuration):
+        try:
+            cycles.execute(identifier, configuration, ai.path)
+        finally:
+            record = cycles.read(identifier)
+            with lock:
+                state.update(running=False, completed=record["status"] in {"ready", "complete"},
+                             message="Full research cycle: " + record["status"], error=record.get("error"))
 
     def execute(backend, steps, folder=None, coordination="single"):
         from .runner import run, write_json
@@ -117,7 +128,16 @@ def create_server(port=8777, host="127.0.0.1", access=None):
                         snapshot = dict(state)
                     if snapshot["job"] == "run":
                         snapshot["live"] = monitor.snapshot()
+                    elif snapshot["job"] == "research_cycle" and snapshot.get("cycle_id"):
+                        snapshot["research_cycle"] = cycles.read(snapshot["cycle_id"])
                     self.respond(snapshot)
+                elif path == "/api/research-cycles":
+                    from .runtime import settings
+                    self.respond({"defaults": cycles.defaults(settings(), data_workspace.selected),
+                                  "job": cycles.read(cycles.latest) if cycles.latest else None})
+                elif path.startswith("/api/research-cycles/"):
+                    identifier = path.removeprefix("/api/research-cycles/")
+                    self.respond(cycles.code(identifier[:-5]) if identifier.endswith("/code") else cycles.read(identifier))
                 elif path == "/api/catalog":
                     from .catalog import catalog
                     self.respond(catalog())
@@ -184,6 +204,20 @@ def create_server(port=8777, host="127.0.0.1", access=None):
                 body = json.loads(self.rfile.read(length))
                 if not isinstance(body, dict):
                     raise ValueError("Expected a JSON object")
+                if self.path == "/api/research-cycles":
+                    self.require_ai()
+                    from .runtime import settings
+                    with lock, assistant.lock:
+                        if state["running"] or assistant.active or data_workspace.active or ai.public()["test"]["status"] == "running":
+                            self.respond({"error": "Wait for the active workspace operation to finish"}, 409)
+                            return
+                        configuration = ai.snapshot()
+                        record = cycles.create(body, settings(), data_workspace.selected, configuration)
+                        state.update(running=True, completed=False, job="research_cycle", cycle_id=record["id"],
+                                     message="Starting full research cycle", error=None, build_id=None, run_dir=None)
+                    threading.Thread(target=execute_cycle, args=(record["id"], configuration), daemon=True).start()
+                    self.respond(record, 202)
+                    return
                 if self.path in {"/api/ai/settings", "/api/ai/test", "/api/ai/logout", "/api/ai/connect", "/api/ai/disconnect"}:
                     with lock, assistant.lock:
                         if state["running"] or assistant.active or data_workspace.active:

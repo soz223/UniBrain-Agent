@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from unibrain_agent.full_composition import build_composed_model
-from unibrain_agent.replacement_training import parser, preflight, train
+from unibrain_agent.replacement_training import parser, preflight, train, host_checkpoint_spec, finalize_pipeline
 
 
 def main():
@@ -22,7 +22,8 @@ def main():
             args.source, args.method, args.secondary_extraction, mode=args.composition_mode,
             registration_weights=args.weights, extraction_weights=args.extraction_weights,
             previous_checkpoint=args.previous_checkpoint, previous_report=args.previous_report,
-            previous_sha256=args.previous_sha256, host_checkpoint=args.host_checkpoint, dataset=args.dataset, fold=args.fold)
+            previous_sha256=args.previous_sha256, host_checkpoint=host_checkpoint_spec(args), dataset=args.dataset, fold=args.fold)
+        model = finalize_pipeline(model, architecture, args)
         args.output.mkdir(parents=True, exist_ok=False)
         result = {"status": "built", "scope": "CPU construction and strict transfer only; no training or GPU forward",
                   "architecture": architecture, "config": config, "audit": audit}

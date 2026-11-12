@@ -34,6 +34,7 @@
   "epochs": 20,
   "long_epochs": 1000,
   "pretrain_epochs": 20,
+  "selection_metric": "classification_loss",
   "gpu": 0,
   "adapters": {},
   "weights": {},
@@ -43,5 +44,14 @@
   "integration_configs": {},
   "case_study_run": "",
   "site_initialization": "random",
+  "research_cycle": {
+    "task": "",
+    "provider": "codex",
+    "model": "",
+    "stage": "",
+    "acceptance_steps": 1,
+    "max_calls": 4,
+    "coordination": "none"
+  },
   "executors": {}
 }
