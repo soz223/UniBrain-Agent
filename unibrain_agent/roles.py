@@ -19,7 +19,10 @@ TEAM_SCHEMA = {"type": "object", "additionalProperties": False,
 
 def prompt_for(role):
     if role in SPECIALISTS:
-        return (PROJECT / "prompts/task_specialist.md").read_text(encoding="utf-8").format(task=role, focus=SPECIALISTS[role])
+        prompt = (PROJECT / "prompts/task_specialist.md").read_text(encoding="utf-8").format(task=role, focus=SPECIALISTS[role])
+        if role in {'segmentation', 'registration'}:
+            prompt += '\n' + (PROJECT / 'prompts/training_diagnosis.md').read_text(encoding='utf-8')
+        return prompt
     if role not in {"research", "coordinator"}:
         raise ValueError("Unknown assistant role")
     return (PROJECT / f"prompts/{role}.md").read_text(encoding="utf-8")
@@ -56,4 +59,10 @@ def run_team(agent, context, role="all"):
                             instructions=prompt_for("coordinator"))
     if decision["action"] == "balance_gradients" and not measured_tasks(context):
         decision = {"action": "request_measurement", "rationale": "Executor blocked balancing: finite per-task gradients are unavailable. " + decision["rationale"]}
+    if context.get('training_diagnosis'):
+        from .training_diagnosis import screening_issues
+        issues = screening_issues(context['training_diagnosis'])
+        if issues:
+            decision = {'action': 'request_measurement',
+                        'rationale': 'Resolve diagnostic flags before changing weights: ' + ', '.join(issues)}
     return {**decision, "roles": reviews}

@@ -84,9 +84,12 @@ def research_result(result, sources):
 
 
 def latest_context():
+    from .training_diagnosis import diagnostic_context
+    diagnostic_path = configured_path('diagnosis_report', PROJECT / 'diagnostics' / 'latest.json')
+    extra = {'training_diagnosis': diagnostic_context(json.loads(diagnostic_path.read_text(encoding='utf-8')))} if diagnostic_path.is_file() else {}
     pointer = RUNS / "latest.json"
     if not pointer.exists():
-        return {"scope": "No completed training run", "diagnostic": None, "weights": {"extraction": 1., "registration": .1, "segmentation": 1., "classification": 1.}}
+        return {**extra, "scope": "No completed training run", "diagnostic": None, "weights": {"extraction": 1., "registration": .1, "segmentation": 1., "classification": 1.}}
     folder = Path(json.loads(pointer.read_text(encoding="utf-8"))["run_dir"]).resolve()
     if folder.parent != RUNS.resolve():
         raise ValueError("Saved run is outside the configured output directory")
@@ -100,7 +103,7 @@ def latest_context():
     if report.get("native"):
         context["observed_module_updates"] = sorted({name for update in report["native"]["updates"] for name in update["modules_with_observed_updates"]})
         context["boundary"] = "Parameter updates were observed. Per-task gradient norms and pairwise conflicts were not measured in this original run."
-    return context
+    return {**context, **extra}
 
 
 def save(path, value):
