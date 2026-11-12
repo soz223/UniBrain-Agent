@@ -1,0 +1,15 @@
+<section id="objectivePanel" class="objective-panel" aria-labelledby="objectiveTitle">
+  <div class="objective-heading">
+    <div><h3 id="objectiveTitle">Joint training objective</h3><span id="objectiveProfile" class="objective-profile"></span></div>
+    <div class="objective-actions"><select id="objectiveScope" aria-label="Objective source" hidden><option value="selection">Your selection</option><option value="research">Full research run</option></select><button id="objectiveMotion" class="text-button" aria-pressed="false" aria-label="Pause illustrative gradient animation">Ⅱ Pause motion</button></div>
+  </div>
+  <div id="objectiveFormula" class="objective-formula" aria-label="Joint loss formula"></div>
+  <div id="objectiveTerms" class="objective-terms" role="group" aria-label="Select a loss to inspect its supervision"></div>
+  <div class="objective-loop" aria-label="Losses are combined, then backpropagation updates connected trainable modules">
+    <span class="objective-bus" aria-hidden="true"></span>
+    <span class="objective-loop-label">Σ Combine losses</span><span aria-hidden="true">→</span><span>Backpropagate</span><span aria-hidden="true">→</span><span>Update connected modules</span><span class="objective-return" aria-hidden="true">↶</span>
+  </div>
+  <p id="objectiveDetail" class="objective-detail"></p>
+  <div class="objective-footer"><span class="objective-schematic">◌ Training schematic</span><p id="objectiveBoundary"></p></div>
+  <p id="objectiveChanges" class="objective-changes" role="status" aria-live="polite" aria-atomic="true"></p>
+</section>

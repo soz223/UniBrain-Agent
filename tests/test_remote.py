@@ -106,6 +106,9 @@ class AccountAndStaticTests(unittest.TestCase):
         self.assertIn('data-provider="claude"',html)
         self.assertNotIn('__LOGO_',html)
         self.assertNotIn('__CONNECTION_SCRIPT__',html)
+        self.assertNotIn('__OBJECTIVE_PANEL__',html)
+        self.assertIn('id="objectivePanel"',html)
+        self.assertIn('function describeObjective(',html)
         self.assertNotIn('C:\\Users\\',html)
         self.assertIn('id="reportData" type="application/json">null</script>',html)
 

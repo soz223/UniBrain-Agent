@@ -50,6 +50,7 @@ function renderChoices() {
   byId("stageChoices").innerHTML = mainStages.map((id, index) => button(library.stages.find(stage => stage.id === id), index)).join("");
   byId("branchChoices").innerHTML = ["segmentation", "surface"].map(id => button(library.stages.find(stage => stage.id === id), null)).join("");
   document.querySelectorAll("[data-choice-stage]").forEach(node => node.onclick = () => chooseTool(node.dataset.choiceStage));
+  renderObjective();
 }
 
 function chooseTool(stageId) {
@@ -88,6 +89,7 @@ function chooseTool(stageId) {
 function selectTool(stageId, choice) {
   if (draft[stageId] === choice) { byId("detailDialog").close(); return; }
   const wasOriginal = isOriginal();
+  objectiveScope = "selection";
   draft[stageId] = choice;
   let note = "Selection updated. Apply changes to generate and validate the pipeline.";
   if (choice === "M03") {
@@ -243,6 +245,7 @@ function setBuildState(state, label) {
 
 async function initializeEditor() {
   byId("teamTraining").onchange = () => {
+    objectiveScope = "selection";
     if (activeBuild) showBuild(activeBuild);
     else renderChoices();
   };
@@ -251,10 +254,12 @@ async function initializeEditor() {
     byId('confirmBuild').hidden=true;byId('viewBuild').disabled=true;byId('prepareBuild').hidden=false;
     setBuildState('dirty','Dataset changed');
     byId('buildMessage').textContent='Prepare the pipeline again to validate it with the attached dataset.';
+    renderChoices();
   });
   byId("resetPipeline").onclick = () => {
     if (buildBusy) return;
     draft = { ...library.defaults }; activeBuild = null;
+    objectiveScope = "selection";
     byId("teamTraining").checked = false;
     sessionStorage.removeItem(draftKey); sessionStorage.removeItem(buildKey);
     byId("buildSteps").value = "2";

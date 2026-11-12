@@ -24,6 +24,13 @@ losses and TaskForce policy updates. Its older custom stage editor retains its
 explicitly labeled compact profile. The original baseline workflow remains
 independent. Formal experiments use the CLI and preserved full folds.
 
+Below Your pipeline, the joint objective preview shows named losses, their
+supervision and an illustrative backward pass. It follows selected modules,
+the prepared Agent loss plan and the training coordination setting. When a
+full research run has selected its method, the source selector also shows
+that run's objective. The preview distinguishes execution profiles and
+discrete boundaries; connectivity evidence remains in the build and run checks.
+
 ## Start
 
 The default pipeline is the full original UniBrain CUDA workflow. Use Python 3.10 with a CUDA GPU. Run these commands from the repository root on Windows:

@@ -28,6 +28,7 @@ function cyclePolicyStatus(record) {
 
 function showCycle(record) {
   fullCycle=record;
+  renderObjective();
   byId('cycleProgress').hidden=false;
   const busy=record.status==='running';
   cycleBusy(busy);
