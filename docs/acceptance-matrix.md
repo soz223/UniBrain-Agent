@@ -69,7 +69,7 @@ expected successful bounded status when all this evidence agrees. A zero exit
 code alone cannot pass acceptance.
 
 Every new child receives `--verify-gradients` and must report gradient protocol
-2. Total input and candidate parameter gradients must be finite and nonzero.
+3. Total input and candidate parameter gradients must be finite and nonzero.
 Classification gradients must reach each required replacement and the input
 image. This boundary detects a module that learns its own parameters while
 detaching its inputs. The auxiliary nnU Net tissue head declares its
@@ -77,16 +77,47 @@ absent direct classification path explicitly; its total training gradient
 must still be nonzero. The original model is retained as its own diagnostic
 reference. This distinction is recorded in the validation evidence.
 
-Older evidence can be revalidated under its original protocol. It is marked
-`legacy_boundary` with `strict_current_gradient_verified=false`; it cannot
-satisfy a new protocol 2 job. Original and auxiliary nnU Net classification
+Protocol 3 permits one precisely identified initialization case. On the first
+update, the extraction classification gradient may be numerically zero if all
+its parameter gradients are present and finite, its total gradient is nonzero,
+and its parameters actually update. The trace must identify the original
+128 to 12 affine output head, its zero weight and identity bias, its nonzero
+total gradient, and finite nonzero weights after the optimizer update.
+The evidence includes the head's two parameter gradients and its weight
+gradient separately. Counts, observed tensors, nonzero elements and norms
+must agree; nonfinite JSON numbers are rejected. The encoder source must
+match the pinned UniBrain or ERNet definition and one of the two supported
+head locations. The complete extraction parameter name set is retained and
+must stay observed on every recovery update.
+The next update must measure a nonzero extraction classification gradient.
+Input gradients and every other required candidate remain subject to the
+ordinary nonzero checks throughout. A detached extraction path, a second zero
+gradient, an unchanged affine head, or a run ending with pending recovery fails.
+This distinguishes a connected graph at a zero initialization from a detached
+or persistently inactive path. It does not change the model or training loss.
+
+The per-step `warmup` state records `not_needed`, `pending`, or `confirmed`.
+The report must agree with its final trace. `strict_current_gradient_verified`
+means the recorded protocol was satisfied; it does not claim that every
+initial gradient was nonzero. `initial_nonzero_gradient_verified` distinguishes
+the required paths that were already nonzero on the first update.
+`gradient_warmup.optimizer_updates` records the single initialization update
+separately, within the declared two-update budget.
+
+Protocol 2 evidence retains its measured version and its stronger requirement
+of nonzero required gradients on every recorded update. Earlier evidence that
+lacks the classification-to-input check remains `legacy_boundary`, with
+`strict_current_gradient_verified=false`. A new protocol 3 job requires
+protocol 3 output. Older jobs requesting protocol 2 may consume protocol 3
+evidence, which is explicitly reported as `protocol_3`. Original and auxiliary nnU Net classification
 input paths remain explicitly diagnostic rather than required paths.
 
 Merge retained matrices with `summarize_acceptance.py --matrix FIRST.json
 SECOND.json --cycle CYCLE_A/report.json CYCLE_B/report.json --output NEW_SUMMARY`.
 The exporter rechecks reports, update traces and checkpoint hashes. It keeps
 every observation while counting identical execution reports once. Strict and
-legacy checks remain separate. Repeated runs do not increase method coverage;
+legacy checks remain separate. Actual protocol versions and initialization
+updates remain visible in JSON and CSV. Repeated runs do not increase method coverage;
 provider cycles have their own count. Conflicting data exports cannot be merged
 into the same dataset, fold, seed, method and coordination cell.
 

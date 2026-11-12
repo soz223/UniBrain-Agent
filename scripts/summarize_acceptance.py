@@ -34,6 +34,8 @@ def summarize(matrix):
                    data_scope=(job.get('data_audit') or {}).get('scope'),
                    data_fingerprint=canonical_hash((job.get('data_audit') or {}).get('data_hashes', {})),
                    strict_current_gradient_verified=False, gradient_boundary_scope='not_verified',
+                   gradient_protocol_version=None, gradient_warmup={'used': False, 'optimizer_updates': 0, 'state': None},
+                   initial_nonzero_gradient_verified=False,
                    matrix_sha256=digest(matrix))
         if job['status'] == 'passed':
             path = matrix.parent / f'{dataset}_{method}' / 'report.json'
@@ -44,7 +46,8 @@ def summarize(matrix):
             report = json.loads(path.read_text(encoding='utf-8'))
             row.update({key: measured[key] for key in ('optimizer_updates', 'changed_modules', 'trajectory',
                        'coordination', 'gradient_verification', 'report_sha256', 'updates_sha256', 'checkpoint_sha256',
-                       'strict_current_gradient_verified', 'gradient_boundary_scope', 'checkpoint_policy')})
+                       'strict_current_gradient_verified', 'gradient_boundary_scope', 'gradient_protocol_version',
+                       'gradient_warmup', 'initial_nonzero_gradient_verified', 'checkpoint_policy')})
             row['parameters'] = report['architecture']['parameters']
             row['input_shape'] = [96, 96, 96]
             row['split_counts'] = report['audit']['splits']
@@ -55,6 +58,7 @@ def summarize(matrix):
             'passed': sum(row['status'] == 'passed' for row in rows), 'total': len(rows),
             'strict_passed': sum(row['status'] == 'passed' and row['strict_current_gradient_verified'] for row in rows),
             'legacy_passed': sum(row['status'] == 'passed' and not row['strict_current_gradient_verified'] for row in rows),
+            'warmup_passed': sum(row['status'] == 'passed' and row['gradient_warmup']['used'] for row in rows),
             'boundary': 'Checks use subsets of the original folds. They do not establish cohort convergence, diagnostic benefit or Agent effectiveness.'}
 
 
@@ -108,6 +112,8 @@ def summarize_cycle(path):
             'seed': training['seed'], 'status': 'passed', 'acceptance_updates': accepted_steps, 'training_updates': steps,
             'adapter_sha256': adapter_hash, 'training_report_sha256': measured['report_sha256'],
             'strict_current_gradient_verified': measured['strict_current_gradient_verified'],
+            'gradient_protocol_version': measured['gradient_protocol_version'],
+            'gradient_warmup': measured['gradient_warmup'],
             'scope': 'Agent cycle evidence, separate from candidate method coverage'}
 
 
@@ -136,6 +142,9 @@ def merge_summaries(records, cycles=()):
         coverage.append({**{name: first.get(name) for name in ('dataset', 'method', 'fold', 'seed', 'setting', 'coordination_mode', 'data_scope', 'data_fingerprint')},
                          'status': 'strict_passed' if strict else 'legacy_only' if legacy else 'not_verified',
                          'strict_executions': len(strict), 'legacy_executions': len(legacy),
+                         'verified_gradient_protocols': sorted({row['gradient_protocol_version'] for row in rows
+                                                               if row['status'] == 'passed' and row.get('gradient_protocol_version') is not None}),
+                         'warmup_executions': len({row['report_sha256'] for row in rows if row['status'] == 'passed' and row.get('gradient_warmup', {}).get('used')}),
                          'observed_statuses': sorted({row['status'] for row in rows})})
     unique_cycles = {row['cycle_sha256']: row for row in cycles}
     all_training = set(executions) | {row['training_report_sha256'] for row in unique_cycles.values()}
@@ -146,22 +155,25 @@ def merge_summaries(records, cycles=()):
             'observed_status_counts': dict(Counter(row['status'] for row in observations)),
             'strict_execution_count': sum(row['strict_current_gradient_verified'] for row in executions.values()),
             'legacy_execution_count': sum(not row['strict_current_gradient_verified'] for row in executions.values()),
+            'gradient_protocol_execution_counts': dict(Counter(str(row.get('gradient_protocol_version', 'unspecified')) for row in executions.values())),
+            'warmup_execution_count': sum(bool(row.get('gradient_warmup', {}).get('used')) for row in executions.values()),
             'coverage': coverage, 'coverage_total': len(coverage),
             'strict_coverage_passed': sum(row['status'] == 'strict_passed' for row in coverage),
             'legacy_only_coverage': sum(row['status'] == 'legacy_only' for row in coverage),
             'cycles': list(unique_cycles.values()), 'cycle_count': len(unique_cycles),
             'unique_training_executions_including_cycles': len(all_training),
-            'boundary': 'All observations are retained. Copied execution reports count once. Legacy runs cannot establish protocol 2 coverage. Agent cycles do not enlarge candidate coverage.'}
+            'boundary': 'All observations are retained. Copied reports count once. Protocol 2 and protocol 3 keep their measured versions; protocol 3 may verify recovery after one documented initialization update. Legacy boundaries cannot establish either contract. Agent cycles do not enlarge candidate coverage.'}
 
 
 def table(record):
     stream = io.StringIO(newline='')
     writer = csv.writer(stream)
-    writer.writerow(('Dataset', 'Method', 'Fold', 'Seed', 'Status', 'Strict protocol 2', 'Gradient scope', 'Updates', 'Parameters',
+    writer.writerow(('Dataset', 'Method', 'Fold', 'Seed', 'Status', 'Gradient contract verified', 'Gradient scope', 'Protocol', 'Warmup updates', 'Updates', 'Parameters',
                      'Validation trend', 'Execution SHA256', 'Matrix SHA256'))
     for row in record['jobs']:
         writer.writerow((row['dataset'], row['method'], row['fold'], row['seed'], row['status'],
                          row['strict_current_gradient_verified'], row['gradient_boundary_scope'],
+                         row.get('gradient_protocol_version'), row.get('gradient_warmup', {}).get('optimizer_updates', 0),
                          row['optimizer_updates'], row.get('parameters', ''),
                          row.get('trajectory', {}).get('observed_trend', 'not_measured'), row.get('report_sha256', ''), row['matrix_sha256']))
     return stream.getvalue()

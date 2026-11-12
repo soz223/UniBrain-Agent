@@ -40,6 +40,22 @@ The output root must be private and excluded from version control. Never place
 API keys in the configuration; providers use the established local account
 configuration or environment.
 
+Formal native research cycles save resumable checkpoints by default; bounded
+smoke cycles default to weights only. `research_cycle.checkpoint_mode` can
+explicitly select `resume` or `weights`. Set
+`research_cycle.training_timeout_seconds` for the full training subprocess and
+give the outer suite command enough time for selection, validation and training.
+The example uses 86400 seconds. A suite job resume command is not yet exposed;
+the matched trainer can resume its complete checkpoint directly.
+
+nnU-Net plans can be supplied per dataset and fold:
+`"plans": {"nnunet": {"folds": {"abide:1": "plans/abide1/nnUNetPlans.json",
+"adhd:1": "plans/adhd1/nnUNetPlans.json"}}}`. The matching provenance sidecar
+must identify that fold and its training array checksum. A single path remains
+supported for a single matching fold; it is not reused as a fallback for missing
+entries in a fold mapping. Suite preflight compares the planner provenance with
+the export manifest, and the trainer verifies the actual array checksums.
+
 `datasets.abide.folds.1` refers to an exported full fold containing the original
 train, validation and test NPY files and templates. Export with
 the complete master and existing split indices:

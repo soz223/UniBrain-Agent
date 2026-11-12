@@ -50,7 +50,7 @@ class AcceptanceSummaryTests(unittest.TestCase):
             self.assertEqual(report['strict_passed'], 2 if strict else 0)
             self.assertEqual(report['legacy_passed'], 0 if strict else 2)
             self.assertTrue(all(row['strict_current_gradient_verified'] is strict for row in report['jobs']))
-            self.assertIn('Strict protocol 2', table(report))
+            self.assertIn('Gradient contract verified', table(report))
             self.assertIn('protocol_2' if strict else 'legacy_boundary', table(report))
 
     def test_duplicate_jobs_in_one_matrix_are_rejected(self):
@@ -60,6 +60,27 @@ class AcceptanceSummaryTests(unittest.TestCase):
         path.write_text(json.dumps(record), encoding='utf-8')
         with self.assertRaisesRegex(ValueError, 'Duplicate job'):
             summarize(path)
+
+    def test_protocol_three_warmup_is_preserved_in_summary_and_coverage(self):
+        fixture = fixtures.ProtocolThreeAcceptanceTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        job, path, report, events = fixture.fixture()
+        fixture.write(path, report, events)
+        measured = fixtures.matrix.validate_result(job, path, 2)
+        job.update(measured)
+        matrix_path = path.parent.parent / 'matrix.json'
+        matrix_path.write_text(json.dumps({'scope': 'CPU protocol fixture', 'optimizer_update_budget_per_job': 2, 'jobs': [job]}), encoding='utf-8')
+        result = summarize(matrix_path)
+        self.assertEqual(result['warmup_passed'], 1)
+        self.assertEqual(result['jobs'][0]['gradient_protocol_version'], 3)
+        self.assertFalse(result['jobs'][0]['initial_nonzero_gradient_verified'])
+        merged = merge_summaries([result, copy.deepcopy(result)])
+        self.assertEqual(merged['warmup_execution_count'], 1)
+        self.assertEqual(merged['gradient_protocol_execution_counts'], {'3': 1})
+        self.assertEqual(merged['coverage'][0]['verified_gradient_protocols'], [3])
+        self.assertEqual(merged['coverage'][0]['warmup_executions'], 1)
+        self.assertIn('protocol_3', table(result))
 
     def test_copied_reports_do_not_count_as_additional_executions(self):
         report = summarize(self.fixture())

@@ -3,6 +3,7 @@
 import argparse
 import json
 import math
+import re
 import shutil
 import subprocess
 import sys
@@ -93,8 +94,125 @@ def disk_check(output, checkpoint_budget_gib=8):
             "reserve_gib": 10, "checkpoint_budget_gib": checkpoint_budget_gib}
 
 
+def require_finite_json(value):
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("Nonfinite JSON measurements are not valid evidence")
+    if isinstance(value, dict):
+        for item in value.values():
+            require_finite_json(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            require_finite_json(item)
+
+
+def evidence_json(text):
+    value = json.loads(text)
+    require_finite_json(value)
+    return value
+
+
+def validate_gradient_statistics(value, complete=True):
+    fields = ("tensor_count", "observed_tensors", "nonzero_elements", "l1")
+    if not complete and not any(key in value for key in fields):
+        return
+    count, observed, elements = (value.get(key) for key in fields[:3])
+    norm = value.get("l1")
+    if (any(type(number) is not int or number < 0 for number in (count, observed, elements))
+            or observed > count or type(norm) not in (int, float) or not math.isfinite(norm) or norm < 0
+            or value.get("finite") is not True or type(value.get("nonzero")) is not bool
+            or value["nonzero"] != (elements > 0) or (norm > 0) != (elements > 0)
+            or observed == 0 and (elements != 0 or norm != 0)):
+        raise ValueError("Gradient tensor counts, nonzero elements and finite norm are inconsistent")
+
+
+def validate_record_statistics(record, complete=True):
+    for key in ("classification_to_input", "total_to_input"):
+        if record.get(key) is not None:
+            validate_gradient_statistics(record[key], complete)
+    for key in ("classification_to_candidates", "total_to_candidates"):
+        for value in record.get(key, {}).values():
+            validate_gradient_statistics(value, complete)
+
+
+def validate_encoder_source(proof):
+    source = proof.get("encoder_source", {})
+    manifest = evidence_json((ROOT / "catalog/sources.json").read_text(encoding="utf-8"))
+    repository = next((item for item in manifest["repositories"] if item["directory"] in {"reg_unibrain", "reg_ernet"}
+                       and item["repository"] == source.get("repository") and item["commit"] == source.get("commit")), None)
+    checksum = next((item["sha256"] for item in repository["files"] if item["path"] == "model.py"), None) if repository else None
+    if (not checksum or source.get("class_name") != "encoder" or source.get("source_file") != "model.py"
+            or source.get("repository") != repository["repository"] or source.get("commit") != repository["commit"]
+            or source.get("source_sha256") != checksum or source.get("head_object_verified") is not True
+            or any(not isinstance(source.get(key), str) or not re.fullmatch(r"[a-f0-9]{64}", source[key])
+                   for key in ("forward_code_sha256", "constructor_code_sha256"))):
+        raise ValueError("Warmup encoder source is not the corresponding pinned original implementation")
+
+
+def validate_warmup(events, audit):
+    require_finite_json(events)
+    require_finite_json(audit)
+    first = None
+    for event in events:
+        step = event["step"]
+        verification = event.get("gradient_verification", {})
+        validate_record_statistics(verification)
+        state = verification.get("warmup", {})
+        status = state.get("status")
+        if status == "not_needed":
+            if first is not None or any(state.get(key) is not None for key in ("module", "first_step", "confirmed_step", "reason", "initialization")):
+                raise ValueError("Warmup history cannot discard a pending boundary")
+            continue
+        if status not in {"pending", "confirmed"} or state.get("module") != "ext_net" or state.get("first_step") != 1:
+            raise ValueError("Warmup must identify the first extraction boundary explicitly")
+        proof = state.get("initialization") or {}
+        validate_encoder_source(proof)
+        head = proof.get("head_total_gradient", {})
+        weight = proof.get("head_weight_gradient", {})
+        validate_gradient_statistics(head)
+        validate_gradient_statistics(weight)
+        tensors = proof.get("extraction_tensor_count")
+        names = proof.get("extraction_parameter_names")
+        if (state.get("reason") != "zero_initialized_affine_head"
+                or proof.get("head_path") not in {"reg_net.affine.fc_loc.2", "reg_net.core.affine.fc_loc.2"}
+                or proof.get("weight_shape") != [12, 128] or proof.get("bias_shape") != [12]
+                or any(proof.get(key) is not True for key in ("zero_weight", "identity_bias", "head_trainable", "weight_nonzero_after_update"))
+                or head["tensor_count"] != 2 or head["observed_tensors"] != 2 or not head["nonzero"] or head["nonzero_elements"] > 1548
+                or weight["tensor_count"] != 1 or weight["observed_tensors"] != 1 or not weight["nonzero"] or weight["nonzero_elements"] > 1536
+                or not 0 <= head["nonzero_elements"] - weight["nonzero_elements"] <= 12 or head["l1"] < weight["l1"]
+                or type(tensors) is not int or tensors < 1
+                or not isinstance(names, list) or len(names) != tensors
+                or any(not isinstance(name, str) or not name for name in names) or len(set(names)) != len(names)):
+            raise ValueError("Warmup lacks verified original affine initialization and its actual optimizer update")
+        classification = verification.get("classification_to_candidates", {}).get("ext_net", {})
+        if (classification.get("tensor_count") != tensors or classification.get("observed_tensors") != tensors
+                or classification.get("parameter_names") != names):
+            raise ValueError("Every extraction parameter must remain observed through warmup confirmation")
+        if status == "pending":
+            total = verification.get("total_to_candidates", {}).get("ext_net", {})
+            if (first is not None or step != 1 or state.get("confirmed_step") is not None
+                    or type(tensors) is not int or tensors < 1 or classification.get("observed_tensors") != tensors
+                    or classification.get("required") is not True or classification.get("finite") is not True
+                    or classification.get("nonzero") is not False or classification.get("nonzero_elements") != 0
+                    or classification.get("l1") != 0 or total.get("finite") is not True or total.get("nonzero") is not True
+                    or event.get("sampled_parameter_updates", {}).get("ext_net", {}).get("changed") is not True):
+                raise ValueError("Only a finite, connected zero extraction gradient can use the first real update as warmup")
+            first = state
+        elif (first is None or step < 2 or state.get("confirmed_step") != 2
+              or proof != first["initialization"] or classification.get("required") is not True
+              or classification.get("finite") is not True or classification.get("nonzero") is not True):
+            raise ValueError("Warmup requires a measured nonzero extraction gradient after the first optimizer update")
+    final = events[-1].get("gradient_verification", {}).get("warmup", {})
+    if final.get("status") == "pending" or audit.get("warmup") != final:
+        raise ValueError("A pending or inconsistent warmup cannot complete acceptance")
+    if "last_step" in audit and audit["last_step"] != events[-1].get("gradient_verification"):
+        raise ValueError("Reported final gradient measurements differ from the optimizer trace")
+    if first is not None and audit.get("diagnosis_reaches_all_candidates") is not True:
+        raise ValueError("Confirmed warmup must retain the measured final classification connectivity")
+    return {"used": first is not None, "optimizer_updates": 1 if first else 0, "state": final}
+
+
 def validate_result(job, report_path, updates):
-    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report = evidence_json(report_path.read_text(encoding="utf-8"))
     expected_status = {"complete", "budget_exhausted"}
     config = report.get("config", {})
     if (report.get("status") not in expected_status or type(report.get("steps")) is not int
@@ -106,7 +224,7 @@ def validate_result(job, report_path, updates):
     if report.get("audit", {}).get("data_hashes") != job["data_audit"]["data_hashes"]:
         raise ValueError("Child used data that differ from the audited acceptance export")
     path = report_path.parent / "updates.jsonl"
-    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    events = [evidence_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if len(events) != updates or [event.get("step") for event in events] != list(range(1, updates + 1)):
         raise ValueError("Optimizer update trace does not match the declared step count")
     changed = set()
@@ -123,16 +241,24 @@ def validate_result(job, report_path, updates):
     gradient_audit = report.get("gradient_verification", {})
     requested_protocol = job.get("gradient_protocol_version", 1)
     strict_boundary = False
+    actual_protocol = None
+    warmup = {"used": False, "optimizer_updates": 0, "state": None}
     if job.get("verify_gradients"):
         if gradient_audit.get("enabled") is not True or gradient_audit.get("verified_steps") != updates:
             raise ValueError("Child did not verify gradients at every requested update")
-        strict_boundary = gradient_audit.get("protocol_version", 1) >= 2
-        if requested_protocol >= 2 and not strict_boundary:
-            raise ValueError("Child lacks gradient protocol 2 classification-to-input verification")
+        actual_protocol = gradient_audit.get("protocol_version", 1)
+        if type(actual_protocol) is not int or actual_protocol not in (1, 2, 3):
+            raise ValueError("Unknown gradient verification protocol")
+        strict_boundary = actual_protocol >= 2
+        if actual_protocol < requested_protocol:
+            raise ValueError(f"Child lacks gradient protocol {requested_protocol} verification")
+        if actual_protocol == 3:
+            warmup = validate_warmup(events, gradient_audit)
         for event in events:
             verification = event.get("gradient_verification", {})
+            validate_record_statistics(verification, complete=actual_protocol >= 3)
             if strict_boundary:
-                if verification.get("protocol_version", 1) < 2:
+                if verification.get("protocol_version", 1) != actual_protocol:
                     raise ValueError("Gradient protocol differs between report and update trace")
                 boundary = verification.get("classification_to_input", {})
                 required = job["method"] not in {"original", "nnunet"}
@@ -154,7 +280,8 @@ def validate_result(job, report_path, updates):
                     if classification.get("expected_absent") is not True or classification.get("required") is not False:
                         raise ValueError("Auxiliary segmentation classification boundary was not declared")
                 elif (classification.get("required") is not True or classification.get("finite") is not True
-                      or classification.get("nonzero") is not True):
+                      or (classification.get("nonzero") is not True
+                          and not (actual_protocol == 3 and warmup["used"] and event["step"] == 1 and module == "ext_net"))):
                     raise ValueError("Classification gradient does not reach a required candidate")
     checkpoint = report_path.parent / "last.pt"
     if not checkpoint.is_file():
@@ -198,7 +325,9 @@ def validate_result(job, report_path, updates):
             "trajectory": trajectory(report), "report_sha256": digest(report_path), "updates_sha256": digest(path),
             "checkpoint_sha256": digest(checkpoint), "changed_modules": sorted(changed), "coordination": policy,
             "gradient_verification": gradient_audit,
-            "gradient_boundary_scope": "protocol_2" if strict_boundary else "legacy_boundary",
+            "gradient_boundary_scope": f"protocol_{actual_protocol}" if strict_boundary else "legacy_boundary",
+            "gradient_protocol_version": actual_protocol, "gradient_warmup": warmup,
+            "initial_nonzero_gradient_verified": strict_boundary and not warmup["used"],
             "strict_current_gradient_verified": strict_boundary,
             "checkpoint_policy": report.get("checkpoint_policy", {"mode": "legacy_unspecified"})}
 
@@ -271,7 +400,7 @@ def prepare(config, config_path, output, phase):
             jobs.append({"dataset": dataset, "method": method, "setting": setting, "fold": fold, "seed": seed,
                          "command": command, "output": str(job_output), "data_audit": audit,
                          "coordination": coordination, "phase": phase, "verify_gradients": True,
-                         "gradient_protocol_version": 2, "checkpoint_mode": checkpoint_mode,
+                         "gradient_protocol_version": 3, "checkpoint_mode": checkpoint_mode,
                          "status": "blocked" if blockers else "planned", "reasons": blockers})
     return updates, jobs
 

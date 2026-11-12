@@ -51,6 +51,7 @@
     "stage": "",
     "acceptance_steps": 1,
     "max_calls": 4,
+    "training_timeout_seconds": 86400,
     "coordination": "none"
   },
   "executors": {}

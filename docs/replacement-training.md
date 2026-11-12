@@ -96,6 +96,16 @@ including position within the deterministic epoch order. Resume in the same run
 directory using `--resume /path/to/run/last.pt` and a larger total step budget.
 Architecture, fold hashes, weights, adapter, seed and optimization settings must
 match. Checkpoints are written through a temporary file and renamed atomically.
+Resumable checkpoints also bind the committed validation history, gradient
+verification counters and update log prefix. Resume restores these records
+from the checkpoint. Any later attempted updates, reports and test results are
+retained in `resume_archive` before the active trace is restored, so repeated
+attempts are not counted as additional committed updates. Recorded time from
+those attempts remains included in the accumulated training time.
+If the selected `best.pt` has changed since `last.pt`, resume stops until the
+matching retained best checkpoint is restored. Historical checkpoints lacking
+this bound audit state remain usable as declared initialization weights or for
+evaluation; they cannot safely resume the scientific training ledger.
 Only the latest state and best validation state are retained.
 `last.pt` also retains the complete optional coordinator state. `best.pt` contains
 only model weights, identity and progress and cannot resume training. Before
@@ -129,6 +139,8 @@ The test split never selects weights, repairs, stopping points or hyperparameter
 `candidate_core.pt` and its metadata record standalone pretraining for reuse.
 Dense candidate exports contain the dense core only; affine initialization is
 still supplied through the shared full host checkpoint.
+Generated adapter wrappers are removed from standalone exports so native
+candidate parameter names reload strictly into the corresponding backbone.
 
 Diagnosis metrics include accuracy, balanced accuracy, macro F1, AUC, sensitivity
 and specificity. Undefined single class AUC or rates are null. Intermediate
@@ -154,6 +166,10 @@ provenance must match the current experiment. Explicit extraction weights need
 their own origin and SHA256.
 
 `--trainable new` or `host` controls the optimized parameter groups.
+SynthStrip `new` runs require a shared trained host checkpoint. Freezing a
+random original affine head would retain its zero initialization and block the
+diagnosis path into extraction. The suite requires the same fold host for this
+ablation and forwards its provenance to the trainer.
 Completely frozen modules run in evaluation mode during training, so their
 BatchNorm buffers remain fixed. Input gradients through frozen modules remain
 available unless an explicit detached boundary is selected.

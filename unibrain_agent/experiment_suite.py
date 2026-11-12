@@ -178,6 +178,10 @@ def cycle_options(config):
         raise ValueError("Research cycle integration call budget must be between 2 and 20")
     if options.get("coordination", "none") not in {"none", "taskforce"}:
         raise ValueError("Unsupported research cycle coordination")
+    if "training_timeout_seconds" in options and (type(options["training_timeout_seconds"]) is not int or options["training_timeout_seconds"] < 1):
+        raise ValueError("Research cycle training timeout must be a positive integer")
+    if "checkpoint_mode" in options and options["checkpoint_mode"] not in {"weights", "resume"}:
+        raise ValueError("Research cycle checkpoint mode must be weights or resume")
     return options
 
 
@@ -222,7 +226,7 @@ def cycle_result(config, job, folder, outcome, smoke_steps=None):
         raise ValueError("Research cycle update accounting does not match its retained evidence")
     validate_training(training, method, adapter, job["seed"], budget, resolve(config, config["source"]),
                       data_path(config, job), audit["data_hashes"]["adhd_train_sample.npy"],
-                      options.get("coordination", "none"), "weights")
+                      options.get("coordination", "none"), options.get("checkpoint_mode", "weights" if smoke_steps else "resume"))
     protocol = outcome.get("training_protocol", {})
     if protocol.get("full_training", False) is not (smoke_steps is None):
         raise ValueError("Bounded and complete research cycles cannot share a result category")
@@ -279,6 +283,30 @@ def host_weights(config, job):
             or not re.fullmatch(r"[0-9a-f]{64}", value.get("sha256", ""))):
         raise ValueError("A shared trained host checkpoint with provenance and SHA256 is required for registration comparisons")
     return path, value
+
+
+def nnunet_plan(config, job, verify=False, required=True):
+    value = config.get("plans", {}).get("nnunet")
+    if isinstance(value, dict):
+        folds = value.get("folds")
+        if not isinstance(folds, dict):
+            raise ValueError("nnU-Net plans need a path or a folds mapping")
+        value = folds.get(f"{job['dataset']}:{job['fold']}")
+    if value is not None and not isinstance(value, str):
+        raise ValueError("Each nnU-Net fold plan must be a path")
+    path = resolve(config, value)
+    if path is None:
+        if not required:
+            return None
+        raise ValueError("A real nnU-Net plan is required for this dataset and fold")
+    if verify:
+        from .nnunet_prepare import validate_plan_provenance
+        if not path.is_file():
+            raise ValueError("A real nnU-Net plans file is required")
+        cohort = full_fold_audit(config, job)
+        training_hash = cohort["declared_data_hashes"]["adhd_train_sample.npy"]
+        validate_plan_provenance(path, training_hash, job["dataset"], job["fold"])
+    return path
 
 
 def integration_config(config, job):
@@ -398,6 +426,8 @@ def preflight(config, job):
             if data is None:
                 raise ValueError("A preserved full fold is required for the native research cycle")
             full_fold_audit(config, job)
+            if config.get("plans", {}).get("nnunet"):
+                nnunet_plan(config, job, verify=True, required=cycle_options(config).get("stage") == "segmentation")
         except (ValueError, KeyError, OSError, TypeError) as error:
             reasons.append(str(error))
         if not (ROOT / "scripts/run_research_cycle.py").is_file():
@@ -447,11 +477,10 @@ def preflight(config, job):
             if adapter is None or not adapter.is_file():
                 reasons.append("Accepted generated adapter is not configured: " + job["method"])
         if job["method"] == "nnunet":
-            plans = resolve(config, config.get("plans", {}).get("nnunet"))
-            if plans is None or not plans.is_file():
-                reasons.append("A real nnU Net plans file is required")
-            elif not (plans.parent / "nnUNetPlans.provenance.json").is_file():
-                reasons.append("nnU Net plans require the training-fold provenance sidecar from prepare_nnunet.py")
+            try:
+                nnunet_plan(config, job, verify=True)
+            except (ValueError, KeyError, OSError, TypeError) as error:
+                reasons.append("nnU-Net plan: " + str(error))
         needs_weights = job["group"] != "site" or config.get("site_initialization", "random") == "official"
         if job["method"] != "original" and job["variant"] != "random_initialization" and needs_weights:
             try:
@@ -460,7 +489,7 @@ def preflight(config, job):
                     raise ValueError("Site initialization cannot use a numeric-fold checkpoint")
             except ValueError as error:
                 reasons.append(str(error))
-        if job["method"] in {"voxelmorph", "lapirn"} or job["variant"] == "stagewise":
+        if job["method"] in {"voxelmorph", "lapirn"} or job["variant"] == "stagewise" or job["method"] == "synthstrip" and job["variant"] == "new_only":
             try:
                 host_weights(config, job)
             except ValueError as error:
@@ -503,12 +532,17 @@ def command_for(config, job, folder, smoke_steps=None):
                    "--epochs", str(job["epochs"]), "--gpu", str(config.get("gpu", 0)),
                    "--selection-metric", config.get("selection_metric", "classification_loss"),
                    "--acceptance-steps", str(options.get("acceptance_steps", 1)), "--max-calls", str(options.get("max_calls", 4)),
-                   "--coordination", options.get("coordination", "none"), "--checkpoint-mode", "weights"]
+                   "--coordination", options.get("coordination", "none"),
+                   "--checkpoint-mode", options.get("checkpoint_mode", "weights" if smoke_steps else "resume")]
         for field in ("model", "stage"):
             if options.get(field):
                 command += ["--" + field, options[field]]
+        if "training_timeout_seconds" in options:
+            command += ["--training-timeout-seconds", str(options["training_timeout_seconds"])]
         if config.get("plans", {}).get("nnunet"):
-            command += ["--plans", str(resolve(config, config["plans"]["nnunet"]))]
+            plans = nnunet_plan(config, job, required=options.get("stage") == "segmentation")
+            if plans is not None:
+                command += ["--plans", str(plans)]
         command += ["--train-steps", str(smoke_steps), "--eval-limit", "2"] if smoke_steps else ["--full-training", "--evaluate-test"]
         return command
     if is_composition(job):
@@ -543,7 +577,7 @@ def command_for(config, job, folder, smoke_steps=None):
     if job["method"] in TRAIN_METHODS:
         command += ["--adapter", str(resolve(config, config["adapters"][job["method"]]))]
     if job["method"] == "nnunet":
-        command += ["--plans", str(resolve(config, config["plans"]["nnunet"]))]
+        command += ["--plans", str(nnunet_plan(config, job))]
     needs_weights = job["group"] != "site" or config.get("site_initialization", "random") == "official"
     if job["method"] != "original" and variant != "random_initialization" and needs_weights:
         weights, metadata = initial_weights(config, job)
@@ -562,7 +596,7 @@ def command_for(config, job, folder, smoke_steps=None):
         command += ["--undo-repair", variant.removeprefix("undo_")]
     if variant in {"straight_through", "gumbel_softmax"}:
         command += ["--repair-strategy", variant]
-    if job["method"] in {"voxelmorph", "lapirn"} or variant == "stagewise":
+    if job["method"] in {"voxelmorph", "lapirn"} or variant == "stagewise" or job["method"] == "synthstrip" and variant == "new_only":
         host, metadata = host_weights(config, job)
         command += ["--host-checkpoint", str(host), "--host-sha256", metadata["sha256"], "--host-origin", metadata["origin"],
                     "--host-dataset", job["dataset"], "--host-fold", str(job["fold"])]

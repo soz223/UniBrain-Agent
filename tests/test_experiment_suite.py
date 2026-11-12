@@ -86,7 +86,7 @@ class ExperimentSuiteTests(unittest.TestCase):
         training = {"status": "complete" if args.full_training else "budget_exhausted", "method": "brainnetcnn",
                     "setting": "joint", "seed": args.seed, "steps": steps,
                     "config": {"dataset": args.dataset, "fold": args.fold, "source": str(args.source), "data": str(args.data),
-                               "adapter": str(adapter), "coordination": "none", "checkpoint_mode": "weights",
+                               "adapter": str(adapter), "coordination": "none", "checkpoint_mode": args.checkpoint_mode,
                                "connect_paths": True, "verify_gradients": True, "epochs": args.epochs,
                                "selection_metric": args.selection_metric, "output": str(training_dir),
                                "max_steps": None if args.full_training else args.train_steps,
@@ -96,7 +96,7 @@ class ExperimentSuiteTests(unittest.TestCase):
                     "gradient_verification": {"enabled": True, "protocol_version": 2, "verified_steps": steps,
                                               "diagnosis_reaches_all_candidates": True,
                                               "last_step": {"classification_to_input": {"required": True, "finite": True, "nonzero": True}}},
-                    "coordination": {"mode": "none", "policy_updates": 0}, "checkpoint_policy": {"mode": "weights"},
+                    "coordination": {"mode": "none", "policy_updates": 0}, "checkpoint_policy": {"mode": args.checkpoint_mode},
                     "selection": {"metric": args.selection_metric, "direction": "minimize", "scope": "validation_only", "best_epoch": 1, "best_value": .7},
                     "best_validation": metrics,
                     "history": [{"epoch": epoch, "validation": metrics} for epoch in range(1, args.epochs + 1)]}
@@ -106,7 +106,7 @@ class ExperimentSuiteTests(unittest.TestCase):
             progress = {"epoch": 1, "best_epoch": 1, "best_value": .7, "best_loss": .7, "selection_metric": args.selection_metric,
                         "steps": 2, "pretrain_steps": 0}
             torch.save({"model": {"fixture": torch.ones(1)}, "identity": identity, "progress": progress,
-                        "checkpoint_kind": "evaluation_weights_only"}, training_dir / "best.pt")
+                        "checkpoint_kind": "evaluation_weights_only" if args.checkpoint_mode == "weights" else "evaluation"}, training_dir / "best.pt")
             cases = [{"id": name, "label": label, "prediction": label, "probability": .2 if label == 0 else .8,
                       **{key: .7 for key in ('brain_dice', 'tissue_dice', 'atlas_dice', 'registration_dice', 'reference_loss', 'classification_loss')}}
                      for name, label in (('fixtureA', 0), ('fixtureB', 1))]
@@ -137,6 +137,7 @@ class ExperimentSuiteTests(unittest.TestCase):
             args = parser().parse_args(command_for(config, job, self.root / "out", smoke)[2:])
             self.assertEqual(args.full_training, smoke is None)
             self.assertEqual(args.evaluate_test, smoke is None)
+            self.assertEqual(args.checkpoint_mode, "resume" if smoke is None else "weights")
         with patch("unibrain_agent.experiment_suite.full_fold_audit", return_value=audit), \
                 patch("unibrain_agent.experiment_suite.run_logged", side_effect=self.cycle_runner):
             result = run_job(config, job)

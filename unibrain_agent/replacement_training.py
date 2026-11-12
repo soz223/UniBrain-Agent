@@ -120,6 +120,8 @@ def preflight(args):
         raise ValueError("Connection ablations require --connect-paths")
     if args.setting.startswith("independent") and args.trainable != "all":
         raise ValueError("Independent settings train the host after freezing the candidate")
+    if args.method == "synthstrip" and args.trainable == "new" and not args.host_checkpoint:
+        raise ValueError("SynthStrip new-only training requires a shared trained host; a frozen random affine head blocks diagnosis gradients")
     if args.setting == "original_frozen_stages" and (not args.host_checkpoint or args.coordination != "none"):
         raise ValueError("Frozen original stages require a trained host checkpoint and coordination none")
     if args.probe_budget < 1 or args.coordination_batch_size < 1:
@@ -381,11 +383,139 @@ def task_weights(config, method, scale):
 
 
 def checkpoint_state(model, optimizer, progress, identity, team=None, evaluation_only=False, weights_only=False):
-    state = {"model": model.state_dict(), "progress": dict(progress), "identity": identity,
+    state = {"model": model.state_dict(), "progress": copy.deepcopy(progress), "identity": identity,
              "checkpoint_kind": "evaluation_weights_only" if weights_only else "evaluation" if evaluation_only else "resume"}
     if not (evaluation_only or weights_only):
         state.update(optimizer=optimizer.state_dict(), rng=rng_state(), coordination=team.state_dict() if team else None)
     return state
+
+
+def committed_update_trace(path, steps, size=None):
+    path = Path(path)
+    available = path.stat().st_size if path.is_file() else 0
+    size = available if size is None else size
+    if type(size) is not int or not 0 <= size <= available:
+        raise ValueError("Committed update trace is missing or truncated")
+    checksum, observed, remaining = hashlib.sha256(), 0, size
+    if size:
+        with path.open("rb") as stream:
+            while remaining:
+                line = stream.readline(min(remaining, 8 * 1024 ** 2 + 1))
+                if not line or len(line) > 8 * 1024 ** 2:
+                    raise ValueError("Invalid update trace line")
+                remaining -= len(line)
+                checksum.update(line)
+                event = json.loads(line)
+                if not isinstance(event, dict):
+                    raise ValueError("Update trace entries must be objects")
+                if "step" in event:
+                    observed += 1
+                    if type(event["step"]) is not int or event["step"] != observed:
+                        raise ValueError("The committed update trace does not match checkpoint progress")
+    if observed != steps:
+        raise ValueError("The committed update trace does not match checkpoint progress")
+    return {"bytes": size, "sha256": checksum.hexdigest()}
+
+
+def validate_report_selection(report, progress):
+    metric = progress["selection_metric"]
+    selection, history = report["selection"], report["history"]
+    if selection.get("metric") != metric or [row.get("epoch") for row in history] != list(range(1, len(history) + 1)):
+        raise ValueError("Checkpoint validation history or selection metric is inconsistent")
+    if math.isfinite(progress["best_loss"]):
+        if not history:
+            raise ValueError("Selected checkpoint lacks committed validation history")
+        chosen = min(history, key=lambda row: selection_value(row["validation"], metric))
+        if (selection_value(chosen["validation"], metric) != progress["best_loss"]
+                or chosen["epoch"] != progress["best_epoch"] or selection.get("best_epoch") != progress["best_epoch"]
+                or selection.get("best_value") != progress["best_loss"] or report.get("best_validation") != chosen["validation"]):
+            raise ValueError("Checkpoint validation selection disagrees with committed history")
+    elif history or report.get("best_validation") is not None or selection.get("best_epoch") is not None or selection.get("best_value") is not None:
+        raise ValueError("Unselected checkpoint cannot retain validation results from later attempts")
+
+
+def capture_report_state(report, folder, progress, seconds):
+    path = Path(folder) / "updates.jsonl"
+    trace = committed_update_trace(path, progress["steps"])
+    validate_report_selection(report, progress)
+    gradient = report["gradient_verification"]
+    if gradient["enabled"] and gradient["verified_steps"] != progress["steps"]:
+        raise ValueError("Gradient verification count differs from checkpoint updates")
+    selected = math.isfinite(progress["best_loss"])
+    best = Path(folder) / "best.pt"
+    if selected and not best.is_file():
+        raise ValueError("The selected checkpoint is missing while saving resume state")
+    fields = {key: copy.deepcopy(report[key]) for key in ("history", "best_validation", "selection", "gradient_verification") if key in report}
+    return {"version": 1, "steps": progress["steps"], "pretrain_steps": progress["pretrain_steps"], "report": fields,
+            "train_seconds": seconds, "updates": trace,
+            "best_checkpoint_sha256": fingerprint(best) if selected else None}
+
+
+def restore_report_state(checkpoint, report, folder):
+    folder = Path(folder)
+    snapshot = checkpoint.get("report_state")
+    progress = checkpoint["progress"]
+    if (not isinstance(snapshot, dict) or snapshot.get("version") != 1 or snapshot.get("steps") != progress["steps"]
+            or snapshot.get("pretrain_steps") != progress["pretrain_steps"]):
+        raise ValueError("Resume requires checkpoint-bound report and update trace state; an unbound historical report is insufficient")
+    path = folder / "updates.jsonl"
+    available = path.stat().st_size if path.is_file() else 0
+    size = snapshot["updates"]["bytes"]
+    if committed_update_trace(path, progress["steps"], size) != snapshot["updates"]:
+        raise ValueError("Committed update trace changed or is missing")
+    saved = snapshot["report"]
+    validate_report_selection(saved, progress)
+    if type(snapshot["train_seconds"]) not in (int, float) or not math.isfinite(snapshot["train_seconds"]) or snapshot["train_seconds"] < 0:
+        raise ValueError("Saved training time is invalid")
+    gradient = saved["gradient_verification"]
+    if gradient["enabled"] and gradient["verified_steps"] != progress["steps"]:
+        raise ValueError("Saved gradient verification count differs from checkpoint progress")
+    best = folder / "best.pt"
+    checksum = snapshot.get("best_checkpoint_sha256")
+    if math.isfinite(progress["best_loss"]):
+        if not checksum or not best.is_file() or fingerprint(best) != checksum:
+            raise ValueError("The validation selected checkpoint changed after last.pt; restore its retained original before resuming")
+    elif checksum is not None:
+        raise ValueError("Resume snapshot has a selected model without a validation selection")
+    archive = folder / "resume_archive" / uuid.uuid4().hex
+    archive.mkdir(parents=True)
+    recorded_seconds = snapshot["train_seconds"]
+    if (folder / "report.json").is_file():
+        shutil.copy2(folder / "report.json", archive / "report.json")
+        try:
+            previous = json.loads((folder / "report.json").read_text(encoding="utf-8"))
+            seconds = previous.get("train_seconds")
+            if type(seconds) in (int, float) and math.isfinite(seconds):
+                recorded_seconds = max(recorded_seconds, seconds)
+        except (ValueError, TypeError):
+            pass
+    if available != size:
+        shutil.copy2(path, archive / "updates.jsonl")
+        temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+        with path.open("rb") as source, temporary.open("wb") as target:
+            remaining = size
+            while remaining:
+                chunk = source.read(min(remaining, 1024 ** 2))
+                if not chunk:
+                    raise ValueError("Update trace changed during prefix restoration")
+                target.write(chunk)
+                remaining -= len(chunk)
+        temporary.replace(path)
+    if checksum is None and best.is_file():
+        best.replace(archive / "best.pt")
+    if (folder / "test.json").is_file():
+        (folder / "test.json").replace(archive / "test.json")
+    for key in ("history", "best_validation", "selection", "gradient_verification"):
+        report.pop(key, None)
+    report.update(copy.deepcopy(saved))
+    report["resume"] = {"checkpoint_step": progress["steps"], "committed_updates_restored": progress["steps"],
+                        "archived_uncommitted_bytes": available - size, "archive": str(archive),
+                        "checkpoint_train_seconds": snapshot["train_seconds"],
+                        "retained_attempt_seconds": recorded_seconds - snapshot["train_seconds"]}
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps({"event": "resume", "checkpoint_step": progress["steps"],
+                                 "note": "Checkpoint-bound history restored; later attempts retained in resume_archive"}) + "\n")
+    return recorded_seconds
 
 
 def check_checkpoint_space(folder, state):
@@ -447,6 +577,7 @@ def classification_gradient_paths(model, loss, method, required, image=None):
         count = len(groups[name])
         auxiliary = method == "nnunet" and name == "seg_net"
         result[name] = {**gradient_statistics(gradients[offset:offset + count]), "required": required and not auxiliary,
+                        "parameter_names": [key for key, parameter in getattr(model, name).named_parameters() if parameter.requires_grad],
                         "expected_absent": auxiliary,
                         "reason": "The tissue prediction head is supervised by tissue loss; diagnosis does not consume its logits" if auxiliary else None}
         offset += count
@@ -462,6 +593,146 @@ def total_candidate_gradients(model, method):
     names = getattr(model, "candidate_modules", ()) or ((METHODS[method],) if METHODS[method] else ())
     return {name: gradient_statistics(parameter.grad for parameter in getattr(model, name).parameters() if parameter.requires_grad)
             for name in names}
+
+
+def candidate_export_core(model, method):
+    from .candidate_integration import GeneratedCore
+    if method not in ("synthstrip", "voxelmorph", "lapirn", "nnunet"):
+        raise ValueError("Standalone exports require a supported native candidate core")
+    candidate = getattr(model, METHODS[method])
+    core = getattr(candidate, "core", candidate)
+    while isinstance(core, GeneratedCore):
+        core = core.core
+    return core
+
+
+def empty_gradient_warmup():
+    return {"status": "not_needed", "module": None, "first_step": None, "confirmed_step": None,
+            "reason": None, "initialization": None}
+
+
+def affine_encoder_evidence(encoder, head):
+    import ast
+    from types import CodeType
+    from .paths import CATALOG
+
+    def code_hash(code):
+        constants = [code_hash(value) if isinstance(value, CodeType) else repr(value) for value in code.co_consts]
+        values = (code.co_code.hex(), code.co_names, code.co_varnames, code.co_argcount, code.co_kwonlyargcount,
+                  code.co_posonlyargcount, code.co_flags, constants)
+        return hashlib.sha256(json.dumps(values).encode()).hexdigest()
+
+    cls = type(encoder)
+    if cls.__name__ != "encoder" or encoder.fc_loc[2] is not head:
+        return None
+    forward, constructor = getattr(cls.forward, "__code__", None), getattr(cls.__init__, "__code__", None)
+    if forward is None or constructor is None:
+        return None
+    path = Path(forward.co_filename)
+    if not path.is_file() or Path(constructor.co_filename).resolve() != path.resolve():
+        return None
+    source = path.read_bytes().replace(b"\r\n", b"\n")
+    checksum = hashlib.sha256(source).hexdigest()
+    manifest = json.loads((CATALOG / "sources.json").read_text(encoding="utf-8"))
+    repository = next((entry for entry in manifest["repositories"] if entry["directory"] in {"reg_unibrain", "reg_ernet"}
+                       and any(item["path"] == "model.py" and item["sha256"] == checksum for item in entry["files"])), None)
+    if repository is None:
+        return None
+    definition = next(node for node in ast.parse(source.decode("utf-8-sig")).body if isinstance(node, ast.ClassDef) and node.name == "encoder")
+    compiled = compile(ast.Module(body=[definition], type_ignores=[]), str(path), "exec", dont_inherit=True)
+    class_code = next(value for value in compiled.co_consts if isinstance(value, CodeType) and value.co_name == "encoder")
+    methods = {value.co_name: value for value in class_code.co_consts if isinstance(value, CodeType)}
+    if code_hash(forward) != code_hash(methods["forward"]) or code_hash(constructor) != code_hash(methods["__init__"]):
+        return None
+    return {"class_name": "encoder", "repository": repository["repository"], "commit": repository["commit"],
+            "source_file": "model.py", "source_sha256": checksum, "head_object_verified": True,
+            "forward_code_sha256": code_hash(forward), "constructor_code_sha256": code_hash(constructor)}
+
+
+def affine_initialization_evidence(model):
+    import torch
+    modules = dict(model.named_modules())
+    for path in ("reg_net.affine.fc_loc.2", "reg_net.core.affine.fc_loc.2"):
+        head = modules.get(path)
+        if not isinstance(head, torch.nn.Linear) or head.weight.shape != (12, 128) or head.bias is None:
+            continue
+        encoder = modules[path.removesuffix(".fc_loc.2")]
+        source = affine_encoder_evidence(encoder, head)
+        if source is None:
+            continue
+        identity = torch.eye(3, 4, dtype=head.bias.dtype, device=head.bias.device).flatten()
+        if (not head.weight.requires_grad or not head.bias.requires_grad or torch.count_nonzero(head.weight)
+                or not torch.equal(head.bias.detach(), identity)):
+            continue
+        gradients = gradient_statistics((head.weight.grad, head.bias.grad))
+        weight_gradient = gradient_statistics((head.weight.grad,))
+        if not (gradients["finite"] and gradients["observed_tensors"] == 2 and weight_gradient["nonzero"]):
+            continue
+        return {"head_path": path, "weight_shape": list(head.weight.shape), "bias_shape": list(head.bias.shape),
+                "zero_weight": True, "identity_bias": True, "head_trainable": True,
+                "head_total_gradient": gradients, "head_weight_gradient": weight_gradient,
+                "encoder_source": source, "weight_nonzero_after_update": False}
+    return None
+
+
+def check_gradient_paths(model, record, step, budget, warmup):
+    candidates = record["classification_to_candidates"]
+    failed = [name for name, value in candidates.items()
+              if value["required"] and not (value["finite"] and value["nonzero"])]
+    input_path = record["classification_to_input"]
+    if input_path and input_path["required"] and not (input_path["finite"] and input_path["nonzero"]):
+        failed.append("classification_to_input")
+    if record["input_required"]:
+        if not (record["total_to_input"]["finite"] and record["total_to_input"]["nonzero"]):
+            failed.append("input")
+        failed.extend(name + ":total" for name, value in record["total_to_candidates"].items()
+                      if not (value["finite"] and value["nonzero"]))
+    if warmup["status"] in {"pending", "confirmed"}:
+        expected = warmup["initialization"]
+        observed = candidates.get("ext_net", {})
+        if (observed.get("tensor_count") != expected["extraction_tensor_count"]
+                or observed.get("observed_tensors") != expected["extraction_tensor_count"]
+                or observed.get("parameter_names") != expected["extraction_parameter_names"]):
+            failed.append("ext_net:incomplete_warmup_path")
+    if warmup["status"] == "pending":
+        if step != warmup["first_step"] or not candidates.get("ext_net", {}).get("nonzero"):
+            failed.append("ext_net:warmup_unconfirmed")
+        if not failed:
+            head = model.get_submodule(warmup["initialization"]["head_path"])
+            if (not warmup["initialization"]["weight_nonzero_after_update"]
+                    or not bool(head.weight.detach().isfinite().all()) or not bool(head.weight.detach().count_nonzero())):
+                failed.append("affine_head:warmup_unconfirmed")
+            else:
+                warmup.update(status="confirmed", confirmed_step=step + 1)
+    elif failed == ["ext_net"] and warmup["status"] == "not_needed" and step == 0 and budget >= 2:
+        value = candidates["ext_net"]
+        observed = value["tensor_count"] > 0 and value["observed_tensors"] == value["tensor_count"]
+        evidence = affine_initialization_evidence(model) if observed and value["finite"] else None
+        if evidence is not None:
+            evidence.update(extraction_tensor_count=value["tensor_count"], extraction_parameter_names=value["parameter_names"])
+            warmup.update(status="pending", module="ext_net", first_step=1, confirmed_step=None,
+                          reason="zero_initialized_affine_head", initialization=evidence)
+            failed.clear()
+    record["warmup"] = copy.deepcopy(warmup)
+    if failed:
+        raise ValueError("Required gradient paths failed: " + ", ".join(failed))
+
+
+def record_warmup_update(model, warmup, record):
+    import torch
+    if warmup["status"] == "pending":
+        weight = model.get_submodule(warmup["initialization"]["head_path"]).weight.detach()
+        changed = bool(torch.isfinite(weight).all() and torch.count_nonzero(weight))
+        warmup["initialization"]["weight_nonzero_after_update"] = changed
+        if not changed:
+            record["warmup"] = copy.deepcopy(warmup)
+            raise ValueError("The zero initialized affine head did not change after its warmup update")
+    record["warmup"] = copy.deepcopy(warmup)
+
+
+def require_confirmed_warmup(warmup):
+    if warmup["status"] == "pending":
+        raise ValueError("Extraction gradient warmup remains pending; a second verified update is required")
 
 
 def train(args):
@@ -531,7 +802,8 @@ def train(args):
     team = GradientTeam(tuple(base_weights[name] for name in TASKS), seed=args.seed,
                         batch_size=args.coordination_batch_size) if args.coordination == "taskforce" else None
     progress = {"phase": 0, "epoch": 0, "position": 0, "steps": 0, "pretrain_steps": 0, "best_loss": float("inf"), "bad_epochs": 0,
-                "selection_metric": args.selection_metric, "best_epoch": None, "best_value": None}
+                "selection_metric": args.selection_metric, "best_epoch": None, "best_value": None,
+                "gradient_warmup": empty_gradient_warmup()}
     migrated_selection = False
     resumed = torch.load(args.resume, map_location="cpu", weights_only=True) if args.resume else None
     if resumed:
@@ -547,6 +819,10 @@ def train(args):
         if migrated_selection:
             progress.update(selection_metric=args.selection_metric, best_epoch=None, best_value=None)
         restore_rng(resumed["rng"])
+    warmup = progress.setdefault("gradient_warmup", empty_gradient_warmup())
+    update_budget = len(datasets["train"]) * sum(epochs for _, epochs in phases)
+    if args.max_steps is not None:
+        update_budget = min(update_budget, args.max_steps)
     report = {"status": "running", "method": args.method, "setting": args.setting, "seed": args.seed, "config": settings,
               "architecture": architecture, "audit": audit, "gpu": gpu, "history": [], "steps": progress["steps"], "pretrain_steps": progress["pretrain_steps"]}
     report["trainer_scope"] = "Matched full-model training loop; original main.py reproduction remains a separate baseline"
@@ -563,32 +839,14 @@ def train(args):
                               "base_weights": base_weights, "probe_names": [], "probe_elements": 0,
                               "fixed_extra_weights": {"parcellation": args.loss_scale if getattr(model, "learned_parcellation", False) else 0.,
                                                       "regularization": args.regularization}}
-    report["gradient_verification"] = {"enabled": args.verify_gradients, "protocol_version": 2, "verified_steps": 0, "last_step": None,
-                                       "diagnosis_reaches_all_candidates": None}
+    report["gradient_verification"] = {"enabled": args.verify_gradients, "protocol_version": 3, "verified_steps": 0, "last_step": None,
+                                       "diagnosis_reaches_all_candidates": None, "warmup": warmup}
     if args.setting == "original_frozen_stages":
         report["stagewise_control"] = "Fixed trained UniBrain stages and trainable original classifier; not an ANTs or FSL toolchain"
     previous_seconds = 0.
-    if migrated_selection and math.isfinite(progress["best_loss"]) and not (args.output / "report.json").is_file():
-        raise ValueError("Legacy reference selection requires its retained validation report")
-    if args.resume and (args.output / "report.json").exists():
-        previous = json.loads((args.output / "report.json").read_text(encoding="utf-8"))
-        report["history"] = previous.get("history", [])
-        if "best_validation" in previous:
-            report["best_validation"] = previous["best_validation"]
-        previous_seconds = previous.get("train_seconds", 0.)
-        if migrated_selection:
-            if not report["history"] and math.isfinite(progress["best_loss"]):
-                raise ValueError("Legacy checkpoint lacks its validation selection history")
-            if report["history"]:
-                selected = min(report["history"], key=lambda row: selection_value(row["validation"], args.selection_metric))
-                value = selection_value(selected["validation"], args.selection_metric)
-                if value != progress["best_loss"]:
-                    raise ValueError("Legacy checkpoint selection disagrees with retained validation history")
-                progress.update(best_epoch=selected["epoch"], best_value=value)
-                report["selection"].update(best_epoch=selected["epoch"], best_value=value)
-        with (args.output / "updates.jsonl").open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps({"event": "resume", "checkpoint_step": progress["steps"],
-                                     "note": "Earlier attempted updates are retained; this run resumes checkpoint state"}) + "\n")
+    if args.resume:
+        previous_seconds = restore_report_state(resumed, report, args.output)
+        report["gradient_verification"]["warmup"] = warmup
     started = time.monotonic()
     handles = []
     previous_weights = None
@@ -614,6 +872,8 @@ def train(args):
                 nonlocal previous_weights
                 state = checkpoint_state(model, optimizer, progress, identity, team, evaluation_only=path.name == "best.pt",
                                          weights_only=args.checkpoint_mode == "weights")
+                if state["checkpoint_kind"] == "resume":
+                    state["report_state"] = capture_report_state(report, args.output, progress, previous_seconds + time.monotonic() - started)
                 result = write_checkpoint(path, state, previous_weights)
                 report["checkpoint_policy"]["hardlinked_saves"] += int(result == "hardlink")
                 if args.checkpoint_mode == "weights":
@@ -624,6 +884,7 @@ def train(args):
                 order = torch.randperm(len(datasets["train"]), generator=torch.Generator().manual_seed(args.seed + 10000 * phase_index + epoch)).tolist()
                 for position in range(progress["position"], len(order)):
                     if args.max_steps is not None and progress["steps"] >= args.max_steps:
+                        require_confirmed_warmup(warmup)
                         checkpoint(args.output / "last.pt")
                         report.update(status="budget_exhausted", **{k: progress[k] for k in ("steps", "pretrain_steps")})
                         return report
@@ -668,25 +929,14 @@ def train(args):
                                     and (args.connect_paths or args.method in TARGETS) and not args.cut_extraction
                                     and args.cut_boundary == "none" and args.undo_repair == "none")
                         paths = classification_gradient_paths(model, losses["classification"], args.method, required, image) if "classification" in losses else None
-                        gradient_record = {"protocol_version": 2, "classification_to_candidates": paths["candidates"] if paths else {},
+                        gradient_record = {"protocol_version": 3, "classification_to_candidates": paths["candidates"] if paths else {},
                                            "classification_to_input": paths["input"] if paths else None, "input_required": required}
                     total.backward()
                     if gradient_record is not None:
                         gradient_record["total_to_input"] = gradient_statistics([image.grad])
                         gradient_record["total_to_candidates"] = total_candidate_gradients(model, args.method)
                         report["gradient_verification"]["last_step"] = gradient_record
-                        failed = [name for name, value in gradient_record["classification_to_candidates"].items()
-                                  if value["required"] and not (value["finite"] and value["nonzero"])]
-                        input_path = gradient_record["classification_to_input"]
-                        if input_path and input_path["required"] and not (input_path["finite"] and input_path["nonzero"]):
-                            failed.append("classification_to_input")
-                        if required and not (gradient_record["total_to_input"]["finite"] and gradient_record["total_to_input"]["nonzero"]):
-                            failed.append("input")
-                        if required:
-                            failed.extend(name + ":total" for name, value in gradient_record["total_to_candidates"].items()
-                                          if not (value["finite"] and value["nonzero"]))
-                        if failed:
-                            raise ValueError("Required gradient paths failed: " + ", ".join(failed))
+                        check_gradient_paths(model, gradient_record, progress["steps"], update_budget, warmup)
                     if any(not torch.isfinite(p.grad).all() for p in model.parameters() if p.grad is not None):
                         raise ValueError("Nonfinite parameter gradient")
                     probes = {}
@@ -695,6 +945,8 @@ def train(args):
                         if module not in probes and parameter.grad is not None and torch.count_nonzero(parameter.grad):
                             probes[module] = (parameter, parameter.detach().cpu().clone(), name)
                     optimizer.step()
+                    if gradient_record is not None:
+                        record_warmup_update(model, warmup, gradient_record)
                     observed = {module: {"tensor": name, "changed": not torch.equal(parameter.detach().cpu(), before)}
                                 for module, (parameter, before, name) in probes.items()}
                     if not observed or not any(item["changed"] for item in observed.values()):
@@ -726,8 +978,8 @@ def train(args):
                         progress.update(best_loss=loss, best_value=loss, best_epoch=epoch + 1, selection_metric=args.selection_metric)
                         report["selection"].update(best_epoch=epoch + 1, best_value=loss)
                         progress["bad_epochs"] = 0
-                        checkpoint(args.output / "best.pt")
                         report["best_validation"] = validation["metrics"]
+                        checkpoint(args.output / "best.pt")
                     else:
                         progress["bad_epochs"] += 1
                 stopped = not standalone and args.patience and progress["bad_epochs"] >= args.patience
@@ -740,12 +992,12 @@ def train(args):
                     break
             progress.update(phase=phase_index + 1, epoch=0, position=0)
             if standalone:
-                candidate = getattr(model, METHODS[args.method])
-                core = getattr(candidate, "core", candidate)
+                core = candidate_export_core(model, args.method)
                 torch.save({"model_state_dict": core.state_dict()}, args.output / "candidate_core.pt")
                 save_json(args.output / "candidate_core.json", {"sha256": fingerprint(args.output / "candidate_core.pt"),
                                                                 "dataset": args.dataset, "fold": args.fold, "scope": "training_fold",
                                                                 "steps": progress["pretrain_steps"], "identity": identity})
+        require_confirmed_warmup(warmup)
         report["status"] = "complete"
         if args.evaluate_test:
             best = args.output / "best.pt"
