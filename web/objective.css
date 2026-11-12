@@ -64,3 +64,5 @@
 @media(max-width:750px) {.stage-choices,.objective-terms {grid-template-columns:repeat(2,minmax(0,1fr));}.stage-choices {padding-left:25px;padding-right:25px;}}
 
 .stage-choice::after {display:none;}
+
+.objective-legend {font-size:9px;color:var(--dim);line-height:1.6;margin:10px 0 0;}

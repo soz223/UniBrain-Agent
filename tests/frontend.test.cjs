@@ -42,12 +42,12 @@ vm.runInContext(readFileSync('web/objective.js','utf8'),objectiveContext);
 test('formula renders backend terms and coefficients, including unfamiliar losses',()=>{
  const packet={status:'observed',terms:[{id:'novel',name:'New loss',weight:0.037},{id:'regularization',name:'Field penalty',weight:0.2}]};
  const formula=objectiveContext.objectiveFormula(packet);
- assert.equal(formula.length,2);assert.equal(formula[0].expression,'0.037');assert.equal(formula[1].name,'Field penalty');
+ assert.equal(formula.length,2);assert.equal(formula[0].expression,'λ');assert.equal(formula[0].weightSymbol,'novel');assert.equal(formula[0].coefficient,0.037);assert.equal(formula[1].name,'Field penalty');
 });
-test('declared coordinated subterms share the backend supplied weight group',()=>{
+test('symbolic weights preserve effective backend coefficients in every mode',()=>{
  const packet={status:'declared',coordination:'taskforce',terms:[{id:'penalty',name:'Penalty',weight:.001,weight_group:'registration',relative_weight:.01}]};
- assert.equal(objectiveContext.objectiveFormula(packet)[0].expression,'0.01 × w(registration, t)');
- packet.status='observed';assert.equal(objectiveContext.objectiveFormula(packet)[0].expression,'0.001');
+ assert.equal(objectiveContext.objectiveFormula(packet)[0].weightSymbol,'penalty');
+ packet.status='observed';assert.equal(objectiveContext.objectiveFormula(packet)[0].expression,'λ');assert.equal(objectiveContext.objectiveFormula(packet)[0].coefficient,.001);
 });
 
 test('loss colors follow their owning stage rather than loss order',()=>{

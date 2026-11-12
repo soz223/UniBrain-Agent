@@ -25,8 +25,7 @@ function objectiveTermColor(packet, id, fallback) {
 
 function objectiveFormula(packet) {
   return packet.terms.map(term => ({name: term.name, symbol: term.id, coefficient: term.weight,
-    expression: packet.status === "declared" && ["taskforce", "roles"].includes(packet.coordination) ?
-      (term.relative_weight || 1) + " × w(" + (term.weight_group || term.id) + ", t)" : String(term.weight)}));
+    expression: 'λ', weightSymbol: term.id}));
 }
 
 function paintObjective(packet) {
@@ -35,7 +34,7 @@ function paintObjective(packet) {
   if (packet) objectivePreviousPacket = packet;
   byId("objectiveProfile").textContent = packet ? packet.profile + " · " + (packet.status === "observed" ? "Observed update " + packet.step : "Backend definition preview") : "Connect the updated backend to resolve this selection";
   byId("objectiveFormula").innerHTML = packet ? '<span><i>L</i><sub>joint</sub> =</span>' + objectiveFormula(packet).map((term, i) =>
-    (i ? '<span class="objective-plus">+</span>' : '') + '<span class="objective-part" style="--loss-color:' + objectiveTermColor(packet, term.symbol, i) + '"><span class="objective-weight">' + escapeHtml(term.expression) + '</span><i>L</i><sub>' + escapeHtml(term.symbol) + '</sub></span>').join('') : '';
+    (i ? '<span class="objective-plus">+</span>' : '') + '<span class="objective-part" style="--loss-color:' + objectiveTermColor(packet, term.symbol, i) + '"><span class="objective-weight">' + escapeHtml(term.expression) + '<sub>' + escapeHtml(term.weightSymbol) + '</sub></span><i>L</i><sub>' + escapeHtml(term.symbol) + '</sub></span>').join('') : '';
   const terms = packet?.terms || [];
   const stages = packet?.stages || [];
   const selected = stages.find(stage => stage.id === objectiveSelected) || stages[0];
@@ -47,13 +46,13 @@ function paintObjective(packet) {
     return '<button class="objective-term' + (losses.length ? '' : ' objective-no-loss') + '" data-loss-index="' + i +
       '" aria-pressed="' + (stage.id === objectiveSelected) + '" style="--loss-color:' + objectiveColors[i % objectiveColors.length] +
       '"><span class="stage-number">' + String(i + 1).padStart(2, '0') + '</span>' + objectiveArt(stage.id) +
-      '<strong>' + escapeHtml(stage.name) + '</strong><span class="objective-loss">' +
+      '<strong>' + escapeHtml(stage.name) + '</strong><small class="objective-method">' + escapeHtml(stage.method) + '</small><span class="objective-loss">' +
       (losses.length ? losses.map(term => escapeHtml(term.definition)).join(' + ') : 'N/A') +
-      '</span>' + (!losses.length ? '<small class="objective-method">No independent loss</small>' : '') + '</button>';
+      '</span></button>';
   }).join('');
   const details = selected ? terms.filter(term => selected.loss_ids.includes(term.id)) : [];
   byId("objectiveDetail").textContent = selected ? selected.name + ': ' + (details.length ? details.map(term =>
-    term.name + ' = ' + term.definition + '. Reference: ' + term.supervision + (Number.isFinite(term.value) ?
+    term.name + ' = ' + term.definition + '. Effective coefficient: ' + term.weight + '. Reference: ' + term.supervision + (Number.isFinite(term.value) ?
     '. Observed loss: ' + term.value.toPrecision(5) + '; weighted: ' + term.weighted_value.toPrecision(5) : '')).join('. ') : selected.note) : '';
   const connected = stages.map((stage, i) => stage.loss_ids.length ? i : -1).filter(i => i >= 0);
   const bus = document.querySelector('.objective-bus');
