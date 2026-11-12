@@ -107,6 +107,45 @@ class ReplacementEvaluationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Invalid recorded implementation"):
                 evaluation.code_audit(identity)
 
+    def test_best_checkpoint_must_match_earliest_validation_minimum(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            args, payload, report, report_path = self.fixture(Path(temporary))
+            args.checkpoint = args.checkpoint.with_name("best.pt")
+            payload["progress"].update(steps=4, epoch=2, position=0, best_epoch=2, best_value=.7, best_loss=.7)
+            report.update(steps=4, selection={"metric": "classification_loss", "best_epoch": 2, "best_value": .7},
+                          history=[{"epoch": 1, "validation": {"classification_loss": .5}},
+                                   {"epoch": 2, "validation": {"classification_loss": .7}}],
+                          best_validation={"classification_loss": .7})
+            with self.assertRaisesRegex(ValueError, "earliest validation minimum"):
+                evaluation.recorded_arguments(args, payload, report, report_path)
+            report["history"][0]["validation"]["classification_loss"] = .7
+            with self.assertRaisesRegex(ValueError, "earliest validation minimum"):
+                evaluation.recorded_arguments(args, payload, report, report_path)
+            report["history"][0]["validation"]["classification_loss"] = .8
+            evaluation.recorded_arguments(args, payload, report, report_path)
+            report["best_validation"]["classification_loss"] = .6
+            with self.assertRaisesRegex(ValueError, "earliest validation minimum"):
+                evaluation.recorded_arguments(args, payload, report, report_path)
+
+    def test_pretrained_host_requires_matching_original_fold_and_positive_updates(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            args, payload, report, report_path = self.fixture(Path(temporary))
+            payload["identity"]["host_hash"] = "a" * 64
+            evidence = {"checkpoint_sha256": "a" * 64, "dataset": "abide", "fold": 1,
+                        "method": "original", "updates": 2}
+            report["audit"]["host_training_evidence"] = evidence
+            evaluation.recorded_arguments(args, payload, report, report_path)
+            changes = ({"dataset": "adhd", "fold": 5}, {"method": "synthstrip"}, {"updates": 0},
+                       {"updates": True}, {"fold": True}, {"split_id": "site"})
+            for change in changes:
+                with self.subTest(change=change), self.assertRaisesRegex(ValueError, "Original host provenance"):
+                    report["audit"]["host_training_evidence"] = {**evidence, **change}
+                    evaluation.recorded_arguments(args, payload, report, report_path)
+            report["audit"]["host_training_evidence"] = {key: value for key, value in evidence.items() if key != "updates"}
+            report["audit"]["host_training_evidence"]["optimizer_steps"] = 2
+            with self.assertRaisesRegex(ValueError, "Original host provenance"):
+                evaluation.recorded_arguments(args, payload, report, report_path)
+
     def test_exact_connections_adapter_state_and_frozen_evaluation_are_reconstructed(self):
         with tempfile.TemporaryDirectory() as temporary:
             args, payload, report, report_path = self.fixture(Path(temporary))

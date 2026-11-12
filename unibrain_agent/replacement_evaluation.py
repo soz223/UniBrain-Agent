@@ -140,6 +140,24 @@ def recorded_arguments(args, payload, report, report_path):
                 or progress.get("best_epoch") is None or progress.get("epoch") != progress.get("best_epoch")
                 or progress.get("position") != 0):
             raise ValueError("Best checkpoint disagrees with validation selection")
+        history = report.get("history")
+        if selection not in {"classification_loss", "reference_loss"} or chosen.get("metric") != selection:
+            raise ValueError("Best checkpoint requires its declared validation metric")
+        if not isinstance(history, list) or not history:
+            raise ValueError("Best checkpoint requires validation history")
+        epochs, values = [], []
+        for row in history:
+            epoch, value = row.get("epoch"), row.get("validation", {}).get(selection)
+            if type(epoch) is not int or epoch < 1 or type(value) not in (int, float) or not math.isfinite(value):
+                raise ValueError("Invalid validation selection history")
+            epochs.append(epoch)
+            values.append(value)
+        if epochs != sorted(set(epochs)):
+            raise ValueError("Validation epochs must be unique and ordered")
+        selected = history[min(range(len(values)), key=values.__getitem__)]
+        if (selected["epoch"] != chosen["best_epoch"] or selected["validation"][selection] != chosen["best_value"]
+                or not same_value(report.get("best_validation"), selected["validation"])):
+            raise ValueError("Best checkpoint is not the earliest validation minimum")
     for name in ("dataset", "fold", "split_id"):
         expected = getattr(args, name)
         if expected is not None and not same_value(expected, identity[name]):
@@ -187,7 +205,10 @@ def recorded_arguments(args, payload, report, report_path):
             raise ValueError("Initialization provenance belongs to a different fold")
     if identity.get("host_hash"):
         evidence = report.get("audit", {}).get("host_training_evidence") or {}
-        if evidence.get("checkpoint_sha256") != identity["host_hash"]:
+        if (evidence.get("checkpoint_sha256") != identity["host_hash"] or evidence.get("method") != "original"
+                or evidence.get("dataset") != identity["dataset"] or type(evidence.get("fold")) is not int
+                or evidence["fold"] != identity["fold"] or evidence.get("split_id") is not None
+                or type(evidence.get("updates")) is not int or evidence["updates"] < 1):
             raise ValueError("Original host provenance does not match the checkpoint identity")
     return restored, bindings
 
