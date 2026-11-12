@@ -49,7 +49,14 @@ def trajectory(report):
     trend = "insufficient_observations"
     if len(values) >= 3:
         trend = "decreased" if values[-1] < values[0] else "did_not_decrease"
-    return {"validation_reference_loss": values, "observed_trend": trend,
+    components = {}
+    for key in ("extraction_loss", "registration_loss", "segmentation_loss", "classification_loss"):
+        series = [row["validation"].get(key) for row in report.get("history", [])]
+        if series and all(value is not None for value in series):
+            if any(type(value) not in (int, float) or not math.isfinite(value) for value in series):
+                raise ValueError("Validation component contains nonfinite measurements")
+            components[key] = series
+    return {"validation_reference_loss": values, "validation_components": components, "observed_trend": trend,
             "boundary": "A small fixed validation probe is not evidence of cohort convergence or improved generalization"}
 
 

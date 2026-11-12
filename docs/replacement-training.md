@@ -177,6 +177,16 @@ optimizers, replay, the preceding transition and the coordinator RNG. A CPU
 regression verifies identical next decisions and optimizer updates after saving
 and restoring that state.
 
+`scripts/check_policy_checkpoint.py` independently checks a completed resumable
+checkpoint against its training report. It reconstructs the coordinator with
+the declared seed, base weights and replay batch, verifies source identity and
+optimizer step counts, and requires every actor and critic to differ from its
+initial parameters. Run it in the training environment using `--checkpoint`,
+`--report` and a new `--output` path. The CPU report contains parameter deltas
+and file hashes, with no subject data or private paths. Positive counters with
+unchanged policy parameters fail this check. Parameter changes establish policy
+updates, not an improvement in task performance.
+
 `--verify-gradients` measures diagnosis gradients to every selected candidate,
 total objective gradients to candidate parameters, and the input image gradient
 on each training step. Connected joint configurations require finite nonzero

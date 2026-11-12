@@ -958,10 +958,149 @@
   "pending": [
     "Remaining strict full host cohort checks",
     "Short TaskForce policy learning trajectories",
-    "Actual provider generation to training cycles on both datasets",
     "Matched scientific comparisons",
     "Named external Agent systems",
     "Full research cycle dashboard action",
     "Full CUDA verification on Linux"
+  ],
+  "provider_cycles": [
+    {
+      "dataset": "abide",
+      "status": "complete",
+      "method": "brainnetcnn",
+      "actual_updates": {
+        "acceptance": 1,
+        "training": 2
+      },
+      "provider": {
+        "provider": "codex",
+        "model": "",
+        "model_source": "provider_default_unreported"
+      },
+      "report_sha256": "938b991d2f1dcffb3e322eef7e29f4f0f613ed4ecff9f30310666d3f4b90b5e7",
+      "adapter_sha256": "516a9b222bc207d11c46ae75e2ff114c638abb2f9b4f100692ee2a00a52827b8",
+      "adapter_used_in_training": true,
+      "parameters": 306306483,
+      "gradient_verification": {
+        "enabled": true,
+        "protocol_version": 2,
+        "verified_steps": 2,
+        "last_step": {
+          "protocol_version": 2,
+          "classification_to_candidates": {
+            "gnn_pred": {
+              "tensor_count": 18,
+              "observed_tensors": 18,
+              "nonzero_elements": 514690,
+              "finite": true,
+              "nonzero": true,
+              "l1": 280.21299045719206,
+              "required": true,
+              "expected_absent": false,
+              "reason": null
+            }
+          },
+          "classification_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 0.00423455610871315,
+            "required": true
+          },
+          "input_required": true,
+          "total_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 1.1303513050079346
+          },
+          "total_to_candidates": {
+            "gnn_pred": {
+              "tensor_count": 18,
+              "observed_tensors": 18,
+              "nonzero_elements": 514690,
+              "finite": true,
+              "nonzero": true,
+              "l1": 280.21299045719206
+            }
+          }
+        },
+        "diagnosis_reaches_all_candidates": true
+      },
+      "scope": "Actual provider selection, generated adapter evaluation and fresh joint training; tiny fold subset"
+    },
+    {
+      "dataset": "adhd",
+      "status": "complete",
+      "method": "brainnetcnn",
+      "actual_updates": {
+        "acceptance": 1,
+        "training": 2
+      },
+      "provider": {
+        "provider": "codex",
+        "model": "",
+        "model_source": "provider_default_unreported"
+      },
+      "report_sha256": "809979ef108ba1330baf570594f88594343588096ca58214664fd897b1f26a46",
+      "adapter_sha256": "516a9b222bc207d11c46ae75e2ff114c638abb2f9b4f100692ee2a00a52827b8",
+      "adapter_used_in_training": true,
+      "parameters": 306306483,
+      "gradient_verification": {
+        "enabled": true,
+        "protocol_version": 2,
+        "verified_steps": 2,
+        "last_step": {
+          "protocol_version": 2,
+          "classification_to_candidates": {
+            "gnn_pred": {
+              "tensor_count": 18,
+              "observed_tensors": 18,
+              "nonzero_elements": 514690,
+              "finite": true,
+              "nonzero": true,
+              "l1": 280.14264675602317,
+              "required": true,
+              "expected_absent": false,
+              "reason": null
+            }
+          },
+          "classification_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 0.004192844964563847,
+            "required": true
+          },
+          "input_required": true,
+          "total_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 1.3104326725006104
+          },
+          "total_to_candidates": {
+            "gnn_pred": {
+              "tensor_count": 18,
+              "observed_tensors": 18,
+              "nonzero_elements": 514690,
+              "finite": true,
+              "nonzero": true,
+              "l1": 280.14264675602317
+            }
+          }
+        },
+        "diagnosis_reaches_all_candidates": true
+      },
+      "scope": "Actual provider selection, generated adapter evaluation and fresh joint training; tiny fold subset"
+    }
   ]
 }

@@ -244,6 +244,11 @@ def metrics_from_cases(cases):
               "specificity": float(tn / (tn + fp)) if tn + fp else None}
     for key in ("brain_dice", "tissue_dice", "atlas_dice", "registration_dice", "reference_loss"):
         result[key] = float(np.mean([row[key] for row in cases]))
+    for key in ("extraction_loss", "registration_loss", "segmentation_loss", "classification_loss"):
+        if all(key in row for row in cases):
+            result[key] = float(np.mean([row[key] for row in cases]))
+        elif any(key in row for row in cases):
+            raise ValueError("Incomplete validation component measurements: " + key)
     return result
 
 
@@ -299,12 +304,15 @@ def evaluate(model, dataset, templates, limit=None, output_dir=None):
             registered = F.grid_sample(tissue, grid, mode="nearest", align_corners=True)
             losses = original_losses(output, brain, label)
             tissue_logits = output[5][0] if isinstance(output[5], list) else output[5]
-            reference = losses["extraction"] + losses["segmentation"] + losses["classification"] + .1 * GCC()(output[2][-1], templates[0])
+            registration_loss = GCC()(output[2][-1], templates[0])
+            reference = losses["extraction"] + losses["segmentation"] + losses["classification"] + .1 * registration_loss
             case = {"id": str(row[0]), "label": int(label.item()), "prediction": int(output[-1].argmax(1).item()),
                     "probability": float(output[-1].softmax(1)[0, 1]), "reference_loss": float(reference),
                     "brain_dice": float(f1_loss(mask, brain)), "tissue_dice": float(compute_label_dice_v2(tissue_logits.argmax(1), tissue, "gm")),
                     "atlas_dice": float(compute_label_dice_v2(output[8], atlas, "aal")),
                     "registration_dice": float(compute_label_dice_v2(templates[1], registered, "gm"))}
+            case.update({name + "_loss": float(loss) for name, loss in losses.items()})
+            case["registration_loss"] = float(registration_loss)
             if any(not torch.isfinite(torch.tensor(v)) for k, v in case.items() if k != "id"):
                 raise ValueError("Nonfinite evaluation metrics")
             if output_dir is not None:
