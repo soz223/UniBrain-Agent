@@ -16,16 +16,17 @@ their original scope; short runs do not establish full cohort performance.
 | Experiment | Program | Measured acceptance and remaining boundary |
 | :--- | :--- | :--- |
 | Original baseline | `scripts/run_upstream.py` | Existing upstream reproduction; source pinned and unchanged |
-| Matched full model training | `scripts/train_replacement.py` | Full SynthStrip host completed one update, validation, test and checkpoint saving on a distinct tiny sample split |
-| Full registration replacements | `full_candidates.py` and the comparison trainer | Full VoxelMorph host passed one CUDA joint update, core and spatial agreement, all 24 candidate parameter gradients and diagnosis gradients into registration; full three-level LapIRN passed CPU core forward, gradients and an update |
+| Matched full model training | `scripts/train_replacement.py` | All 14 candidate integrations completed two joint updates in the full host on each dataset subset; checkpoints, intended gradient paths and parameter changes were checked |
+| Full registration replacements | `full_candidates.py` and the comparison trainer | Full VoxelMorph and three-level LapIRN passed two full host GPU updates on both dataset subsets, including required diagnosis gradients |
 | Planned tissue replacement | `scripts/prepare_nnunet.py` and the comparison trainer | Actual train-only plans and full host GPU checks passed on both dataset subsets; the auxiliary tissue head receives tissue supervision, not diagnosis gradients |
 | Agent generation and repair | `scripts/run_full_replacement.py` and the integration benchmark | Actual earlier SynthStrip generation and repair trace retained; controlled injected fault is labeled explicitly |
-| Additional full candidates | `full_preprocessing.py`, `full_anatomy_candidates.py`, `full_graph_candidates.py` | Ten added candidates passed native-size CPU checks; the dataset-specific full host GPU matrix records passed, failed and pending executions separately |
+| Additional full candidates | `full_preprocessing.py`, `full_anatomy_candidates.py`, `full_graph_candidates.py` | Ten added candidates passed native-size CPU checks and full host GPU checks on both dataset subsets; earlier failures remain in the execution history |
 | Selection to training cycle | `scripts/run_research_cycle.py` | Actual Codex selection, generated BrainNetCNN adapter, independent acceptance and two joint updates completed on both dataset subsets; the accepted code hash was preserved |
 | Training coordination | `taskforce.py` and the comparison trainer | Eight full host updates on each dataset; all four actors and four critics changed parameters with four optimizer steps each; overall validation loss did not decrease |
 | Gradient path controls | `full_connectivity.py` and trainer options | Soft label transfer, straight through and Gumbel strategies, selected cuts, mask/graph/sampling undo controls; CPU gradient tests |
 | Independent versus joint training | Comparison trainer settings | Explicit weight provenance, frozen parameters and buffers, standalone training followed by host training, joint training; completed cohort comparison remains pending |
-| Two module composition | `scripts/run_composition.py` | Actual full trained extraction checkpoint reconstructed on CPU; 256 state tensors retained and 26 new VoxelMorph tensors added; GPU composition remains pending |
+| Two module composition | `scripts/run_composition.py` | Simultaneous and sequential SynthStrip plus VoxelMorph replacement passed on both dataset subsets; both modules updated twice, with prior training and state transfer recorded separately |
+| Saved pipeline inference | `scripts/evaluate_replacement.py` | ABIDE and ADHD BrainNetCNN checkpoints were reconstructed and evaluated on their two-subject validation subsets with zero optimizer updates and strict state loading |
 | Site holdout | `scripts/prepare_site_split.py` | Subject-exact CSV site metadata, isolated export, train and validation stratification, template provenance; actual site metadata must be supplied |
 | Repetitions and long budgets | Experiment suite and comparison trainer | Seeds, folds, epoch caps, early stopping, atomic checkpoint and RNG resume; no full batch launches implicitly |
 | Intermediate quality | Trainer plus `scripts/evaluate_masks.py` | Dice, registration alignment, HD95 and ASSD; automatic reference labels and explicit physical or voxel units |
@@ -42,6 +43,11 @@ component checks, full host GPU checks and actual provider trials have distinct
 records. The full host matrix uses two training and two validation subjects per
 dataset from the preserved first fold. It does not use reduced architectures.
 Its subjects and automatic reference labels are not a full cohort experiment.
+Six earlier failures remain recorded. Corrected executions used new output
+directories. A source-bound initialization check distinguishes the first zero
+extraction gradient from a detached path and requires measured recovery after
+one real update. The model initialization and loss were not changed for that
+check. Repeated checks do not increase the 28-cell method coverage.
 
 The new preprocessing candidates are RED-WGAN, DeepN4, deepNormalize and the
 HarmonizingFlows harmonizer component. Anatomy candidates add complete ERNet
@@ -72,6 +78,9 @@ Its older custom stage editor remains explicitly labeled as a compact prototype.
 Consequently, the repository must not yet be described as a complete execution
 of every paper baseline. Neither a planned row nor a configured command proves
 trainability, method fidelity or a performance advantage.
+The core acceptance checks are complete. Full cohort comparisons, site results
+and external system integrations remain separate work. The existing baseline
+service was not restarted or upgraded during these local checks.
 
 ## Protocol boundaries
 
