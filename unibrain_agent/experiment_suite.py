@@ -4,6 +4,7 @@ import csv
 import hashlib
 import json
 import math
+import os
 import re
 import shutil
 import statistics
@@ -50,7 +51,7 @@ def example_config():
             "datasets": {name: {"folds": {str(f): "" for f in range(1, 6)}, "sites": {}} for name in ("abide", "adhd")},
             "seeds": [17, 29, 43], "repetitions": 3, "epochs": 20, "long_epochs": 1000, "pretrain_epochs": 20,
             "gpu": 0, "adapters": {}, "weights": {}, "hosts": {}, "plans": {}, "sequential_runs": {},
-            "integration_configs": {}, "case_study_run": "", "executors": {}}
+            "integration_configs": {}, "case_study_run": "", "site_initialization": "random", "executors": {}}
 
 
 def load_config(path):
@@ -132,6 +133,17 @@ def data_path(config, job):
     return resolve(config, collection.get(str(job["fold"])))
 
 
+def full_fold_audit(config, job, data_hashes=None):
+    from .cohort_provenance import validate_cohort
+    return validate_cohort(data_path(config, job), job["dataset"], job["fold"], data_hashes,
+                           required_scope="full_fold", allow_missing=False)
+
+
+def site_audit(config, job, data_hashes=None):
+    from .cohort_provenance import validate_site
+    return validate_site(data_path(config, job), job["dataset"], str(job["fold"]), data_hashes)
+
+
 def executor_for(config, job):
     executors = config.get("executors", {})
     for key in (job["id"], f"{job['group']}:{job['method']}:{job['variant']}", f"{job['group']}:{job['variant']}"):
@@ -175,6 +187,10 @@ def integration_config(config, job):
     cases = value.get("cases", [])
     if len(cases) != 1 or cases[0].get("id") != job["method"] or len(value.get("providers", [])) != 1:
         raise ValueError("Each suite integration config must specify exactly its one case and one provider")
+    provider = value["providers"][0].get("provider")
+    expected = {"codex": "codex", "codex_checks": "codex", "claude": "claude", "claude_checks": "claude", "mle_star": "mle_star"}.get(job["variant"])
+    if expected and provider != expected:
+        raise ValueError("Named agent baseline does not match the configured provider")
     for field in ("source_files", "required_files"):
         cases[0][field] = [str((path.parent / p).resolve()) for p in cases[0].get(field, [])]
     evaluator = cases[0].get("evaluator", {})
@@ -183,6 +199,38 @@ def integration_config(config, job):
     evaluator["command"] = [str((path.parent / arg).resolve()) if (path.parent / arg).exists() else arg for arg in command]
     value.update(variants=[BENCHMARK_VARIANTS[job["variant"]]], seeds=[job["seed"]], repetitions=1)
     return value
+
+
+def import_integration_index(config_path, index_path, variants, apply=False):
+    config_path, index_path = Path(config_path).resolve(), Path(index_path).resolve()
+    config = load_config(config_path)
+    if not variants or any(variant not in AGENT_VARIANTS for variant in variants) or len(set(variants)) != len(variants):
+        raise ValueError("Choose unique explicit suite integration variants")
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    mapping = {}
+    for method, filename in index.get("configs", {}).items():
+        if method not in METHODS:
+            raise ValueError("Generated index contains an unknown candidate")
+        path = (index_path.parent / filename).resolve()
+        try:
+            relative = os.path.relpath(path, config_path.parent)
+        except ValueError:
+            relative = str(path)
+        for variant in variants:
+            key = method + ":" + variant
+            previous = config.get("integration_configs", {}).get(key)
+            if previous and resolve(config, previous) != path:
+                raise ValueError("Import would overwrite an existing benchmark mapping: " + key)
+            candidate = {**config, "integration_configs": {**config.get("integration_configs", {}), key: relative}}
+            integration_config(candidate, {"method": method, "variant": variant, "seed": config["seeds"][0]})
+            mapping[key] = relative
+    if not mapping:
+        raise ValueError("Generated index has no benchmark configurations")
+    if apply:
+        config.setdefault("integration_configs", {}).update(mapping)
+        save(config_path, {key: value for key, value in config.items() if not key.startswith("_")})
+    return {"applied": apply, "mappings": mapping, "methods": len(index["configs"]),
+            "scope": "Configuration linking only; no provider call, GPU check or training performed"}
 
 
 def is_composition(job):
@@ -254,10 +302,13 @@ def preflight(config, job):
         if not (ROOT / "scripts/run_composition.py").is_file():
             reasons.append("Full composition executable is not installed")
     elif job["group"] in {"training", "site", "long_budget", "ablation"}:
-        kind = "training"
+        kind = "site_training" if job["group"] == "site" else "training"
         if job["group"] == "site":
-            reasons.append("Site protocol needs an explicit executor; a site name is not a cross-validation fold")
-        supported = {"original", "completed_paths", "independent_official", "independent_finetuned", "joint",
+            if (job["method"], job["variant"]) not in {("original", "original"), ("synthstrip", "joint"), ("synthstrip", "independent_finetuned")}:
+                reasons.append("Site protocol requires prepared data and an original or SynthStrip comparison")
+            if config.get("site_initialization", "random") not in {"random", "official"}:
+                reasons.append("Site initialization must be random or official, shared across replacement comparisons")
+        supported = {"original", "stagewise", "completed_paths", "independent_official", "independent_finetuned", "joint",
                      "cut_extraction", "cut_registration", "cut_parcellation", "cut_all", "undo_nearest",
                      "undo_graph", "undo_mask", "straight_through", "gumbel_softmax",
                      "new_only", "host_only", "random_initialization", "loss_0.1", "loss_10"}
@@ -270,6 +321,11 @@ def preflight(config, job):
             reasons.append("Pinned original source is not configured")
         if data is None or any(not (data / f"adhd_{split}_sample.npy").is_file() for split in ("train", "val", "test")):
             reasons.append("Prepared, preserved train/val/test fold is not configured")
+        else:
+            try:
+                (site_audit if job["group"] == "site" else full_fold_audit)(config, job)
+            except (ValueError, KeyError, OSError, TypeError) as error:
+                reasons.append(("Site provenance: " if job["group"] == "site" else "Full fold provenance: ") + str(error))
         if job["method"] == "synthstrip":
             adapter = resolve(config, config.get("adapters", {}).get(job["method"]))
             if adapter is None or not adapter.is_file():
@@ -278,12 +334,17 @@ def preflight(config, job):
             plans = resolve(config, config.get("plans", {}).get("nnunet"))
             if plans is None or not plans.is_file():
                 reasons.append("A real nnU Net plans file is required")
-        if job["method"] != "original" and job["variant"] != "random_initialization":
+            elif not (plans.parent / "nnUNetPlans.provenance.json").is_file():
+                reasons.append("nnU Net plans require the training-fold provenance sidecar from prepare_nnunet.py")
+        needs_weights = job["group"] != "site" or config.get("site_initialization", "random") == "official"
+        if job["method"] != "original" and job["variant"] != "random_initialization" and needs_weights:
             try:
-                initial_weights(config, job)
+                _, metadata = initial_weights(config, job)
+                if job["group"] == "site" and metadata["provenance"] != "official":
+                    raise ValueError("Site initialization cannot use a numeric-fold checkpoint")
             except ValueError as error:
                 reasons.append(str(error))
-        if job["method"] in {"voxelmorph", "lapirn"}:
+        if job["method"] in {"voxelmorph", "lapirn"} or job["variant"] == "stagewise":
             try:
                 host_weights(config, job)
             except ValueError as error:
@@ -337,19 +398,21 @@ def command_for(config, job, folder, smoke_steps=None):
             command += ["--previous-checkpoint", str(checkpoint), "--previous-report", str(report), "--previous-sha256", expected]
         return command
     variant = job["variant"]
-    setting = ("original_completed" if variant == "completed_paths" else variant
+    setting = ("original_frozen_stages" if variant == "stagewise" else "original_completed" if variant == "completed_paths" else variant
                if variant in {"original", "joint", "independent_official", "independent_finetuned"} else "joint")
-    command = [python, str(ROOT / "scripts/train_replacement.py"), "--source", str(source), "--data", str(data),
+    script = "run_site_experiment.py" if job["group"] == "site" else "train_replacement.py"
+    command = [python, str(ROOT / "scripts" / script), "--source", str(source), "--data", str(data),
                "--output", str(folder / "payload"), "--method", job["method"], "--setting", setting,
                "--epochs", str(job["epochs"]), "--seed", str(job["seed"]), "--gpu", str(config.get("gpu", 0)),
-               "--dataset", job["dataset"], "--fold", str(job["fold"])]
+               "--dataset", job["dataset"], "--split-id" if job["group"] == "site" else "--fold", str(job["fold"])]
     if setting == "independent_finetuned":
         command += ["--pretrain-epochs", str(config.get("pretrain_epochs", config["epochs"]))]
     if job["method"] == "synthstrip":
         command += ["--adapter", str(resolve(config, config["adapters"]["synthstrip"]))]
     if job["method"] == "nnunet":
         command += ["--plans", str(resolve(config, config["plans"]["nnunet"]))]
-    if job["method"] != "original" and variant != "random_initialization":
+    needs_weights = job["group"] != "site" or config.get("site_initialization", "random") == "official"
+    if job["method"] != "original" and variant != "random_initialization" and needs_weights:
         weights, metadata = initial_weights(config, job)
         provenance = metadata["provenance"]
         command += ["--initialization", provenance, "--weights", str(weights), "--weights-origin", metadata["origin"],
@@ -358,7 +421,7 @@ def command_for(config, job, folder, smoke_steps=None):
             command += ["--weights-dataset", metadata["dataset"], "--weights-fold", str(metadata["fold"])]
             if setting == "independent_official":
                 command[command.index("--setting") + 1] = "independent_pretrained"
-    if setting not in {"original"}:
+    if setting not in {"original", "original_frozen_stages"}:
         command += ["--connect-paths"]
     if variant.startswith("cut_"):
         command += ["--cut-boundary", variant.removeprefix("cut_")]
@@ -366,7 +429,7 @@ def command_for(config, job, folder, smoke_steps=None):
         command += ["--undo-repair", variant.removeprefix("undo_")]
     if variant in {"straight_through", "gumbel_softmax"}:
         command += ["--repair-strategy", variant]
-    if job["method"] in {"voxelmorph", "lapirn"}:
+    if job["method"] in {"voxelmorph", "lapirn"} or variant == "stagewise":
         host, metadata = host_weights(config, job)
         command += ["--host-checkpoint", str(host), "--host-sha256", metadata["sha256"], "--host-origin", metadata["origin"],
                     "--host-dataset", job["dataset"], "--host-fold", str(job["fold"])]
@@ -397,6 +460,9 @@ def run_job(config, job, smoke_steps=None, timeout=86400):
               "command": None, "started_unix": time.time()}
     save(folder / "execution.json", record)
     try:
+        if external is None and readiness["executor"] in {"training", "composition", "site_training"}:
+            audit = site_audit if job["group"] == "site" else full_fold_audit
+            record["cohort_provenance"] = audit(config, job)
         command = command_for(config, job, folder, smoke_steps)
         record["command"] = command
         save(folder / "execution.json", record)
@@ -426,16 +492,21 @@ def run_job(config, job, smoke_steps=None, timeout=86400):
             if job["group"] == "checker_fixtures":
                 outcome["status"] = "passed" if outcome.get("passed") is True else "failed"
         record["outcome"] = outcome
-        if external is None and readiness["executor"] in {"training", "composition"}:
+        if external is None and readiness["executor"] in {"training", "composition", "site_training"}:
             declared = outcome.get("config", {})
             expected_method = command[command.index("--method") + 1]
             expected_setting = command[command.index("--setting") + 1]
             if (outcome.get("method") != expected_method or outcome.get("setting") != expected_setting
                     or outcome.get("seed") != job["seed"] or declared.get("dataset") != job["dataset"]
-                    or declared.get("fold") != job["fold"]):
+                    or declared.get("fold") != (None if job["group"] == "site" else job["fold"])
+                    or job["group"] == "site" and declared.get("split_id") != str(job["fold"])):
                 raise ValueError("Training report does not match the planned method, setting, seed and fold")
             if smoke_steps and (type(outcome.get("steps")) is not int or not 1 <= outcome["steps"] <= smoke_steps):
                 raise ValueError("Training report does not prove the requested bounded updates")
+            cohort = audit(config, job, outcome.get("audit", {}).get("data_hashes", {}))
+            if cohort["manifest_sha256"] != record["cohort_provenance"]["manifest_sha256"]:
+                raise ValueError("Cohort manifest changed while the experiment was running")
+            record["cohort_provenance"] = cohort
         if job["group"] == "integration":
             runs = outcome.get("runs", [])
             if len(runs) != 1 or runs[0].get("seed") != job["seed"] or runs[0].get("case_id") != job["method"]:
@@ -492,7 +563,8 @@ def summarize(config):
         by_fold = key[0] in {"training", "ablation", "systems", "site", "long_budget", "composition"}
         values = [statistics.mean(values) for values in folds.values()] if by_fold else [value for _, value in observations]
         statistics_rows.append({"group": key[0], "dataset": key[1], "method": key[2], "variant": key[3], "metric": key[4],
-                                "n_runs": len(observations), "n_units": len(values), "unit": "fold_mean" if by_fold else "attempt",
+                                "n_runs": len(observations), "n_units": len(values),
+                                "unit": "site_mean" if key[0] == "site" else "fold_mean" if by_fold else "attempt",
                                 "mean": statistics.mean(values), "sample_sd": statistics.stdev(values) if len(values) > 1 else None})
     return {"config_hash": config["_hash"], "planned": len(rows), "complete": sum(row["status"] == "complete" for row in rows),
             "rows": rows, "metrics": statistics_rows,

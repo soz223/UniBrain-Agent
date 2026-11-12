@@ -2,6 +2,27 @@
 
 An agent controlled training workspace built on the original [UniBrain](https://github.com/Anonymous7852/UniBrain) implementation. Select modules, inspect generated pipeline code, verify gradients and watch the selected pipeline train.
 
+## Full model research programs
+
+The research CLI uses the original 305,812,248 parameter UniBrain host and
+native 96 cubed inputs. It provides 14 candidate component integrations,
+generated adapter checks and repair, joint training, explicit gradient path
+diagnostics and optional TaskForce inspired coordination. Each candidate's
+source architecture and required sMRI adaptations are recorded. This does not
+reproduce every upstream method's complete preprocessing or training recipe.
+
+Use the [research cycle](docs/research-cycle.md) for provider selection through
+checked code and joint training. Use the [cohort acceptance matrix](docs/acceptance-matrix.md)
+for bounded ABIDE and ADHD checks, and the [experiment suite](docs/experiment-suite.md)
+for full folds, controlled comparisons and result accounting. Implementation,
+measured acceptance and remaining work are listed in
+[research readiness](docs/research-readiness.md).
+
+The dashboard's custom composition action still uses its explicitly labeled
+compact profile. Launch the full research programs through their CLI; the
+new research cycle is not yet a dashboard action. The existing original
+baseline workflow remains independent.
+
 ## Start
 
 The default pipeline is the full original UniBrain CUDA workflow. Use Python 3.10 with a CUDA GPU. Run these commands from the repository root on Windows:

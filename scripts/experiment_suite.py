@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from unibrain_agent.experiment_suite import example_config, load_config, plan, preflight, run_job, save, write_summary
+from unibrain_agent.experiment_suite import AGENT_VARIANTS, example_config, import_integration_index, load_config, plan, preflight, run_job, save, write_summary
 
 
 def main():
@@ -14,6 +14,11 @@ def main():
     sub = parser.add_subparsers(dest="action", required=True)
     init = sub.add_parser("init")
     init.add_argument("path", type=Path)
+    imported = sub.add_parser("import-integration-index")
+    imported.add_argument("--config", type=Path, required=True)
+    imported.add_argument("--index", type=Path, required=True)
+    imported.add_argument("--variants", nargs="+", choices=AGENT_VARIANTS, required=True)
+    imported.add_argument("--apply", action="store_true")
     for name in ("plan", "run", "summarize"):
         command = sub.add_parser(name)
         command.add_argument("--config", type=Path, required=True)
@@ -27,6 +32,10 @@ def main():
         else:
             command.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.action == "import-integration-index":
+        result = import_integration_index(args.config, args.index, args.variants, args.apply)
+        print(json.dumps(result, indent=2))
+        return 0
     if args.action == "init":
         if args.path.exists():
             parser.error("Configuration already exists")

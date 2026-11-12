@@ -9,6 +9,8 @@ from torch import nn
 
 from unibrain_agent.replacement_training import configure_boundaries, configure_trainable, metrics_from_cases, parser, preflight
 from unibrain_agent.replacement_training import rng_state, restore_rng, train_mode, original_losses
+from unibrain_agent.replacement_training import checkpoint_state, check_checkpoint_space, trained_host_evidence, write_checkpoint
+from unibrain_agent.replacement_training import classification_gradients, classification_gradient_paths, total_candidate_gradients, atlas_class_indices
 from unibrain_agent.full_connectivity import connect_model
 
 
@@ -21,6 +23,151 @@ class Toy(nn.Module):
 
 
 class ReplacementTrainingTests(unittest.TestCase):
+    def test_stagewise_trains_classifier_only_and_detaches_stages(self):
+        model = Toy()
+        model.ext_net = nn.Sequential(nn.Linear(2, 2), nn.BatchNorm1d(2))
+        model.gnn_pred = nn.Linear(2, 2)
+        configure_trainable(model, "original", "original_frozen_stages", "all")
+        handles = configure_boundaries(model, "original", "original_frozen_stages", False)
+        train_mode(model)
+        image = torch.randn(4, 2, requires_grad=True)
+        before = model.ext_net[1].running_mean.clone()
+        features = model.seg_net(model.reg_net(model.ext_net(image)))
+        model.gnn_pred(features).square().sum().backward()
+        self.assertFalse(features.requires_grad)
+        self.assertIsNone(image.grad)
+        self.assertTrue(torch.equal(before, model.ext_net[1].running_mean))
+        self.assertTrue(all(parameter.grad is not None for parameter in model.gnn_pred.parameters()))
+        self.assertFalse(any(parameter.grad is not None for name, parameter in model.named_parameters() if not name.startswith("gnn_pred.")))
+        for handle in handles:
+            handle.remove()
+
+    def test_host_checkpoint_requires_trained_matching_fold(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "host.pt"
+            args = SimpleNamespace(host_report=None, host_checkpoint=path, host_sha256="expected", dataset="abide", fold=1)
+            payload = {"identity": {"dataset": "abide", "fold": 1, "method": "original"}, "progress": {"steps": 3}}
+            torch.save(payload, path)
+            self.assertEqual(trained_host_evidence(args)["updates"], 3)
+            args.fold = 2
+            with self.assertRaisesRegex(ValueError, "this dataset and fold"):
+                trained_host_evidence(args)
+            args.fold = 1
+            payload["progress"]["steps"] = 0
+            torch.save(payload, path)
+            with self.assertRaisesRegex(ValueError, "trained original"):
+                trained_host_evidence(args)
+
+    def test_evaluation_checkpoint_is_small_and_not_resumable(self):
+        model = nn.Linear(2, 2)
+        optimizer = torch.optim.Adam(model.parameters())
+        with patch("unibrain_agent.replacement_training.rng_state", return_value={"test": 1}):
+            best = checkpoint_state(model, optimizer, {"steps": 2}, {}, evaluation_only=True)
+            last = checkpoint_state(model, optimizer, {"steps": 2}, {})
+        self.assertEqual(best["checkpoint_kind"], "evaluation")
+        self.assertEqual(set(best), {"model", "identity", "progress", "checkpoint_kind"})
+        self.assertEqual(last["checkpoint_kind"], "resume")
+        self.assertIn("optimizer", last)
+        self.assertIn("coordination", last)
+        with patch("shutil.disk_usage", return_value=SimpleNamespace(free=1024)):
+            with self.assertRaisesRegex(OSError, "Existing results were retained"):
+                check_checkpoint_space(Path.cwd(), best)
+
+    def test_weights_checkpoint_payload_and_atomic_storage_reuse(self):
+        model = nn.Linear(2, 2)
+        optimizer = torch.optim.Adam(model.parameters())
+        identity = {"method": "original", "dataset": "abide", "fold": 1}
+        state = checkpoint_state(model, optimizer, {"steps": 2}, identity, weights_only=True)
+        self.assertEqual(state["checkpoint_kind"], "evaluation_weights_only")
+        self.assertEqual(set(state), {"model", "identity", "progress", "checkpoint_kind"})
+        with tempfile.TemporaryDirectory() as folder, patch("unibrain_agent.replacement_training.check_checkpoint_space"):
+            best, last = Path(folder) / "best.pt", Path(folder) / "last.pt"
+            self.assertEqual(write_checkpoint(best, state), "serialized")
+            snapshot = {"path": best, "progress": dict(state["progress"]), "identity": identity}
+            method = write_checkpoint(last, state, snapshot)
+            if method == "hardlink":
+                self.assertEqual(best.stat().st_ino, last.stat().st_ino)
+            saved = torch.load(best, weights_only=True)
+            with torch.no_grad():
+                model.weight.add_(1.)
+            newer = checkpoint_state(model, optimizer, {"steps": 3}, identity, weights_only=True)
+            with patch("os.link") as link:
+                self.assertEqual(write_checkpoint(last, newer, snapshot), "serialized")
+                link.assert_not_called()
+            torch.testing.assert_close(torch.load(best, weights_only=True)["model"]["weight"], saved["model"]["weight"])
+            self.assertFalse(torch.equal(torch.load(last, weights_only=True)["model"]["weight"], saved["model"]["weight"]))
+            self.assertEqual(list(Path(folder).glob("*.tmp")), [])
+
+    def test_weights_checkpoint_falls_back_when_links_are_unavailable(self):
+        model = nn.Linear(2, 2)
+        state = checkpoint_state(model, None, {"steps": 1}, {}, weights_only=True)
+        with tempfile.TemporaryDirectory() as folder, patch("unibrain_agent.replacement_training.check_checkpoint_space"):
+            best, last = Path(folder) / "best.pt", Path(folder) / "last.pt"
+            write_checkpoint(best, state)
+            snapshot = {"path": best, "progress": state["progress"], "identity": state["identity"]}
+            with patch("os.link", side_effect=OSError("Unsupported filesystem")):
+                self.assertEqual(write_checkpoint(last, state, snapshot), "serialized")
+            self.assertTrue(best.is_file() and last.is_file())
+            self.assertEqual(torch.load(last, weights_only=True)["checkpoint_kind"], "evaluation_weights_only")
+
+    def test_weights_mode_cannot_request_resume(self):
+        args = parser().parse_args(["--source", "source", "--data", "data", "--output", "output", "--method", "original",
+                                    "--setting", "original", "--checkpoint-mode", "weights", "--resume", "output/last.pt"])
+        with self.assertRaisesRegex(ValueError, "cannot resume"):
+            preflight(args)
+
+    def test_gradient_evidence_distinguishes_auxiliary_segmentation(self):
+        model = Toy()
+        image = torch.randn(2, 2)
+        cls = model.reg_net(model.ext_net(image)).square().mean()
+        seg = model.seg_net(image).square().mean()
+        record = classification_gradients(model, cls, "nnunet", True)["seg_net"]
+        self.assertTrue(record["expected_absent"])
+        self.assertFalse(record["required"])
+        self.assertFalse(record["nonzero"])
+        ext = classification_gradients(model, cls, "synthstrip", True)["ext_net"]
+        self.assertTrue(ext["required"])
+        self.assertTrue(ext["nonzero"])
+        (cls + seg).backward()
+        self.assertTrue(total_candidate_gradients(model, "nnunet")["seg_net"]["nonzero"])
+
+    def test_classifier_input_detach_cannot_hide_behind_auxiliary_gradient(self):
+        model = nn.Module()
+        model.gnn_pred = nn.Linear(2, 2)
+        model.candidate_modules = ("gnn_pred",)
+        image = torch.tensor([[.2, .4]], requires_grad=True)
+        classification = model.gnn_pred(image.detach()).square().mean()
+        with patch("torch.autograd.grad", wraps=torch.autograd.grad) as gradient:
+            evidence = classification_gradient_paths(model, classification, "bnt", True, image)
+            self.assertEqual(gradient.call_count, 1)
+        self.assertTrue(evidence["candidates"]["gnn_pred"]["nonzero"])
+        self.assertTrue(evidence["input"]["required"])
+        self.assertFalse(evidence["input"]["nonzero"])
+        (classification + image.square().mean()).backward()
+        self.assertGreater(image.grad.abs().sum(), 0)
+        connected = classification_gradient_paths(model, model.gnn_pred(image).square().mean(), "bnt", True, image)
+        self.assertTrue(connected["input"]["finite"] and connected["input"]["nonzero"])
+
+    def test_candidate_and_image_paths_share_one_reverse_pass(self):
+        model = Toy()
+        model.candidate_modules = ("ext_net", "reg_net")
+        image = torch.randn(3, 2, requires_grad=True)
+        loss = model.reg_net(model.ext_net(image)).square().mean()
+        with patch("torch.autograd.grad", wraps=torch.autograd.grad) as gradient:
+            evidence = classification_gradient_paths(model, loss, "voxelmorph", True, image)
+            self.assertEqual(gradient.call_count, 1)
+        self.assertTrue(evidence["input"]["nonzero"])
+        self.assertTrue(all(value["nonzero"] for value in evidence["candidates"].values()))
+
+    def test_atlas_mapping_rejects_fractional_and_unknown_labels(self):
+        template = torch.arange(117).float() * 2
+        target = torch.tensor([[[0., 4., 232.]]])
+        self.assertEqual(atlas_class_indices(target, template).tolist(), [[0, 2, 116]])
+        for invalid in (1., .5, 234.):
+            target[0, 0, 0] = invalid
+            with self.assertRaises(ValueError):
+                atlas_class_indices(target, template)
+
     def test_tissue_target_keeps_all_classes_when_warp_excludes_a_class(self):
         mask = torch.full((1, 1, 4, 4, 4), .5, requires_grad=True)
         logits = torch.randn(1, 4, 4, 4, 4, requires_grad=True)

@@ -2,10 +2,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
 from unibrain_agent.site_split import TEMPLATES, export_site, partitions
+from unibrain_agent.cohort_provenance import file_hash, validate_site
 
 
 class SiteSplitTests(unittest.TestCase):
@@ -63,8 +65,76 @@ class SiteSplitTests(unittest.TestCase):
             self.assertEqual(sum(part["count"] for part in report["splits"].values()), 6)
             saved = json.loads((root / "result/cohort.json").read_text(encoding="utf-8"))
             self.assertEqual(saved, report)
+            hashes = {name: file_hash(root / "result" / name) for name in
+                      [f"adhd_{split}_sample.npy" for split in ("train", "val", "test")] + list(TEMPLATES)}
+            checked = validate_site(root / "result", "abide", "held", hashes)
+            self.assertEqual(checked["status"], "verified")
+            self.assertIsNone(checked["fold"])
+            self.assertNotIn("subject0", json.dumps(checked))
+            from unibrain_agent.replacement_training import parser, preflight
+            args = parser().parse_args(["--source", str(root / "source"), "--data", str(root / "result"),
+                                        "--output", str(root / "run"), "--method", "original", "--setting", "original",
+                                        "--dataset", "abide", "--split-id", "held", "--preflight"])
+            with patch("unibrain_agent.native.verify_original", return_value={"scope": "CPU source fixture"}), \
+                    patch("unibrain_agent.sources.verify", return_value=[]):
+                audit = preflight(args)
+                self.assertEqual(audit["cohort"]["scope"], "site_holdout")
+                self.assertEqual(audit["data_hashes"], hashes)
+                self.assertEqual(audit["cohort"]["status"], "verified")
+            with self.assertRaisesRegex(ValueError, "declared dataset"):
+                validate_site(root / "result", "adhd", "held", hashes)
+            with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+                validate_site(root / "result", "abide", "held", {**hashes, TEMPLATES[0]: "0" * 64})
+            report["splits"]["train"]["master_indices"][0] = 0
+            (root / "result/site_split.json").write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "indices"):
+                validate_site(root / "result", "abide", "held", hashes)
+            (root / "result/site_split.json").write_text(json.dumps(saved), encoding="utf-8")
+            metadata = root / "result/source_site_metadata.csv"
+            metadata.write_text(metadata.read_text(encoding="utf-8").replace("subject0,held", "subject0,source"), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "metadata checksum"):
+                validate_site(root / "result", "abide", "held", hashes)
+            saved["sources"]["metadata_sha256"] = file_hash(metadata)
+            (root / "result/site_split.json").write_text(json.dumps(saved), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "disagrees with the source metadata"):
+                validate_site(root / "result", "abide", "held", hashes)
             with self.assertRaisesRegex(ValueError, "explicit origin"):
                 export_site(root / "master.npy", root / "metadata.csv", root, root / "bad", "held", " ", "external_public")
+
+    def test_site_training_refuses_fold_aliases_and_reused_fold_weights(self):
+        from unibrain_agent.replacement_training import parser
+        from unibrain_agent.site_training import validate_site_options
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "site_split.json").write_text("{}", encoding="utf-8")
+            base = ["--source", str(root), "--data", str(root), "--output", str(root / "output"),
+                    "--dataset", "abide", "--split-id", "held"]
+            for method, setting in (("original", "original"), ("synthstrip", "joint"), ("synthstrip", "independent_finetuned")):
+                args = parser().parse_args(base + ["--method", method, "--setting", setting])
+                validate_site_options(args)
+                args.fold = 1
+                with self.assertRaisesRegex(ValueError, "no numeric fold"):
+                    validate_site_options(args)
+                args.fold = None
+                args.initialization = "training_fold"
+                with self.assertRaisesRegex(ValueError, "numeric-fold checkpoints"):
+                    validate_site_options(args)
+            args = parser().parse_args(base)
+            args.split_id = None
+            with self.assertRaisesRegex(ValueError, "explicit split ID"):
+                validate_site_options(args)
+
+    def test_site_entry_point_dispatches_full_trainer_after_protocol_validation(self):
+        from unibrain_agent.site_training import main
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "site_split.json").write_text("{}", encoding="utf-8")
+            args = ["--source", str(root), "--data", str(root), "--output", str(root / "output"),
+                    "--dataset", "abide", "--split-id", "held", "--preflight"]
+            with patch("unibrain_agent.replacement_training.train", return_value={"status": "ready"}) as train:
+                self.assertEqual(main(args), 0)
+                self.assertEqual(train.call_args.args[0].split_id, "held")
+                self.assertIsNone(train.call_args.args[0].fold)
 
 
 if __name__ == "__main__":

@@ -10,21 +10,38 @@ from torch.nn import functional as F
 from .full_replacement import AdapterFailure
 
 
-METHODS = ("voxelmorph", "lapirn", "nnunet")
+PREPROCESSORS = ("redwgan", "deepn4", "deepnormalize", "harmonizing_flows")
+PARCELLATORS = ("fastsurfer", "nobrainer")
+CLASSIFIERS = ("brainnetcnn", "bnt")
+METHODS = ("voxelmorph", "lapirn", "nnunet", *PREPROCESSORS, *PARCELLATORS, *CLASSIFIERS, "fbnetgen", "ernet")
+
+
+def adapter_signatures(method):
+    if method == "ernet":
+        return {"adapt_extraction": ["core", "image", "if_train"], "adapt_registration": ["core", "fixed", "moving"]}
+    if method in CLASSIFIERS:
+        return {"adapt": ["core", "graph", "features"]}
+    if method == "fbnetgen":
+        return {"adapt": ["core", "features"]}
+    if method in ("voxelmorph", "lapirn"):
+        return {"adapt": ["core", "moving", "fixed"]}
+    return {"adapt": ["core", "image"]}
 
 
 def check_adapter(code, method):
     if method not in METHODS:
         raise ValueError("Unsupported full integration candidate: " + method)
     tree = ast.parse(code)
-    signature = ["core", "image"] if method == "nnunet" else ["core", "moving", "fixed"]
-    if len(tree.body) != 1 or not isinstance(tree.body[0], ast.FunctionDef):
-        raise ValueError("Exactly one adapt function is required")
-    fn = tree.body[0]
-    if (fn.name != "adapt" or [arg.arg for arg in fn.args.args] != signature or fn.decorator_list
-            or fn.args.defaults or fn.args.kwonlyargs or fn.args.posonlyargs or fn.args.vararg or fn.args.kwarg
-            or fn.returns or any(arg.annotation for arg in fn.args.args)):
-        raise ValueError("Required signature: adapt(" + ", ".join(signature) + ")")
+    signatures = adapter_signatures(method)
+    if (len(tree.body) != len(signatures) or any(not isinstance(fn, ast.FunctionDef) for fn in tree.body)
+            or {fn.name for fn in tree.body} != set(signatures)):
+        raise ValueError("Required adapter functions: " + ", ".join(signatures))
+    for fn in tree.body:
+        signature = signatures[fn.name]
+        if ([arg.arg for arg in fn.args.args] != signature or fn.decorator_list
+                or fn.args.defaults or fn.args.kwonlyargs or fn.args.posonlyargs or fn.args.vararg or fn.args.kwarg
+                or fn.returns or any(arg.annotation for arg in fn.args.args)):
+            raise ValueError("Required signature: " + fn.name + "(" + ", ".join(signature) + ")")
     forbidden = (ast.Import, ast.ImportFrom, ast.ClassDef, ast.Lambda, ast.With, ast.AsyncWith,
                  ast.For, ast.While, ast.Try, ast.Global, ast.Nonlocal, ast.Delete,
                  ast.ListComp, ast.DictComp, ast.SetComp, ast.GeneratorExp, ast.NamedExpr,
@@ -34,7 +51,7 @@ def check_adapter(code, method):
     tensor_methods = {"to", "float", "reshape", "view", "permute", "transpose", "contiguous",
                       "clone", "detach", "flip", "squeeze", "unsqueeze", "softmax"}
     for node in ast.walk(tree):
-        if isinstance(node, forbidden) or isinstance(node, ast.FunctionDef) and node is not fn:
+        if isinstance(node, forbidden) or isinstance(node, ast.FunctionDef) and node not in tree.body:
             raise ValueError("Unsupported adapter statement")
         if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
             raise ValueError("Private attributes are not allowed")
@@ -50,13 +67,22 @@ def check_adapter(code, method):
 
 
 class GeneratedCore(nn.Module):
-    def __init__(self, core, code, method):
+    def __init__(self, core, code, method, entrypoint="adapt"):
         super().__init__()
         tree = check_adapter(code, method)
         namespace = {"torch": torch, "F": F, "__builtins__": {}}
         exec(compile(tree, "generated_adapter.py", "exec"), namespace)
-        self.core, self.adapt, self.method = core, namespace["adapt"], method
+        self.core, self.adapt, self.method = core, namespace[entrypoint], method
+        self.entrypoint = entrypoint
         self.last_inputs = None
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            if name == "core":
+                raise
+            return getattr(super().__getattr__("core"), name)
 
     def forward(self, *inputs):
         self.last_inputs = inputs
@@ -95,6 +121,23 @@ def bind_adapter(model, method, adapter):
     return wrapper
 
 
+def bind_extended_adapters(model, method, adapter):
+    code = Path(adapter).read_text(encoding="utf-8")
+    check_adapter(code, method)
+    targets = tuple(model.candidate_modules)
+    if method == "ernet" and set(targets) != {"ext_net", "reg_net"}:
+        raise ValueError("ERNet requires both extraction and registration modules")
+    if method != "ernet" and len(targets) != 1:
+        raise ValueError("Expected exactly one declared candidate module")
+    wrappers = {}
+    for name in targets:
+        entrypoint = {"ext_net": "adapt_extraction", "reg_net": "adapt_registration"}.get(name, "adapt") if method == "ernet" else "adapt"
+        wrapper = GeneratedCore(getattr(model, name), code, method, entrypoint)
+        setattr(model, name, wrapper)
+        wrappers[name] = wrapper
+    return wrappers
+
+
 def tensor_leaves(value):
     if torch.is_tensor(value):
         return [value]
@@ -128,17 +171,21 @@ def core_probe(wrapper, inputs):
         if wrapper.method == "nnunet":
             spatial = contract and all(torch.equal(a.argmax(1), r.argmax(1))
                                        for a, r in zip(tensor_leaves(actual), tensor_leaves(reference)))
-        else:
+        elif wrapper.method in ("voxelmorph", "lapirn"):
             index = 2 if wrapper.method == "voxelmorph" else 0
             spatial = contract and torch.allclose(actual[index], reference[index], atol=1e-6, rtol=1e-5)
+        elif wrapper.method in PARCELLATORS:
+            spatial = contract and torch.equal(actual.argmax(1), reference.argmax(1))
+        else:
+            spatial = fidelity
     return {"contract": bool(contract), "fidelity": bool(fidelity), "spatial": bool(spatial),
             "maximum_core_error": error, "reference_shapes": [list(t.shape) for t in tensor_leaves(reference)],
             "scope": "Same pinned core, weights, native outputs and voxel coordinates; not pretrained clinical accuracy"}, reference
 
 
 def gradient_evidence(loss, parameters, inputs):
-    parameters = tuple(parameters)
-    inputs = tuple(value for value in inputs if value.requires_grad)
+    parameters = tuple(value for value in parameters if value.requires_grad)
+    inputs = tuple(value for value in inputs if torch.is_tensor(value) and value.requires_grad)
     if not loss.requires_grad:
         return {"passed": False, "parameter_norm": 0., "input_norm": 0., "connected_tensors": 0}
     grads = torch.autograd.grad(loss, (*parameters, *inputs), allow_unused=True, retain_graph=True)

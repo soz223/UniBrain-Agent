@@ -42,5 +42,6 @@
   "sequential_runs": {},
   "integration_configs": {},
   "case_study_run": "",
+  "site_initialization": "random",
   "executors": {}
 }

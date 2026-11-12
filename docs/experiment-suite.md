@@ -15,7 +15,7 @@ another dataset to the running dashboard.
 | Main training | ABIDE and ADHD, five preserved folds, explicit seeds, original and three settings for four replacements | `train_replacement.py`; prerequisites and supported interventions are checked |
 | Systems | Human or OpenClaw execution, NeuroPilot, NEXUS, NEURA, MLE STAR, coding agents and ours | Explicit external executor registrations |
 | Pipeline ablations | Gradient cuts, repair strategies, trained components, initialization, loss scaling and composition | Full training and composition commands; resource checks apply |
-| Site generalization | Named site splits from ABIDE | Predeclared split directories; no site assignments are guessed |
+| Site generalization | Named site splits from ABIDE | Native original and SynthStrip independent or joint training through `run_site_experiment.py` |
 | Longer training | One case and fold under original, independent and joint settings | Explicit `long_epochs` budget |
 | Composition | Simultaneous or sequential SynthStrip and VoxelMorph replacement | `run_composition.py`; sequential runs require a trained first-stage checkpoint and strict state transfer |
 | Case study | Observed failure and repair trace | `summarize_case_study.py` audits a retained full replacement run |
@@ -42,30 +42,69 @@ configuration or environment.
 
 `datasets.abide.folds.1` refers to an exported full fold containing the original
 train, validation and test NPY files and templates. Export with
-`scripts/export_cohort_fold.py --full` from the existing master and split indices.
+the complete master and existing split indices:
+
+```sh
+python scripts/export_cohort_fold.py COHORT_DIRECTORY NEW_FOLD_DIRECTORY --dataset abide --fold 1 --full
+```
+
+The exporter uses a memory-mapped master and writes one subject at a time.
+It preserves every original index in its original order, keeps copies of the
+original indices, and records full source and output checksums. It requires
+enough disk space for the exported cohort plus a 10 GiB reserve. Exported fold
+arrays occupy additional disk space; several folds can require substantial
+storage even though memory use is bounded. A new destination outside the
+source cohort is required. Both exporter scripts must be copied together when
+running the full exporter outside this repository.
+
+Set `datasets.abide.folds.1` to `NEW_FOLD_DIRECTORY`, and repeat only for the
+required dataset and fold. The suite requires a complete version 2 `full_fold`
+manifest and validates its membership, quantities and original index hashes.
+At result ingestion, the actual training data hashes must agree with the
+export manifest. No complete cohort was exported as part of the program tests.
 Do not replace full fold paths with smoke subsets. `datasets.abide.sites` maps
 explicit held out site names to separately prepared directories. Create each
 directory with the actual site export program:
 
 ```sh
-python scripts/prepare_site_split.py --master MASTER.npy --metadata SUBJECT_SITES.csv --templates TEMPLATE_DIR --held-out-site SITE_NAME --template-origin "Published atlas release" --template-scope external_public --output NEW_SITE_DIRECTORY
+python scripts/prepare_site_split.py --master MASTER.npy --metadata SUBJECT_SITES.csv --templates TEMPLATE_DIR --dataset abide --held-out-site SITE_NAME --template-origin "Published atlas release" --template-scope external_public --output NEW_SITE_DIRECTORY
 ```
 
 The metadata CSV needs exact `id` and `site` columns. Every subject from the
 declared site enters the test split. Subjects from the other sites are split
 by diagnosis into training and validation. The original five folds remain
-unchanged. The exported `cohort.json` records source hashes, indices, IDs, class
-counts and site counts; keep it private. Supplied templates and any fitted
+unchanged. The exported `site_split.json` records source hashes, indices, IDs,
+class counts and site counts. The source CSV, normalized membership table and
+split indices are retained for portable auditing; keep them private. Supplied templates and any fitted
 normalization must originate from external references or source training
 subjects. Declare `--template-origin` and `--template-scope external_public` or
 `source_training_only`. The latter must refer to the exported training subjects,
 excluding validation subjects. A declaration and file hashes do not establish
 this absence of information leakage.
 Review template provenance and freeze model selection before evaluating the
-held out site. The suite still requires a site training executor with the
-declared protocol; a site name is not converted into a cross-validation fold.
+held out site. The native runner verifies source metadata, subject membership,
+site isolation, complete test membership and all six input file hashes. Site
+experiments use `dataset=abide`, a named `split_id` and `fold=null`. The numeric
+fold exporter and its provenance checks are separate from this site protocol.
 
-All four replacement comparisons require matched initialization. A checkpoint
+```sh
+python scripts/run_site_experiment.py --source PINNED_SOURCE --data NEW_SITE_DIRECTORY --output NEW_RUN --dataset abide --split-id SITE_NAME --method original --setting original --epochs 20 --preflight
+python scripts/run_site_experiment.py --source PINNED_SOURCE --data NEW_SITE_DIRECTORY --output NEW_RUN --dataset abide --split-id SITE_NAME --method synthstrip --setting joint --adapter ACCEPTED_ADAPTER.py --connect-paths --epochs 20 --evaluate-test
+```
+
+`independent_finetuned` trains SynthStrip on source training subjects for the
+explicit `pretrain_epochs` budget, freezes it, and trains the remaining host.
+`joint` trains the candidate and host together. The suite uses matching random
+candidate initialization across these two settings by default. Set
+`site_initialization: official` to use the configured official SynthStrip
+checkpoint and its recorded provenance in both settings. Numeric fold
+checkpoints cannot initialize a site experiment. Additional standalone updates
+remain visible in the independent setting's budget. Explicit external
+executors remain available as overrides. Site metadata and training resources
+must be supplied before execution; CPU fixture tests do not establish site
+generalization performance.
+
+All four main replacement comparisons require matched initialization. A checkpoint
 must specify its source, hash and whether it is official or trained only on the
 current training fold. Example:
 
@@ -109,6 +148,12 @@ protocols in the paper. The composition executor is described in
 [Full two-stage composition](full-composition.md). CPU construction has been
 checked; its joint GPU training still requires a bounded runtime validation.
 
+The legacy `stagewise` job slot executes `original_frozen_stages`: fixed
+pretrained UniBrain stages followed by a trainable classifier. It requires a
+checkpoint from the same dataset and training fold. Label this exact control
+in the paper; it is not an ANTs or FSL pipeline, nor an independent retraining
+of every stage.
+
 ## Integration configurations
 
 `integration_configs["synthstrip:full"]` points to an integration benchmark JSON
@@ -117,6 +162,26 @@ seed and repetition to the planned job. Candidate source paths are resolved
 relative to that benchmark configuration. See the integration benchmark guide
 for evaluator contracts. An unavailable external agent needs an actual command
 executor rather than relabeling Codex as that system.
+
+Generate concrete configurations for all 14 candidates, then link them to
+explicit suite variants:
+
+```sh
+python scripts/generate_integration_config.py --source PINNED_SOURCE --data FOLD_DATA --output NEW_CONFIG_DIRECTORY --provider codex
+python scripts/experiment_suite.py import-integration-index --config PRIVATE_SUITE.json --index NEW_CONFIG_DIRECTORY/index.json --variants full codex codex_checks no_gradient
+python scripts/experiment_suite.py import-integration-index --config PRIVATE_SUITE.json --index NEW_CONFIG_DIRECTORY/index.json --variants full codex codex_checks no_gradient --apply
+```
+
+The first import previews mappings. The explicit `--apply` updates that private
+suite configuration, preserving relative paths where possible. An existing
+mapping to a different file is rejected. Named Codex and Claude baselines must
+use their matching providers. MLE STAR needs its actual executor and cannot be
+created by relabeling a Codex configuration. Generate separate indexes for
+other providers or model identities before selecting alternate LLM variants.
+Configuration import performs no provider calls or model training. Each job
+still passes its own capability and dependency checks; nnU Net requires its
+dataset-specific plans and provenance. Changing a suite configuration changes
+its digest, so use a new output root for a revised experimental protocol.
 
 ## Explicit execution
 
@@ -165,7 +230,9 @@ to metrics. Smoke results are never used as scientific results.
 
 Training metrics are first averaged across seeds within each fold. The reported
 descriptive mean and sample standard deviation then use fold means, not an
-independence assumption over fold by seed combinations. No significance test
+independence assumption over fold by seed combinations. Site experiments first
+average seeds within each named site and then report the unweighted mean and
+sample standard deviation across sites, with `unit=site_mean`. No significance test
 is performed automatically. Integration success proportions use actual
 attempts, retaining failed attempts and listing blocked attempts separately.
 The plan and CSV make incomplete denominators visible; final paper comparisons

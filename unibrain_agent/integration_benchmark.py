@@ -54,6 +54,8 @@ def case_blockers(case):
     errors = []
     if case.get("implementation") == "not_implemented":
         errors.append(case.get("blocked_reason", "A full generated adapter evaluator is not implemented"))
+    if case.get("source_context_error"):
+        errors.append(case["source_context_error"])
     if not case.get("source_files"):
         errors.append("Candidate and host source evidence is missing")
     for path in case.get("source_files", []):
@@ -63,7 +65,7 @@ def case_blockers(case):
         if not Path(path).is_file():
             errors.append("Missing evaluator dependency: " + Path(path).name)
     if case.get("method") == "nnunet" and not case.get("plans_supplied", False):
-        errors.append("nnU-Net requires a real dataset-specific native 96 cubed plans file")
+        errors.append("nnU-Net requires a real dataset-specific plans file for full-volume execution")
     if not case.get("interface"):
         errors.append("Stage interface contract is missing")
     evaluator = case.get("evaluator", {})
@@ -150,9 +152,15 @@ def source_context(case):
     parts, hashes = [], {}
     for index, name in enumerate(case["source_files"]):
         path = Path(name)
+        if path.suffix.lower() in {".npy", ".npz", ".nii", ".gz", ".dcm", ".csv", ".tsv", ".xlsx", ".parquet"}:
+            raise ValueError("Imaging and subject-table files cannot be included in provider source context")
         content = path.read_text(encoding="utf-8-sig")
         hashes[f"{index}:{path.name}"] = hashlib.sha256(content.encode()).hexdigest()
         parts.append("FILE " + path.name + "\n" + content)
+    if case.get("structured_evidence"):
+        content = json.dumps(case["structured_evidence"], sort_keys=True)
+        hashes["structured_evidence"] = hashlib.sha256(content.encode()).hexdigest()
+        parts.append("STRUCTURED ARCHITECTURE EVIDENCE\n" + content)
     return "\n\n".join(parts), hashes
 
 
@@ -179,6 +187,7 @@ def run_trial(case, provider, variant, seed, repetition, folder, max_calls=4):
         config = provider_settings().snapshot(provider["provider"])
         if provider.get("model"):
             config["model"] = provider["model"]
+        row["model"] = config.get("model", "")
         evidence, row["source_hashes"] = source_context(case)
     except (KeyError, ValueError, OSError) as error:
         row.update(status="blocked", error=str(error), seconds=time.perf_counter() - started)
@@ -193,6 +202,8 @@ def run_trial(case, provider, variant, seed, repetition, folder, max_calls=4):
         if variant not in {"general", "checks", "without_screening"}:
             prompt = "Judge whether this candidate fits the stage interface. Return fits and rationale.\n" + common
             result, usage = invoke(config, prompt, screen_schema, folder, "screen")
+            if not isinstance(result, dict) or type(result.get("fits")) is not bool or not isinstance(result.get("rationale"), str):
+                raise ValueError("Provider returned an invalid applicability decision")
             row["calls"].append({"role": "screen", "usage": usage, "result": result})
             row["applicability_correct"] = result["fits"] == case["expected_fit"]
             if not result["fits"]:
@@ -216,10 +227,13 @@ def run_trial(case, provider, variant, seed, repetition, folder, max_calls=4):
                 prompt += "\nPrevious adapter:\n" + previous + "\nChecker feedback:\n" + json.dumps(feedback)
             (trial / "prompt.txt").write_text(prompt, encoding="utf-8")
             result, usage = invoke(config, prompt, code_schema, trial, "proposal")
+            if (not isinstance(result, dict) or result.get("action") not in ("check", "submit")
+                    or not isinstance(result.get("code"), str) or not isinstance(result.get("rationale"), str)):
+                raise ValueError("Provider returned an invalid code proposal")
             code = result["code"]
             adapter = trial / "adapter.py"
             adapter.write_text(code, encoding="utf-8")
-            code_hash = hashlib.sha256(code.encode()).hexdigest()
+            code_hash = hashlib.sha256(adapter.read_bytes()).hexdigest()
             if code_hash not in cache:
                 cache[code_hash] = evaluate(case, adapter, trial, seed)
                 row["optimizer_updates"] += cache[code_hash].get("optimizer_updates", 0)

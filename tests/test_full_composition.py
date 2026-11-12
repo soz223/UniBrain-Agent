@@ -2,14 +2,47 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import torch
 from torch import nn
 
-from unibrain_agent.full_composition import fingerprint, migrate_state, verify_previous
+from unibrain_agent.full_composition import fingerprint, migrate_state, verify_previous, build_composed_model
+from unibrain_agent.replacement_training import classification_gradients
 
 
 class FullCompositionTests(unittest.TestCase):
+    def test_composition_verifies_extraction_and_registration_gradients(self):
+        class Registration(nn.Module):
+            def __init__(self, method, affine):
+                super().__init__()
+                self.affine = affine
+                self.core = nn.Linear(3, 3)
+
+            def forward(self, image):
+                return self.core(self.affine(image))
+
+        host, _ = self.models()
+        with tempfile.TemporaryDirectory() as directory:
+            adapter = Path(directory) / "adapter.py"
+            adapter.write_text("def adapt(core, image, if_train):\n    return core(image)\n")
+            with patch("unibrain_agent.full_model.build_full_model", return_value=(host, {}, {"unchanged_modules": {"reg_net": 1}})), \
+                    patch("unibrain_agent.full_candidates.FullRegistration", Registration), \
+                    patch("unibrain_agent.full_candidates.DenseHost", side_effect=lambda value: value), \
+                    patch("unibrain_agent.sources.verify", return_value=[]):
+                model, _, architecture = build_composed_model(Path(directory), "voxelmorph", adapter)
+        self.assertEqual(architecture["candidate_modules"], ["ext_net", "reg_net"])
+        image = torch.randn(2, 3)
+        extracted = model.ext_net(image)
+        loss = model.classifier(model.reg_net(extracted)).square().mean()
+        evidence = classification_gradients(model, loss, "voxelmorph", True)
+        self.assertEqual(set(evidence), {"ext_net", "reg_net"})
+        self.assertTrue(all(record["required"] and record["nonzero"] for record in evidence.values()))
+        detached_loss = model.classifier(model.reg_net(model.ext_net(image).detach())).square().mean()
+        detached = classification_gradients(model, detached_loss, "voxelmorph", True)
+        self.assertFalse(detached["ext_net"]["nonzero"])
+        self.assertTrue(detached["reg_net"]["nonzero"])
+
     def models(self):
         previous = nn.Module()
         previous.reg_net = nn.Linear(3, 3)

@@ -67,6 +67,46 @@ class GradientTeamTests(unittest.TestCase):
             self.assertEqual(saved["policy_updates"], team.updates)
             self.assertEqual(tuple(saved["tasks"]), TASKS)
 
+    def test_resume_replays_next_decision_and_optimizer_update(self):
+        parameter = torch.nn.Parameter(torch.tensor([.2, .3, .4, .5]))
+        team = GradientTeam(seed=71, batch_size=2)
+        for step in range(4):
+            losses = {name: (parameter[index] - .01 * step).square() for index, name in enumerate(TASKS)}
+            team.combine(losses, [parameter])
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "team.pt"
+            team.save(path)
+            restored = GradientTeam(seed=99, batch_size=2)
+            restored.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
+        losses = {name: (parameter[index] - .07).square() for index, name in enumerate(TASKS)}
+        expected, decision = team.combine(losses, [parameter])
+        actual, replayed = restored.combine(losses, [parameter])
+        self.assertEqual(decision, replayed)
+        torch.testing.assert_close(expected, actual, rtol=0, atol=0)
+        self.assertEqual(team.updates, restored.updates)
+        for group in ("actors", "critics", "target_actors", "target_critics"):
+            for original, resumed in zip(getattr(team, group), getattr(restored, group)):
+                for left, right in zip(original.parameters(), resumed.parameters()):
+                    torch.testing.assert_close(left, right, rtol=0, atol=0)
+
+    def test_frozen_loss_and_extended_probes(self):
+        model = torch.nn.Module()
+        model.preprocessor = torch.nn.Linear(3, 3)
+        model.par_net = torch.nn.Linear(3, 3)
+        model.graph_gen = torch.nn.Linear(3, 3)
+        model.par_net.requires_grad_(False)
+        probes, names = select_probes(model, modules=["preprocessor", "par_net", "graph_gen"])
+        self.assertEqual({name.split('.')[0] for name in names}, {"preprocessor", "graph_gen"})
+        losses = {name: sum(parameter.square().sum() for parameter in probes) for name in TASKS}
+        losses["segmentation"] = torch.tensor(1.)
+        _, gram, _ = GradientTeam().observe(losses, probes)
+        self.assertTrue(torch.equal(gram[2], torch.zeros(4)))
+
+    def test_initialization_preserves_global_rng(self):
+        state = torch.get_rng_state()
+        GradientTeam(seed=112)
+        self.assertTrue(torch.equal(state, torch.get_rng_state()))
+
 
 if __name__ == "__main__":
     unittest.main()

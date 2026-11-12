@@ -4,9 +4,10 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from unibrain_agent.experiment_suite import (
-    METHODS, TRAIN_METHODS, command_for, example_config, initial_weights, integration_config,
+    METHODS, TRAIN_METHODS, command_for, example_config, initial_weights, integration_config, import_integration_index,
     load_config, plan, preflight, run_job, save, summarize,
 )
 
@@ -49,6 +50,47 @@ class ExperimentSuiteTests(unittest.TestCase):
         jobs = [job for job in plan(self.load()) if job["group"] == "site"]
         self.assertTrue(jobs)
         self.assertTrue(all("/" not in job["id"] and "\\" not in job["id"] for job in jobs))
+
+    def test_site_commands_use_native_runner_and_explicit_split_identity(self):
+        from unibrain_agent.replacement_training import parser
+        self.config["datasets"]["abide"]["sites"] = {"site A": "site_data"}
+        self.config["source"] = "source"
+        self.config["adapters"]["synthstrip"] = "adapter.py"
+        (self.root / "source").mkdir()
+        (self.root / "source/model.py").write_text("# CPU protocol fixture", encoding="utf-8")
+        (self.root / "adapter.py").write_text("# CPU protocol fixture", encoding="utf-8")
+        (self.root / "site_data").mkdir()
+        for split in ("train", "val", "test"):
+            (self.root / f"site_data/adhd_{split}_sample.npy").touch()
+        config = self.load()
+        jobs = [job for job in plan(config) if job["group"] == "site"]
+        with patch("unibrain_agent.experiment_suite.site_audit", return_value={"scope": "site_holdout"}), \
+                patch("unibrain_agent.experiment_suite.full_fold_audit", side_effect=AssertionError("Site is not a fold")):
+            for job in jobs:
+                ready = preflight(config, job)
+                self.assertTrue(ready["ready"], ready)
+                self.assertEqual(ready["executor"], "site_training")
+                command = command_for(config, job, self.root / "out", smoke_steps=2)
+                self.assertTrue(command[1].endswith("run_site_experiment.py"))
+                args = parser().parse_args(command[2:])
+                self.assertEqual(args.split_id, "site A")
+                self.assertIsNone(args.fold)
+                self.assertEqual(args.initialization, "random")
+                self.assertEqual(args.max_steps, 2)
+        with patch("unibrain_agent.experiment_suite.site_audit", side_effect=ValueError("Held out site leaked")):
+            self.assertFalse(preflight(config, jobs[0])["ready"])
+
+    def test_site_aggregate_uses_sites_as_units(self):
+        self.config["datasets"]["abide"]["sites"] = {"site A": "a", "site B": "b"}
+        config = self.load()
+        jobs = [job for job in plan(config) if job["group"] == "site" and job["variant"] == "original"]
+        for job, metric in zip(jobs, (.2, .4, .8, 1.)):
+            save(self.root / "runs/paper" / job["id"] / "execution.json",
+                 {"status": "complete", "job": job, "config_hash": config["_hash"], "outcome": {"metrics": {"auc": metric}}})
+        row = summarize(config)["metrics"][0]
+        self.assertEqual(row["unit"], "site_mean")
+        self.assertEqual(row["n_units"], 2)
+        self.assertAlmostEqual(row["mean"], .6)
 
     def test_fold_pretraining_requires_matching_provenance(self):
         weights = self.root / "weights.pt"
@@ -139,13 +181,41 @@ class ExperimentSuiteTests(unittest.TestCase):
             self.config["weights"][method] = {**metadata, "provenance": "official"}
         config = self.load()
         jobs = [j for j in plan(config) if j["group"] in {"training", "ablation"} and j["fold"] == 1
-                and j["seed"] == 17 and j["dataset"] == "abide" and j["variant"] not in {"stagewise", "simultaneous", "sequential"}]
+                and j["seed"] == 17 and j["dataset"] == "abide" and j["variant"] not in {"simultaneous", "sequential"}]
         for job in jobs:
             command = command_for(config, job, self.root / "out", smoke_steps=2)
             args = parser().parse_args(command[2:])
             self.assertEqual(args.max_steps, 2)
             self.assertEqual(args.seed, job["seed"])
             self.assertEqual(args.method, job["method"])
+
+    def test_generated_index_links_all_candidates_without_agent_calls(self):
+        directory = self.root / "generated"
+        directory.mkdir()
+        for method in METHODS:
+            save(directory / (method + ".json"), {"version": 1, "cases": [{"id": method, "source_files": [], "required_files": ["data.npy"]}],
+                                                   "providers": [{"provider": "codex"}]})
+        save(directory / "index.json", {"configs": {method: method + ".json" for method in METHODS}})
+        preview = import_integration_index(self.path, directory / "index.json", ["full", "codex_checks"])
+        self.assertEqual(len(preview["mappings"]), 28)
+        self.assertFalse(load_config(self.path)["integration_configs"])
+        import_integration_index(self.path, directory / "index.json", ["full", "codex_checks"], apply=True)
+        imported = load_config(self.path)
+        value = integration_config(imported, {"method": "redwgan", "variant": "full", "seed": 17})
+        self.assertEqual(value["cases"][0]["required_files"], [str(directory / "data.npy")])
+        with self.assertRaisesRegex(ValueError, "Named agent baseline"):
+            import_integration_index(self.path, directory / "index.json", ["claude"])
+
+    def test_stagewise_uses_same_fold_host_and_explicit_frozen_setting(self):
+        checkpoint = self.root / "host.pt"
+        checkpoint.write_bytes(b"unit test")
+        self.config["hosts"]["abide:1"] = {"path": "host.pt", "origin": "Unit test", "sha256": hashlib.sha256(b"unit test").hexdigest()}
+        config = self.load()
+        job = next(job for job in plan(config) if job["group"] == "training" and job["variant"] == "stagewise")
+        command = command_for(config, job, self.root / "output", smoke_steps=2)
+        self.assertEqual(command[command.index("--setting") + 1], "original_frozen_stages")
+        self.assertEqual(command[command.index("--host-checkpoint") + 1], str(checkpoint))
+        self.assertNotIn("--connect-paths", command)
 
     def test_composition_commands_match_actual_cli(self):
         from unibrain_agent.replacement_training import parser

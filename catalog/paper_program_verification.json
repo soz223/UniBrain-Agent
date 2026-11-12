@@ -229,11 +229,13 @@
     }
   },
   "pending": [
-    "Full LapIRN and nnU-Net GPU acceptance",
-    "Actual matched cohort experiments",
-    "Full integration evaluators for the other ten candidates",
-    "Named external Agent system integrations and a declared classical stagewise pipeline",
-    "All new CUDA programs on Linux"
+    "Remaining strict full host cohort checks",
+    "Short TaskForce policy learning trajectories",
+    "Actual provider generation to training cycles on both datasets",
+    "Matched scientific comparisons",
+    "Named external Agent systems",
+    "Full research cycle dashboard action",
+    "Full CUDA verification on Linux"
   ],
   "baseline": {
     "service_read_only_check": "active",
@@ -355,5 +357,6 @@
       "pip_check_exit_code": 0,
       "pip_check": "No broken requirements found.\n"
     }
-  }
+  },
+  "extension_record": "full_program_acceptance_20261111.json"
 }

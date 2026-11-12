@@ -40,6 +40,10 @@
         {
           "path": "source/models/BNT/ptdec/dec.py",
           "sha256": "283e41edad502a4a4f366a596a649ce328d732391cdcfd52ff2716ca8549f5e1"
+        },
+        {
+          "path": "source/conf/model/bnt.yaml",
+          "sha256": "3e1751f2ee893522fc6f4ffd95246bce3e22eae6a50731d3cb93b3c401b5cbf7"
         }
       ]
     },

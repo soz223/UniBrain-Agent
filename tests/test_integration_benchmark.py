@@ -1,4 +1,5 @@
 import json
+import hashlib
 import subprocess
 import tempfile
 import unittest
@@ -71,12 +72,15 @@ class IntegrationBenchmarkTests(unittest.TestCase):
                 if role == "screen":
                     return {"fits": screen, "rationale": "Unit test"}, {"input_tokens": 1}
                 proposals.append(prompt)
-                return {"code": "# " + str(len(proposals)), "action": next(actions), "rationale": "Unit test"}, {"output_tokens": 1}
+                return {"code": "# " + str(len(proposals)) + "\n", "action": next(actions), "rationale": "Unit test"}, {"output_tokens": 1}
 
             with patch("unibrain_agent.providers.provider_settings", return_value=SimpleNamespace(snapshot=lambda _: {"provider": "codex"})), \
                     patch("unibrain_agent.providers.invoke", side_effect=invoke), \
                     patch("unibrain_agent.integration_benchmark.evaluate", side_effect=reports):
                 row = run_trial(case, {"provider": "codex"}, variant, 17, 0, root / "trial")
+            for index, call in enumerate((call for call in row["calls"] if call["role"] == "proposal"), 1):
+                artifact = root / "trial" / f"proposal_{index}" / "adapter.py"
+                self.assertEqual(call["adapter_sha256"], hashlib.sha256(artifact.read_bytes()).hexdigest())
             return row, proposals
 
     def test_general_has_no_checker_feedback_retry(self):

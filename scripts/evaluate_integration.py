@@ -58,7 +58,7 @@ def core_agreement(adapter, checkpoint, data, gpu, seed, device_checked=False):
 def evaluate(args):
     if args.method != "synthstrip":
         from unibrain_agent.candidate_integration import check_adapter
-        from unibrain_agent.candidate_integration_worker import validate
+        from unibrain_agent.candidate_integration_worker import mark_adapter_failure, validate
         report = {"status": "checking", "method": args.method, "seed": args.seed, "runs": False, "optimizer_updates": 0,
                   "checks": dict.fromkeys(("contract", "gradient", "spatial", "fidelity", "updates")), "diagnostic": {},
                   "scope": "Generated adapter in the original full host, native 96 cubed, one or two joint updates"}
@@ -70,9 +70,7 @@ def evaluate(args):
                 raise AdapterFailure(str(error)) from error
             validate(args, report)
         except AdapterFailure as error:
-            if not report["runs"]:
-                report["checks"]["contract"] = False
-            report.update(status="adapter_failed", error=str(error))
+            mark_adapter_failure(report, error)
         except Exception as error:
             report.update(status="infrastructure_failed", error=str(error))
         return report
@@ -103,6 +101,7 @@ def evaluate(args):
                                               "spatial": None, "fidelity": None,
                                               "updates": bool(updates) and all(all(u["changed_parameter_tensors"].values()) for u in updates)},
               "diagnostic": {"gradient": gradient, "updates": updates}, "executor": "in_process_full_worker",
+              "data": observed.get("data", {}),
               "evaluator_scope": "Full host trainability and spatial/core output agreement for SynthStrip extraction"}
     if observed["status"] not in {"passed", "adapter_failed"}:
         record.update(status="infrastructure_failed", error=observed.get("error", "Worker did not complete"))
@@ -135,7 +134,8 @@ def main():
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--steps", type=int, choices=(1, 2), default=2)
     parser.add_argument("--seed", type=int, default=17)
-    parser.add_argument("--method", choices=("synthstrip", "voxelmorph", "lapirn", "nnunet"), default="synthstrip")
+    from unibrain_agent.candidate_integration import METHODS
+    parser.add_argument("--method", choices=("synthstrip", *METHODS), default="synthstrip")
     parser.add_argument("--plans", type=Path)
     args = parser.parse_args()
     if args.output.exists():

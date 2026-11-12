@@ -125,6 +125,7 @@ def build_composed_model(source, registration, adapter, mode="simultaneous", reg
     original_modules = {name: module for name, module in host.named_children() if name != "reg_net"}
     host.reg_net = FullRegistration(registration, host.reg_net)
     model = DenseHost(host)
+    model.candidate_modules = ("ext_net", "reg_net")
     if registration_weights:
         state = torch.load(registration_weights, map_location="cpu", weights_only=True)
         model.reg_net.core.load_state_dict(state.get("model_state_dict", state), strict=True)
@@ -132,6 +133,7 @@ def build_composed_model(source, registration, adapter, mode="simultaneous", reg
     if any(getattr(model, name) is not module for name, module in original_modules.items()):
         raise ValueError("Composition unexpectedly replaced an unrelated host module")
     architecture.update(method="synthstrip+" + registration, composition_mode=mode,
+                        candidate_modules=list(model.candidate_modules),
                         parameters=sum(p.numel() for p in model.parameters()), compact=False,
                         input_shape=[96, 96, 96], registration_source=provenance, state_transfer=transfer,
                         previous_run=previous_evidence, adapter_sha256=fingerprint(adapter),

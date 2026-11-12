@@ -17,6 +17,8 @@ Measured software checks are recorded in
 | Full registration replacements | `full_candidates.py` and the comparison trainer | Full VoxelMorph host passed one CUDA joint update, core and spatial agreement, all 24 candidate parameter gradients and diagnosis gradients into registration; full three-level LapIRN passed CPU core forward, gradients and an update |
 | Planned tissue replacement | `scripts/prepare_nnunet.py` and the comparison trainer | Official planner ran on a training sample; its unchanged 64 by 96 by 96 patch plan produced a 16,548,560 parameter candidate that passed CPU forward, gradients and an update at full 96 cubed execution; full host GPU acceptance remains pending |
 | Agent generation and repair | `scripts/run_full_replacement.py` and the integration benchmark | Actual earlier SynthStrip generation and repair trace retained; controlled injected fault is labeled explicitly |
+| Additional full candidates | `full_preprocessing.py`, `full_anatomy_candidates.py`, `full_graph_candidates.py` | Ten added candidates passed CPU full-core forward, input/parameter gradient and optimizer-update checks at native 96 cubed volumes or 116-node graphs; their full-host GPU evaluations remain pending |
+| Selection to training cycle | `scripts/run_research_cycle.py` | Real provider and trainer calls are implemented; mocked CPU orchestration verifies accepted code hash/path reuse and separate update budgets; a real complete AI/GPU cycle for this new runner remains pending |
 | Gradient path controls | `full_connectivity.py` and trainer options | Soft label transfer, straight through and Gumbel strategies, selected cuts, mask/graph/sampling undo controls; CPU gradient tests |
 | Independent versus joint training | Comparison trainer settings | Explicit weight provenance, frozen parameters and buffers, standalone training followed by host training, joint training; completed cohort comparison remains pending |
 | Two module composition | `scripts/run_composition.py` | Actual full trained extraction checkpoint reconstructed on CPU; 256 state tensors retained and 26 new VoxelMorph tensors added; GPU composition remains pending |
@@ -26,20 +28,34 @@ Measured software checks are recorded in
 | Diagnosis comparisons | Trainer, suite summary and `scripts/compare_predictions.py` | Per subject test outputs; fold summaries and separate paired subject confidence intervals; smoke results excluded |
 | Case study | `scripts/summarize_case_study.py` | Reads actual attempts and verifies adapter/checkpoint hashes; no new generation or training |
 
-## Scope that is not implemented yet
+## Coverage and remaining validation
 
-The full paper plan includes 14 candidate methods. Full candidate construction
-and generated adapter evaluators currently cover SynthStrip, VoxelMorph,
-LapIRN and the supported nnU-Net plan.
-The other ten candidates still have the earlier compact implementations and do
-not yet have full architecture integration evaluators. A compact check cannot
-complete their full pipeline experiment slots.
+The full paper plan includes 14 candidate methods. Full candidate constructors,
+generated stage adapters, independent evaluator paths and configuration
+generation now cover all 14. nnU-Net requires a real compatible dataset plan.
+This code coverage is separate from execution evidence. The ten newly added
+candidates have native-size CPU component checks; none of those checks proves
+a completed full UniBrain GPU integration or a successful Agent trial.
+
+The new preprocessing candidates are RED-WGAN, DeepN4, deepNormalize and the
+HarmonizingFlows harmonizer component. Anatomy candidates add complete ERNet
+extraction/registration cores and the FastSurfer and Nobrainer backbones with
+explicit new 117-channel AAL heads. Graph candidates add the FBNetGen pairwise
+MLP, the declared third-party BrainNetCNN implementation and BNT with its
+original 100-node pool. Their sMRI adaptations and omitted upstream training
+recipes are recorded; they are not relabeled as complete official tools.
 
 Named external systems such as NEURA, NEXUS, NeuroPilot and MLE STAR need their
 actual task and data integrations. The external executor protocol is a command
 contract, not those implementations. The classical stagewise comparator also
 needs a declared executable pipeline. These jobs remain blocked until the real
 programs and method-specific interfaces are supplied and checked.
+
+Codex/Claude provider calls under the shared general, checking and workflow
+prompts are controlled prompting comparisons. They do not reproduce all tools
+or behavior of a general external Agent system. The new experiment suite,
+14-candidate evaluators and research-cycle runner are CLI programs. The current
+dashboard has not yet been connected to these new command paths.
 
 Consequently, the repository must not yet be described as a complete execution
 of every paper baseline. Neither a planned row nor a configured command proves
@@ -56,8 +72,10 @@ Dense replacements retain original affine prealignment. nnU-Net imports a
 dataset-specific architecture and uses the declared UniBrain objective; it does
 not reproduce the entire official training pipeline. Full path interventions
 are explicit changes to label sampling and graph weights. The original unused
-parcellation head remains unused unless a future experiment explicitly changes
-that design. Do not claim gradients through every instantiated parameter.
+parcellation head remains unused in the original protocol. The new learned
+parcellation variants explicitly combine predicted and transferred atlas
+probabilities and add their declared training objective. Do not extend that
+connection claim to the original model or every instantiated parameter.
 
 Tissue and AAL masks are automatic reference labels. Native physical geometry
 is absent from the structured NPY inputs. Unit grid coordinates support tensor
@@ -74,3 +92,14 @@ Use one or two updates for acceptance before scheduling a scientific job. A
 short check establishes execution and measured paths, not accuracy or the
 effectiveness of Agent decisions. Retain all failures and account for previous
 standalone or sequential training when comparing compute budgets.
+
+The comparison runner currently selects validation checkpoints using a reference
+loss that includes extraction BCE on the last thresholded mask. Brain Dice uses
+the product of all extraction masks. The original five stage extraction and
+single stage SynthStrip therefore contribute different mask objects to that
+selection loss. Hard mask BCE can dominate the other validation terms. This
+protocol is retained for execution checks; scientific comparisons need a
+prespecified common checkpoint selection rule before their results are reported.
+The nnU-Net tissue head receives its segmentation objective, while diagnosis
+does not consume its logits. Its report records the missing diagnosis gradient
+path explicitly instead of claiming that diagnosis trains every stage.

@@ -31,9 +31,13 @@ class ConnectedHost(nn.Module):
             self.add_module(name, module)
         self.cut, self.repair, self.undo = cut, repair, undo
         self.if_pred_aal = host.if_pred_aal
+        self.learned_parcellation = getattr(host, 'learned_parcellation', False)
+        self.candidate_modules = getattr(host, 'candidate_modules', ())
 
     def forward(self, ref, mov, ref_am, ref_aal, if_train):
         from model import feature_perturbation, edge_perturbation
+        if hasattr(self, 'preprocessor'):
+            mov = self.preprocessor(mov)
         extracted, masks = self.ext_net(mov, if_train)
         if self.undo == "mask":
             masks = [(mask >= .5).to(mask.dtype) for mask in masks]
@@ -58,6 +62,10 @@ class ConnectedHost(nn.Module):
         if len(values) != 117 or values[0] != 0:
             raise ValueError("AAL116 vocabulary and background are required")
         atlas = transfer(ref_aal, values, inverse, self.repair, if_train, self.undo == "nearest")
+        if self.learned_parcellation:
+            if parcellation.shape != atlas.shape:
+                raise ValueError('Learned parcellation must preserve all 117 native atlas channels')
+            atlas = .5 * (atlas + parcellation.softmax(1))
         if self.cut in ("parcellation", "all"):
             atlas = atlas.detach()
         self.atlas_probabilities = atlas

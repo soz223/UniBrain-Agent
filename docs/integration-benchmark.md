@@ -60,8 +60,8 @@ The example paths are placeholders. `preflight` checks their availability and
 the evaluator executable; it does not certify provider authentication, model
 accuracy, GPU availability or future evaluator completion.
 
-The configuration generator writes one concrete case file for each of
-SynthStrip, VoxelMorph, LapIRN and nnU-Net. Select a subset with `--methods`.
+The configuration generator writes one concrete case file for each of the
+14 declared candidates. Select a subset with `--methods`.
 Each file contains one provider and can be used by the experiment suite's
 `integration_configs` mapping. Configure the provider account locally;
 credentials are never embedded in the files. Regenerate these machine-specific
@@ -72,9 +72,9 @@ nnU-Net remains blocked until a real dataset-specific plans file is supplied.
 The supported plan is a PlainConvUNet with four tissue classes and native
 strides compatible with full 96 cubed execution. Its native planned patch may
 differ and is retained unchanged alongside the execution volume;
-the evaluator does not invent a generic plan. `index.json` explicitly lists
-the other ten paper candidates as not implemented in the full integration
-benchmark. They are not routed to compact adapters.
+the evaluator does not invent a generic plan. `index.json` maps each method
+to its concrete configuration. File availability and implemented execution
+paths do not establish a completed GPU evaluation or an Agent success.
 
 ## Compared procedures
 
@@ -148,15 +148,40 @@ and verify joint updates. The original auxiliary segmentation head does not
 feed the classifier, so this evaluator makes no classification-to-segmentation
 gradient claim.
 
-All four evaluators use full host architectures and preserve source hashes,
+The additional ten cases wrap the entire declared host stage, so generated
+code is executed even when the reference stage uses internal activation
+recomputation or specialized slice handling. Their contracts are:
+
+| Candidates | Generated functions | Independent reference and training path |
+| --- | --- | --- |
+| RED-WGAN, DeepN4, deepNormalize, HarmonizingFlows | `adapt(core, image)` | Native full-volume preprocessing stage output and classification gradients into image and parameters |
+| FastSurfer, Nobrainer HighResNet | `adapt(core, image)` | Full 117-channel AAL head output, voxel labels and classification gradients through the explicit predicted/transferred atlas mixture |
+| FBNetGen pairwise MLP | `adapt(core, features)` | Native 116-node directed graph and classification gradients into ROI features and MLP parameters |
+| BrainNetCNN, BNT | `adapt(core, graph, features)` | Native classifier scores and graph/parameter gradients; the extra host feature argument is unused |
+| ERNet | `adapt_extraction(core, image, if_train)` and `adapt_registration(core, fixed, moving)` | Both full source stages, complete output structures, and registration/classification gradients into both modules |
+
+ERNet requires both functions in one generated file. Both are installed into
+the host and independently evaluated. A successful fixed source construction
+is never substituted for generated-code success. BNT's native frozen cluster
+centers remain frozen and are excluded from required trainable parameter
+gradients. Each candidate must still have nonzero trainable parameter gradients.
+
+For these ten stages, fidelity means agreement with the explicitly declared
+full stage wrapper, including its published source architecture and documented
+sMRI adaptation. Spatial checks compare corresponding tensor coordinates,
+atlas voxel labels or graph node order against that wrapper. They do not
+certify NIfTI physical geometry or reproduce complete upstream clinical tools.
+The new AAL heads require training and are not official-label conversions.
+
+All evaluators use full host architectures and preserve source hashes,
 generated code hashes, actual checks, update counts and checkpoints. They execute
 at most one or two training updates. Missing packages, GPU occupancy and invalid
 plans remain infrastructure failures. An interrupted evaluator preserves any
 already written update count; an uncertain or blocked trial is not retried.
 
-The ten remaining candidates and external agent systems need additional
-implementations. A catalog entry or compact adapter alone is not sufficient.
-MLE-STAR, NEXUS, NEURA and NeuroPilot are not silently mapped to another provider.
+External agent systems need their own real runners. A catalog entry or compact
+adapter alone is not sufficient. MLE-STAR, NEXUS, NEURA and NeuroPilot are not
+silently mapped to another provider.
 
 ## Evidence
 

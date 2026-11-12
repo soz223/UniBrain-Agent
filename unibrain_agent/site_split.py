@@ -52,10 +52,12 @@ def partitions(ids, labels, metadata, held_out, seed=17, validation_fraction=0.2
 
 
 def export_site(master_path, metadata_path, templates, output, held_out, template_origin, template_scope,
-                seed=17, validation_fraction=0.2):
+                seed=17, validation_fraction=0.2, dataset="abide"):
     master_path, metadata_path, templates, output = map(Path, (master_path, metadata_path, templates, output))
     if not template_origin.strip() or template_scope not in ("external_public", "source_training_only"):
         raise ValueError("Templates need an explicit origin and external_public or source_training_only scope")
+    if dataset not in {"abide", "adhd"}:
+        raise ValueError("Declare a supported dataset")
     held_out = held_out.strip()
     if output.exists():
         raise FileExistsError("Use a new output directory to preserve existing data")
@@ -70,7 +72,7 @@ def export_site(master_path, metadata_path, templates, output, held_out, templat
             metadata[row["id"]] = row["site"].strip()
     master = np.load(master_path, mmap_mode="r", allow_pickle=False)
     volumes = ("raw_img_np", "raw_img_brain_mask_np", "raw_img_gm_mask_np", "raw_img_aal_mask_np")
-    if not {"id", "label", *volumes}.issubset(master.dtype.names or []):
+    if master.dtype.names != ("id", "label", *volumes):
         raise ValueError("Expected the original UniBrain structured master array")
     if any(master.dtype.fields[field][0].shape != (96, 96, 96) for field in volumes):
         raise ValueError("The full UniBrain interface requires 96 cubed volumes")
@@ -79,7 +81,8 @@ def export_site(master_path, metadata_path, templates, output, held_out, templat
         array = np.load(templates / name, allow_pickle=False)
         if array.shape != (96, 96, 96) or not np.isfinite(array).all():
             raise ValueError("Invalid template: " + name)
-    record = {"scope": "site_holdout", "held_out_site": held_out, "seed": seed,
+    record = {"version": 1, "status": "exporting", "scope": "site_holdout", "dataset": dataset,
+              "held_out_site": held_out, "split_id": held_out, "master_count": len(master), "seed": seed,
               "validation_fraction": validation_fraction, "reference_labels": "Automatic tissue and AAL reference labels",
               "sources": {"master_sha256": digest(master_path), "metadata_sha256": digest(metadata_path)},
               "template_provenance": {"origin": template_origin, "scope": template_scope,
@@ -87,25 +90,42 @@ def export_site(master_path, metadata_path, templates, output, held_out, templat
               "protocol": "All held out site subjects form test; other sites are stratified by diagnosis into train and validation",
               "splits": {}}
     output.mkdir(parents=True, exist_ok=False)
-    for split, indices in selected.items():
-        target = output / f"adhd_{split}_sample.npy"
-        array = np.lib.format.open_memmap(target, mode="w+", dtype=master.dtype, shape=(len(indices),))
-        for position, index in enumerate(indices):
-            for field in volumes:
-                if not np.isfinite(master[index][field]).all():
-                    raise ValueError(f"Nonfinite input at master row {index}, field {field}; incomplete output retained")
-            array[position] = master[index]
-        array.flush()
-        del array
-        ids = [identifier(value) for value in master["id"][indices]]
-        np.save(output / f"{split}_indices.npy", indices)
-        record["splits"][split] = {"count": len(indices), "master_indices": indices.tolist(), "ids": ids,
-                                   "site_counts": dict(Counter(metadata[value] for value in ids)),
-                                   "class_counts": dict(Counter(str(int(x)) for x in master["label"][indices])),
-                                   "sha256": digest(target)}
-    record["templates"] = {}
-    for name in TEMPLATES:
-        shutil.copyfile(templates / name, output / name)
-        record["templates"][name] = digest(output / name)
-    (output / "cohort.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    membership = [{"id": identifier(value), "site": metadata[identifier(value)]} for value in master["id"]]
+    (output / "site_membership.json").write_text(json.dumps(membership, indent=2), encoding="utf-8")
+    shutil.copyfile(metadata_path, output / "source_site_metadata.csv")
+    record.update(membership_file="site_membership.json", membership_sha256=digest(output / "site_membership.json"),
+                  metadata_file="source_site_metadata.csv")
+    try:
+        for split, indices in selected.items():
+            target = output / f"adhd_{split}_sample.npy"
+            array = np.lib.format.open_memmap(target, mode="w+", dtype=master.dtype, shape=(len(indices),))
+            try:
+                for position, index in enumerate(indices):
+                    for field in volumes:
+                        if not np.isfinite(master[index][field]).all():
+                            raise ValueError("Nonfinite imaging data; incomplete output retained")
+                    array[position] = master[index]
+            finally:
+                array.flush()
+                del array
+            ids = [identifier(value) for value in master["id"][indices]]
+            index_path = output / f"{split}_indices.npy"
+            np.save(index_path, indices)
+            record["splits"][split] = {"count": len(indices), "master_indices": indices.tolist(), "ids": ids,
+                                       "site_counts": dict(Counter(metadata[value] for value in ids)),
+                                       "class_counts": dict(Counter(str(int(x)) for x in master["label"][indices])),
+                                       "sha256": digest(target), "indices_file": index_path.name,
+                                       "indices_sha256": digest(index_path)}
+        record["templates"] = {}
+        for name in TEMPLATES:
+            shutil.copyfile(templates / name, output / name)
+            record["templates"][name] = digest(output / name)
+        record["status"] = "complete"
+    except Exception as error:
+        record.update(status="failed", error=str(error))
+        raise
+    finally:
+        text = json.dumps(record, indent=2, allow_nan=False) + "\n"
+        (output / "cohort.json").write_text(text, encoding="utf-8")
+        (output / "site_split.json").write_text(text, encoding="utf-8")
     return record

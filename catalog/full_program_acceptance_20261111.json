@@ -1,0 +1,967 @@
+{
+  "date": "2026-11-11",
+  "status": "verification_in_progress",
+  "scope": "Software acceptance on original fold subsets; no full cohort accuracy or convergence claim",
+  "native_component_cpu": [
+    {
+      "method": "redwgan",
+      "status": "passed",
+      "report_sha256": "0dafd819b98dd3fc41b7f1d469990f3309aada00d8c9905a423aed4ddee52983",
+      "device": "cpu",
+      "optimizer_updates": 1,
+      "architecture": {
+        "method": "redwgan",
+        "component": "GeneratorNet",
+        "widths": [
+          32,
+          64,
+          128,
+          256
+        ],
+        "parameters": 2326273,
+        "input_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "output_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "compact": false,
+        "initialization": "random unless explicitly loaded",
+        "provenance": [
+          {
+            "repository": "https://github.com/Deep-Imaging-Group/RED-WGAN",
+            "commit": "79718eb9df8b70f66a3a15a76ed371fd1bad5573",
+            "verified_files": 1,
+            "verified_clean": true
+          }
+        ],
+        "adaptations": [
+          "Original generator at 96 cubed; the discriminator and adversarial objective are not included"
+        ]
+      },
+      "checks": {
+        "output_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "finite_output": true,
+        "finite_input_gradient": true,
+        "nonzero_input_gradient": true,
+        "all_parameter_gradients_present_and_finite": true,
+        "nonzero_total_parameter_gradient": true,
+        "sampled_parameter_changed": true
+      }
+    },
+    {
+      "method": "deepn4",
+      "status": "passed",
+      "report_sha256": "0dafd819b98dd3fc41b7f1d469990f3309aada00d8c9905a423aed4ddee52983",
+      "device": "cpu",
+      "optimizer_updates": 1,
+      "architecture": {
+        "method": "deepn4",
+        "component": "Synbo_UNet3D",
+        "widths": [
+          32,
+          64,
+          128,
+          256,
+          512
+        ],
+        "parameters": 19328418,
+        "input_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "output_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "compact": false,
+        "initialization": "random unless explicitly loaded",
+        "provenance": [
+          {
+            "repository": "https://github.com/MASILab/DeepN4",
+            "commit": "df251bfb59b1bce3036e336f9872e3b948b88422",
+            "verified_files": 1,
+            "verified_clean": true
+          }
+        ],
+        "adaptations": [
+          "Original log bias field core at 96 cubed; corrected image is input times exp of negative log field",
+          "Official external resampling and SciPy field smoothing are not included"
+        ]
+      },
+      "checks": {
+        "output_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "finite_output": true,
+        "finite_input_gradient": true,
+        "nonzero_input_gradient": true,
+        "all_parameter_gradients_present_and_finite": true,
+        "nonzero_total_parameter_gradient": true,
+        "sampled_parameter_changed": true
+      }
+    },
+    {
+      "method": "deepnormalize",
+      "status": "passed",
+      "report_sha256": "0dafd819b98dd3fc41b7f1d469990f3309aada00d8c9905a423aed4ddee52983",
+      "device": "cpu",
+      "optimizer_updates": 1,
+      "architecture": {
+        "method": "deepnormalize",
+        "component": "UNet",
+        "widths": [
+          16,
+          32,
+          64,
+          128,
+          256
+        ],
+        "parameters": 4770625,
+        "input_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "output_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "compact": false,
+        "initialization": "random unless explicitly loaded",
+        "provenance": [
+          {
+            "repository": "https://github.com/pldelisle/deepNormalize",
+            "commit": "b17509aa1cc8029b7de702971a7ad3a9dcd3c7f4",
+            "verified_files": 46,
+            "verified_clean": true
+          }
+        ],
+        "adaptations": [
+          "Original preprocessor widths; single T1 input and output instead of two modalities",
+          "Standalone normalization component; segmentation and domain discriminator are not included"
+        ]
+      },
+      "checks": {
+        "output_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "finite_output": true,
+        "finite_input_gradient": true,
+        "nonzero_input_gradient": true,
+        "all_parameter_gradients_present_and_finite": true,
+        "nonzero_total_parameter_gradient": true,
+        "sampled_parameter_changed": true
+      }
+    },
+    {
+      "method": "harmonizing_flows",
+      "status": "passed",
+      "report_sha256": "0dafd819b98dd3fc41b7f1d469990f3309aada00d8c9905a423aed4ddee52983",
+      "device": "cpu",
+      "optimizer_updates": 1,
+      "architecture": {
+        "method": "harmonizing_flows",
+        "component": "Harmonizer",
+        "widths": [
+          16,
+          32,
+          48,
+          64,
+          64
+        ],
+        "parameters": 816594,
+        "input_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "output_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "compact": false,
+        "initialization": "random unless explicitly loaded",
+        "provenance": [
+          {
+            "repository": "https://github.com/farzad-bz/Harmonizing-Flows",
+            "commit": "b61611586ccd184c5a1fa1211f951808f66ea28f",
+            "verified_files": 1,
+            "verified_clean": true
+          }
+        ],
+        "adaptations": [
+          "All 96 slices are processed by the original 2D Harmonizer",
+          "Each 96 by 96 slice is zero padded to 224 by 224 and center cropped after processing",
+          "Activation recomputation preserves the full slice set and original architecture",
+          "Harmonizer component only; normalizing flow supervision and test-time adaptation are not reproduced"
+        ],
+        "slice_axis": 2,
+        "processed_slices": 96,
+        "padded_slice_shape": [
+          224,
+          224
+        ]
+      },
+      "checks": {
+        "output_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "finite_output": true,
+        "finite_input_gradient": true,
+        "nonzero_input_gradient": true,
+        "all_parameter_gradients_present_and_finite": true,
+        "nonzero_total_parameter_gradient": true,
+        "sampled_parameter_changed": true,
+        "all_96_input_slices_have_nonzero_gradient": true
+      }
+    },
+    {
+      "method": "fbnetgen",
+      "status": "passed",
+      "report_sha256": "bd365575573c358b6fb5a808f8e576c9649afe429f96ca57912d488d2de42093",
+      "device": "cpu",
+      "optimizer_updates": 1,
+      "architecture": {
+        "method": "fbnetgen",
+        "source": [
+          {
+            "repository": "https://github.com/Wayfear/FBNETGEN",
+            "commit": "3ed6c813920966a40fca9ffca41f90a6384e333c",
+            "verified_files": 1,
+            "verified_clean": true
+          }
+        ],
+        "nodes": 116,
+        "compact": false,
+        "parameters": 33025,
+        "trainable_parameters": 33025,
+        "host_target": "graph_gen",
+        "input_shape": [
+          null,
+          116,
+          128
+        ],
+        "output_shape": [
+          null,
+          116,
+          116
+        ],
+        "initialization": "Unchanged source initialization; random weights",
+        "host_requirement": "Preserve continuous edge weights during training; original binary edge perturbation disconnects graph gradients",
+        "component": "Embed2GraphByLinear",
+        "hidden_width": 128,
+        "adaptation": "Pairwise MLP from FBNetGen applied to the 128-dimensional sMRI ROI embeddings; directed native output retained",
+        "scope": "Component reuse; the original fMRI temporal extractor, embedding softmax, predictor and training objectives are not reproduced",
+        "runtime_changes": "Device-specific relation tensors registered as buffers; no parameter initialization or architecture changes"
+      },
+      "checks": {
+        "finite_output": true,
+        "native_output_shape": true,
+        "finite_nonzero_input_gradient": true,
+        "all_trainable_gradients_present": true,
+        "finite_parameter_gradients": true,
+        "nonzero_parameter_gradient": true,
+        "parameter_update": true
+      }
+    },
+    {
+      "method": "brainnetcnn",
+      "status": "passed",
+      "report_sha256": "bd365575573c358b6fb5a808f8e576c9649afe429f96ca57912d488d2de42093",
+      "device": "cpu",
+      "optimizer_updates": 1,
+      "architecture": {
+        "method": "brainnetcnn",
+        "source": [
+          {
+            "repository": "https://github.com/Wayfear/FBNETGEN",
+            "commit": "3ed6c813920966a40fca9ffca41f90a6384e333c",
+            "verified_files": 1,
+            "verified_clean": true
+          }
+        ],
+        "nodes": 116,
+        "compact": false,
+        "parameters": 556957,
+        "trainable_parameters": 556957,
+        "host_target": "gnn_pred",
+        "input_shape": [
+          null,
+          116,
+          116
+        ],
+        "output_shape": [
+          null,
+          2
+        ],
+        "initialization": "Unchanged source initialization; random weights",
+        "host_requirement": "Preserve continuous edge weights during training; original binary edge perturbation disconnects graph gradients",
+        "component": "BrainNetCNN",
+        "widths": [
+          32,
+          64,
+          256,
+          128,
+          30,
+          2
+        ],
+        "adaptation": "Classify the learned sMRI adjacency matrix; the separate ROI feature argument is unused",
+        "provenance": "Third-party PyTorch implementation bundled in FBNETGEN, not the original author Caffe implementation",
+        "runtime_changes": "Source dropout obeys module training mode through the shared compatibility loader"
+      },
+      "checks": {
+        "finite_output": true,
+        "native_output_shape": true,
+        "finite_nonzero_input_gradient": true,
+        "all_trainable_gradients_present": true,
+        "finite_parameter_gradients": true,
+        "nonzero_parameter_gradient": true,
+        "parameter_update": true
+      }
+    },
+    {
+      "method": "bnt",
+      "status": "passed",
+      "report_sha256": "bd365575573c358b6fb5a808f8e576c9649afe429f96ca57912d488d2de42093",
+      "device": "cpu",
+      "optimizer_updates": 1,
+      "architecture": {
+        "method": "bnt",
+        "source": [
+          {
+            "repository": "https://github.com/Wayfear/BrainNetworkTransformer",
+            "commit": "8a588aadad0166209269fa114e5df4e42209e207",
+            "verified_files": 10,
+            "verified_clean": true
+          }
+        ],
+        "nodes": 116,
+        "compact": false,
+        "parameters": 1688530,
+        "trainable_parameters": 1676930,
+        "host_target": "gnn_pred",
+        "input_shape": [
+          null,
+          116,
+          116
+        ],
+        "output_shape": [
+          null,
+          2
+        ],
+        "initialization": "Unchanged source initialization; random weights",
+        "host_requirement": "Preserve continuous edge weights during training; original binary edge perturbation disconnects graph gradients",
+        "component": "BrainNetworkTransformer",
+        "attention_heads": 4,
+        "transformer_feedforward_width": 1024,
+        "pooling_sizes": [
+          116,
+          100
+        ],
+        "classifier_widths": [
+          800,
+          256,
+          32,
+          2
+        ],
+        "adaptation": "AAL116 sMRI adjacency rows replace the original functional-connectivity node features; no temporal input is consumed",
+        "defaults": {
+          "sizes": [
+            360,
+            100
+          ],
+          "pooling": [
+            false,
+            true
+          ],
+          "pos_encoding": "none",
+          "orthogonal": true,
+          "freeze_center": true,
+          "project_assignment": true,
+          "pos_embed_dim": 360
+        },
+        "defaults_reference": "source/conf/model/bnt.yaml at source commit",
+        "defaults_sha256": "3e1751f2ee893522fc6f4ffd95246bce3e22eae6a50731d3cb93b3c401b5cbf7",
+        "runtime_changes": "Modern TransformerEncoderLayer signature compatibility; source frozen orthogonal centers retained",
+        "scope": "Source BNT classifier architecture with AAL116 input; source fMRI preprocessing and auxiliary training recipe are not reproduced"
+      },
+      "checks": {
+        "finite_output": true,
+        "native_output_shape": true,
+        "finite_nonzero_input_gradient": true,
+        "all_trainable_gradients_present": true,
+        "finite_parameter_gradients": true,
+        "nonzero_parameter_gradient": true,
+        "parameter_update": true
+      }
+    },
+    {
+      "method": "ernet",
+      "status": "passed",
+      "device": "cpu",
+      "architecture": {
+        "method": "ernet",
+        "source": [
+          {
+            "repository": "https://github.com/ERNetERNet/ERNet",
+            "commit": "f0708bbf13de32ef7e977afd2468f1597477c08e",
+            "verified_files": 1,
+            "verified_clean": true
+          }
+        ],
+        "input_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "parameters": {
+          "ext_net": 561889,
+          "reg_net": 6489020
+        },
+        "compact": false,
+        "spatial_downsampling_before_core": false,
+        "initialization": "random; no official checkpoint loaded",
+        "checkpoint_scope": "Native candidate parameter shapes, except the explicitly replaced AAL output head",
+        "memory_policy": "Activation recomputation restores BatchNorm buffers to avoid duplicate statistics updates",
+        "profile": "Full ERNet extraction and affine registration cores",
+        "extraction_stages": 5,
+        "registration_stages": 5,
+        "gamma": 10,
+        "extraction_encoder": [
+          1,
+          16,
+          32,
+          32,
+          64,
+          64
+        ],
+        "affine_encoder": [
+          2,
+          16,
+          32,
+          64,
+          128,
+          256,
+          512
+        ],
+        "adaptation": "Device aware original cumulative affine composition with additional differentiable inverse matrices"
+      },
+      "optimizer_updates": 1,
+      "finite_outputs": true,
+      "input_gradient_l1": 0.0498315766453743,
+      "finite_parameter_gradients": true,
+      "parameter_gradient_l1": 83.92448740055121,
+      "updated_parameter_tensors": {
+        "ext_net": 32,
+        "reg_net": 2
+      },
+      "native_core_forward_agreement": true,
+      "report_sha256": "7e3cfa3c08190f4f41410bb7826be318761c5759881206089f00789fb2b8c6aa"
+    },
+    {
+      "method": "nobrainer",
+      "status": "passed",
+      "device": "cpu",
+      "architecture": {
+        "method": "nobrainer",
+        "source": [
+          {
+            "repository": "https://github.com/neuronets/nobrainer",
+            "commit": "3109460d048bfa60d8c4e056e86deadd47568f68",
+            "verified_files": 2,
+            "verified_clean": true
+          }
+        ],
+        "input_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "parameters": {
+          "par_net": 888101
+        },
+        "compact": false,
+        "spatial_downsampling_before_core": false,
+        "initialization": "random; no official checkpoint loaded",
+        "checkpoint_scope": "Native candidate parameter shapes, except the explicitly replaced AAL output head",
+        "memory_policy": "Activation recomputation restores BatchNorm buffers to avoid duplicate statistics updates",
+        "profile": "Pinned nobrainer PyTorch HighResNet registry implementation",
+        "widths": [
+          16,
+          32,
+          64
+        ],
+        "blocks_per_stage": 3,
+        "dilations": [
+          1,
+          2,
+          4
+        ],
+        "replaced_output_head": "117 AAL logits; requires task training, not an official label conversion"
+      },
+      "optimizer_updates": 1,
+      "finite_outputs": true,
+      "input_gradient_l1": 1.4168546199798584,
+      "finite_parameter_gradients": true,
+      "parameter_gradient_l1": 97.46977167099249,
+      "updated_parameter_tensors": {
+        "par_net": 49
+      },
+      "native_core_forward_agreement": true,
+      "report_sha256": "360e4f3294da118fb6e9edda1f0fbd15207e0d3f26fc3ce7679ae89b86844ec3"
+    },
+    {
+      "method": "fastsurfer",
+      "status": "passed",
+      "device": "cpu",
+      "architecture": {
+        "method": "fastsurfer",
+        "source": [
+          {
+            "repository": "https://github.com/Deep-MI/FastSurfer",
+            "commit": "6dcd0e949a2dc13ef7e940f33b2842a2ebec1477",
+            "verified_files": 3,
+            "verified_clean": true
+          }
+        ],
+        "input_shape": [
+          1,
+          1,
+          96,
+          96,
+          96
+        ],
+        "parameters": {
+          "par_net": 3609740
+        },
+        "compact": false,
+        "spatial_downsampling_before_core": false,
+        "initialization": "random; no official checkpoint loaded",
+        "checkpoint_scope": "Native backbone and explicitly replaced AAL output head",
+        "memory_policy": "Activation recomputation restores BatchNorm buffers to avoid duplicate statistics updates",
+        "profile": "Classic FastSurferCNN single view core, 64 filters and 5 by 5 kernels",
+        "slice_axis": "First tensor spatial axis; anatomical orientation is not inferred from NPY",
+        "slices_processed": 96,
+        "neighbor_slices": 7,
+        "slice_batch": 4,
+        "three_view_ensemble": false,
+        "replaced_output_head": "117 AAL logits; requires task training, not an official label conversion"
+      },
+      "optimizer_updates": 1,
+      "finite_outputs": true,
+      "input_gradient_l1": 4.267775535583496,
+      "finite_parameter_gradients": true,
+      "parameter_gradient_l1": 266.5935555862459,
+      "updated_parameter_tensors": {
+        "par_net": 91
+      },
+      "native_core_forward_agreement": true,
+      "report_sha256": "43ba74661a186349aaaafca9cb9f625e34264162576da83151275d4652c5a5e5"
+    }
+  ],
+  "windows_regression": {
+    "tests": 229,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "log_sha256": "b2ca17e1504286fcd2cd63709890d067ddd5c7b6cbdf63a4580c6ec377157667",
+    "boundary": "The separate 251 second full preprocessing gradient check was not repeated in this regression suite"
+  },
+  "linux_cpu": {
+    "status": "passed",
+    "exit_code": 0,
+    "seconds": 9.384393628686666,
+    "environment": {
+      "python": "3.10.19 (main, Feb 12 2026, 00:42:18) [Clang 21.1.4 ]",
+      "torch": "2.5.1+cu121",
+      "numpy": "1.26.4",
+      "system": "Linux",
+      "machine": "x86_64"
+    },
+    "source_archive_sha256": "f79ed44878aa9d631c3a30fe0b04733ad07f918f3da3c139b8eb376b49fb0e5a",
+    "scope": "Six lightweight CPU test modules; no GPU, scientific training, data access, dependency changes or service changes",
+    "threads": 2
+  },
+  "cohort_acceptance": [
+    {
+      "dataset": "abide",
+      "method": "nnunet",
+      "status": "passed",
+      "fold": 1,
+      "seed": 17,
+      "optimizer_updates": 2,
+      "report_sha256": "12e0137106cf5f481984f803aa82c7b0c0b345c1256df5b8197e5ddf826216f6",
+      "checkpoint_sha256": "0f52903e3300d3f814d504b2c9b5062a1c55a892328ffdd0a18a61d56a01af45",
+      "gradient_verification": {
+        "enabled": true,
+        "verified_steps": 2,
+        "last_step": {
+          "classification_to_candidates": {
+            "seg_net": {
+              "tensor_count": 88,
+              "observed_tensors": 0,
+              "nonzero_elements": 0,
+              "finite": true,
+              "nonzero": false,
+              "l1": 0,
+              "required": false,
+              "expected_absent": true,
+              "reason": "The tissue prediction head is supervised by tissue loss; diagnosis does not consume its logits"
+            }
+          },
+          "input_required": true,
+          "total_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 30.005016326904297
+          },
+          "total_to_candidates": {
+            "seg_net": {
+              "tensor_count": 88,
+              "observed_tensors": 88,
+              "nonzero_elements": 16548345,
+              "finite": true,
+              "nonzero": true,
+              "l1": 2305.60126323661
+            }
+          }
+        },
+        "diagnosis_reaches_all_candidates": false
+      }
+    },
+    {
+      "dataset": "abide",
+      "method": "fbnetgen",
+      "status": "passed",
+      "fold": 1,
+      "seed": 17,
+      "optimizer_updates": 2,
+      "report_sha256": "ad08ad64f7147796bb1cc2b5dcdcecc7de6c3d9dffd2b6963b8f45b194fe6d36",
+      "checkpoint_sha256": "d98a56dff6feed8ad7728139c41fb40be578866138d5ff5e633bdeec917a0e96",
+      "gradient_verification": {
+        "enabled": true,
+        "verified_steps": 2,
+        "last_step": {
+          "classification_to_candidates": {
+            "graph_gen": {
+              "tensor_count": 4,
+              "observed_tensors": 4,
+              "nonzero_elements": 32509,
+              "finite": true,
+              "nonzero": true,
+              "l1": 0.0844046316924505,
+              "required": true,
+              "expected_absent": false,
+              "reason": null
+            }
+          },
+          "input_required": true,
+          "total_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 1.1291998624801636
+          },
+          "total_to_candidates": {
+            "graph_gen": {
+              "tensor_count": 4,
+              "observed_tensors": 4,
+              "nonzero_elements": 32509,
+              "finite": true,
+              "nonzero": true,
+              "l1": 0.08440463215811178
+            }
+          }
+        },
+        "diagnosis_reaches_all_candidates": true
+      }
+    },
+    {
+      "dataset": "abide",
+      "method": "brainnetcnn",
+      "status": "passed",
+      "fold": 1,
+      "seed": 17,
+      "optimizer_updates": 2,
+      "report_sha256": "342a8aefd1a5ced3f0287ae75b59d86e781d36e26f295a4625bd32ca9f53295e",
+      "checkpoint_sha256": "47c4391db352588205d2aa80b079aecc1324d5b1697897af1730aadf2fe6d9aa",
+      "gradient_verification": {
+        "enabled": true,
+        "verified_steps": 2,
+        "last_step": {
+          "classification_to_candidates": {
+            "gnn_pred": {
+              "tensor_count": 18,
+              "observed_tensors": 18,
+              "nonzero_elements": 514690,
+              "finite": true,
+              "nonzero": true,
+              "l1": 280.2130381464958,
+              "required": true,
+              "expected_absent": false,
+              "reason": null
+            }
+          },
+          "input_required": true,
+          "total_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 1.1299844980239868
+          },
+          "total_to_candidates": {
+            "gnn_pred": {
+              "tensor_count": 18,
+              "observed_tensors": 18,
+              "nonzero_elements": 514690,
+              "finite": true,
+              "nonzero": true,
+              "l1": 280.2130381464958
+            }
+          }
+        },
+        "diagnosis_reaches_all_candidates": true
+      }
+    },
+    {
+      "dataset": "abide",
+      "method": "bnt",
+      "status": "passed",
+      "fold": 1,
+      "seed": 17,
+      "optimizer_updates": 2,
+      "report_sha256": "09c24d92d307f1351c167256498a24bc0dad4a0c0b956041d3fd49d81e791835",
+      "checkpoint_sha256": "6ffb498fba4d12df96ca4ee72142867a5c14a23b31d6bf0b5d0307ee86337901",
+      "gradient_verification": {
+        "enabled": true,
+        "verified_steps": 2,
+        "last_step": {
+          "classification_to_candidates": {
+            "gnn_pred": {
+              "tensor_count": 38,
+              "observed_tensors": 38,
+              "nonzero_elements": 1594116,
+              "finite": true,
+              "nonzero": true,
+              "l1": 54.440088977105916,
+              "required": true,
+              "expected_absent": false,
+              "reason": null
+            }
+          },
+          "input_required": true,
+          "total_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 1.1299993991851807
+          },
+          "total_to_candidates": {
+            "gnn_pred": {
+              "tensor_count": 38,
+              "observed_tensors": 38,
+              "nonzero_elements": 1594116,
+              "finite": true,
+              "nonzero": true,
+              "l1": 54.440088977105916
+            }
+          }
+        },
+        "diagnosis_reaches_all_candidates": true
+      }
+    },
+    {
+      "dataset": "abide",
+      "method": "redwgan",
+      "status": "passed",
+      "fold": 1,
+      "seed": 17,
+      "optimizer_updates": 2,
+      "report_sha256": "07210d1868357ca1aab2eabddcc92541a4f7558e507b9c9281486238fb024ad4",
+      "checkpoint_sha256": "a4ef2f579c15c82bca0c2182ee0680410aac508681747cdf36779c7116d4591a",
+      "gradient_verification": {
+        "enabled": true,
+        "protocol_version": 2,
+        "verified_steps": 2,
+        "last_step": {
+          "protocol_version": 2,
+          "classification_to_candidates": {
+            "preprocessor": {
+              "tensor_count": 30,
+              "observed_tensors": 30,
+              "nonzero_elements": 2326272,
+              "finite": true,
+              "nonzero": true,
+              "l1": 19.60622795054285,
+              "required": true,
+              "expected_absent": false,
+              "reason": null
+            }
+          },
+          "classification_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 0.2661813199520111,
+            "required": true
+          },
+          "input_required": true,
+          "total_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 1.535774827003479
+          },
+          "total_to_candidates": {
+            "preprocessor": {
+              "tensor_count": 30,
+              "observed_tensors": 30,
+              "nonzero_elements": 2326271,
+              "finite": true,
+              "nonzero": true,
+              "l1": 362.33167236709204
+            }
+          }
+        },
+        "diagnosis_reaches_all_candidates": true
+      }
+    },
+    {
+      "dataset": "abide",
+      "method": "deepn4",
+      "status": "passed",
+      "fold": 1,
+      "seed": 17,
+      "optimizer_updates": 2,
+      "report_sha256": "791b24b7868eb1911c7623a8fd65a06a77d7bd3862e72a2d32b267a1402cccb4",
+      "checkpoint_sha256": "4b3bbdf60d8d760ffdeb7226bb450c921105448592ef552f7da735443d907703",
+      "gradient_verification": {
+        "enabled": true,
+        "protocol_version": 2,
+        "verified_steps": 2,
+        "last_step": {
+          "protocol_version": 2,
+          "classification_to_candidates": {
+            "preprocessor": {
+              "tensor_count": 22,
+              "observed_tensors": 22,
+              "nonzero_elements": 19328418,
+              "finite": true,
+              "nonzero": true,
+              "l1": 26.315418979153037,
+              "required": true,
+              "expected_absent": false,
+              "reason": null
+            }
+          },
+          "classification_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 0.4003976583480835,
+            "required": true
+          },
+          "input_required": true,
+          "total_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 39.40932083129883
+          },
+          "total_to_candidates": {
+            "preprocessor": {
+              "tensor_count": 22,
+              "observed_tensors": 22,
+              "nonzero_elements": 19328418,
+              "finite": true,
+              "nonzero": true,
+              "l1": 4372.017634976248
+            }
+          }
+        },
+        "diagnosis_reaches_all_candidates": true
+      }
+    }
+  ],
+  "cohort_scope": {
+    "fold": 1,
+    "train": 2,
+    "val": 2,
+    "test": 2,
+    "original_splits_preserved": true
+  },
+  "boundary": "Earlier gradient protocol checks and protocol 2 are distinguished in each report. Core checks are separate from full host evidence.",
+  "pending": [
+    "Remaining strict full host cohort checks",
+    "Short TaskForce policy learning trajectories",
+    "Actual provider generation to training cycles on both datasets",
+    "Matched scientific comparisons",
+    "Named external Agent systems",
+    "Full research cycle dashboard action",
+    "Full CUDA verification on Linux"
+  ]
+}
