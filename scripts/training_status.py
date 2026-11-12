@@ -33,7 +33,8 @@ def show(root):
         if not report and not update:
             continue
         print(folder.name)
-        print(f"  Status: {report.get('status', 'initializing')} | Epoch: {update.get('epoch', '?')} | Step: {update.get('step', report.get('steps', 0))}")
+        status = report.get('status', 'updates recorded; awaiting epoch report' if update else 'initializing')
+        print(f"  Status: {status} | Epoch: {update.get('epoch', '?')} | Step: {update.get('step', report.get('steps', 0))}")
         if update:
             print('  Latest losses: ' + json.dumps(update.get('losses', {})))
         history = report.get('history', [])
