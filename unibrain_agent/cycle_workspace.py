@@ -173,6 +173,9 @@ class CycleWorkspace:
         integration = read_json(root / "cycle/integration/result.json") or report.get("integration", {})
         training = read_json(root / "cycle/training/report.json") or report.get("training", {})
         updates = tail_updates(root / "cycle/training/updates.jsonl")
+        objective = updates[-1].get("objective") if updates else training.get("objective")
+        if objective:
+            objective = {**objective, "profile": "Full UniBrain · " + str(report.get("method", "recorded run"))}
         running = job["status"] == "running" and self.active == identifier
         status = "running" if running else "interrupted" if job["status"] == "running" else job["status"]
         checks = {}
@@ -204,6 +207,7 @@ class CycleWorkspace:
                 "actual_updates": {"acceptance": integration.get("optimizer_updates", report.get("actual_updates", {}).get("acceptance", 0)),
                                    "training": updates[-1]["step"] if updates else training.get("steps", 0)},
                 "updates": updates, "coordination": coordination,
+                "objective": objective,
                 "gradients": gradients,
                 "accepted_adapter": report.get("accepted_adapter"),
                 "adapter_unchanged": report.get("accepted_adapter_unchanged_after_training"),

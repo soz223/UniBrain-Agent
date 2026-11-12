@@ -42,6 +42,17 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 403)
         self.assertIsNone(caught.exception.headers.get('Access-Control-Allow-Origin'))
 
+    def test_objective_preview_is_authenticated_and_returns_backend_terms(self):
+        from unibrain_agent.catalog import DEFAULTS
+        body = {'selection': {**DEFAULTS, 'denoising': 'M14', 'registration': 'M06'}}
+        with self.request('/api/objective/preview', body=body) as response:
+            result = json.load(response)
+        self.assertEqual(result['status'], 'declared')
+        self.assertIn('regularization', [term['id'] for term in result['terms']])
+        self.assertIn('denoising', [module['id'] for module in result['modules']])
+        with self.assertRaises(HTTPError):
+            self.request('/api/objective/preview', token=None, body=body)
+
     def test_preflight_is_available_without_credentials_but_data_is_not(self):
         with self.request(token=None, method='OPTIONS') as response:
             self.assertIn('Authorization', response.headers['Access-Control-Allow-Headers'])
@@ -108,7 +119,7 @@ class AccountAndStaticTests(unittest.TestCase):
         self.assertNotIn('__CONNECTION_SCRIPT__',html)
         self.assertNotIn('__OBJECTIVE_PANEL__',html)
         self.assertIn('id="objectivePanel"',html)
-        self.assertIn('function describeObjective(',html)
+        self.assertIn('function objectiveFormula(',html)
         self.assertNotIn('C:\\Users\\',html)
         self.assertIn('id="reportData" type="application/json">null</script>',html)
 

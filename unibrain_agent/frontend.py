@@ -11,6 +11,8 @@ def document(payload=None, standalone=False):
     from .roles import role_catalog, prompt_for
     from .data_contract import model_contract
     config = {"data_contract": model_contract(), "standalone": standalone, "catalog": catalog(), "roles": role_catalog(), "research_prompt": prompt_for("research")}
+    from .objective import preview_objective
+    config['objective'] = preview_objective(config['catalog']['defaults'])
     parts = {
         "__STYLE__": "\n".join((web / name).read_text(encoding="utf-8") for name in ("dashboard.css", "assistant.css", "settings.css", "data.css", "cycle.css", "objective.css")),
         "__CONNECTION_SCRIPT__": (web / "connection.js").read_text(encoding="utf-8"),

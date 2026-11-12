@@ -920,7 +920,8 @@ def train(args):
                         else:
                             total = sum(weights[key] * value for key, value in losses.items())
                         if hasattr(model, "regularization_loss") and args.regularization:
-                            total = total + args.regularization * model.regularization_loss()
+                            regularization_term = model.regularization_loss()
+                            total = total + args.regularization * regularization_term
                     if not torch.isfinite(total) or not total.requires_grad:
                         raise ValueError("Joint objective is nonfinite or disconnected")
                     gradient_record = None
@@ -931,6 +932,20 @@ def train(args):
                         paths = classification_gradient_paths(model, losses["classification"], args.method, required, image) if "classification" in losses else None
                         gradient_record = {"protocol_version": 3, "classification_to_candidates": paths["candidates"] if paths else {},
                                            "classification_to_input": paths["input"] if paths else None, "input_required": required}
+                    from .objective import observe_objective
+                    objective_losses = dict(losses)
+                    objective_weights = dict(weights) if not (standalone and args.method == "synthstrip") else {"extraction": 1.}
+                    if standalone:
+                        objective_weights = {name: 1. if name == ("extraction" if args.method == "synthstrip" else new_loss) else 0. for name in losses}
+                    elif args.setting == "original_frozen_stages":
+                        objective_weights = {name: weights[name] if name == "classification" else 0. for name in losses}
+                    elif policy_record is not None:
+                        objective_weights.update(policy_record["weights"])
+                    if hasattr(model, "regularization_loss") and args.regularization:
+                        objective_losses["regularization"] = regularization_term
+                        objective_weights["regularization"] = args.regularization
+                    objective = observe_objective(model, objective_losses, objective_weights, total, progress["steps"] + 1)
+                    objective.update(method=args.method, profile="Full UniBrain · " + args.method)
                     total.backward()
                     if gradient_record is not None:
                         gradient_record["total_to_input"] = gradient_statistics([image.grad])
@@ -958,7 +973,9 @@ def train(args):
                     progress.update(phase=phase_index, epoch=epoch, position=position + 1, steps=progress["steps"] + 1,
                                     pretrain_steps=progress["pretrain_steps"] + int(standalone))
                     event = {"phase": phase, "epoch": epoch + 1, "step": progress["steps"], "losses": {k: float(v.detach()) for k, v in losses.items()}, "total_loss": float(total.detach()),
-                             "sampled_parameter_updates": observed}
+                             "sampled_parameter_updates": observed, "objective": objective}
+                    objective["gradient_verification"] = gradient_record
+                    report["objective"] = objective
                     if policy_record is not None:
                         event["gradient_policy"] = policy_record
                     if gradient_record is not None:

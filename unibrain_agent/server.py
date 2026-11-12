@@ -204,6 +204,12 @@ def create_server(port=8777, host="127.0.0.1", access=None):
                 body = json.loads(self.rfile.read(length))
                 if not isinstance(body, dict):
                     raise ValueError("Expected a JSON object")
+                if self.path == "/api/objective/preview":
+                    from .objective import preview_objective
+                    from .builds import read_build
+                    build = read_build(body['build_id']) if body.get('build_id') else None
+                    self.respond(preview_objective(body['selection'], body.get('coordination', 'single'), build))
+                    return
                 if self.path == "/api/research-cycles":
                     self.require_ai()
                     from .runtime import settings

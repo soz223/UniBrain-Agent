@@ -1,0 +1,787 @@
+{
+  "version": 1,
+  "runs": [
+    {
+      "method": "voxelmorph",
+      "status": "complete",
+      "steps": 2,
+      "scope": "Full UniBrain, original 96 cubed input, two subject ABIDE round 1 acceptance subset; no convergence claim",
+      "objective": {
+        "version": 1,
+        "status": "observed",
+        "step": 2,
+        "terms": [
+          {
+            "id": "extraction",
+            "name": "Brain extraction",
+            "definition": "BCE",
+            "supervision": "Subject brain mask",
+            "weight": 1.0,
+            "value": 0.6887215971946716,
+            "weighted_value": 0.6887215971946716,
+            "operations": [
+              "AccumulateGrad",
+              "BinaryCrossEntropyBackward0",
+              "CatBackward0",
+              "ConvolutionBackward0",
+              "CudnnBatchNormBackward0",
+              "LeakyReluBackward1",
+              "MulBackward0",
+              "SigmoidBackward0",
+              "UpsampleNearest3DBackward0"
+            ],
+            "requires_grad": true
+          },
+          {
+            "id": "segmentation",
+            "name": "Tissue segmentation",
+            "definition": "CE",
+            "supervision": "Tissue reference",
+            "weight": 1.0,
+            "value": 1.379478931427002,
+            "weighted_value": 1.379478931427002,
+            "operations": [
+              "AccumulateGrad",
+              "AddBackward0",
+              "AddmmBackward0",
+              "AffineGridGeneratorBackward0",
+              "AsStridedBackward0",
+              "BmmBackward0",
+              "CatBackward0",
+              "ClampMinBackward0",
+              "ConvolutionBackward0",
+              "CopySlices",
+              "CudnnBatchNormBackward0",
+              "DivBackward0",
+              "DivBackward1",
+              "ExpandBackward0",
+              "GridSampler3DBackward0",
+              "IndexBackward0",
+              "LeakyReluBackward0",
+              "LeakyReluBackward1",
+              "LinalgInvExBackward0",
+              "LogSoftmaxBackward0",
+              "MulBackward0",
+              "NegBackward0",
+              "PermuteBackward0",
+              "SelectBackward0",
+              "SigmoidBackward0",
+              "SliceBackward0",
+              "SubBackward0",
+              "SumBackward0",
+              "SumBackward1",
+              "TBackward0",
+              "UnsafeViewBackward0",
+              "UpsampleNearest3DBackward0",
+              "UpsampleTrilinear3DBackward0",
+              "ViewBackward0"
+            ],
+            "requires_grad": true
+          },
+          {
+            "id": "classification",
+            "name": "Diagnosis classification",
+            "definition": "CE",
+            "supervision": "Subject class label",
+            "weight": 1.0,
+            "value": 0.7032380104064941,
+            "weighted_value": 0.7032380104064941,
+            "operations": [
+              "AccumulateGrad",
+              "AddBackward0",
+              "AddmmBackward0",
+              "AffineGridGeneratorBackward0",
+              "AsStridedBackward0",
+              "BmmBackward0",
+              "CatBackward0",
+              "ClampMinBackward0",
+              "ConvolutionBackward0",
+              "CopySlices",
+              "CudnnBatchNormBackward0",
+              "DivBackward0",
+              "ExpandBackward0",
+              "GridSampler3DBackward0",
+              "IndexBackward0",
+              "IndexPutBackward0",
+              "IndexSelectBackward0",
+              "LeakyReluBackward0",
+              "LeakyReluBackward1",
+              "LinalgInvExBackward0",
+              "LinalgVectorNormBackward0",
+              "LogSoftmaxBackward0",
+              "MaskedFillBackward0",
+              "MmBackward0",
+              "MulBackward0",
+              "NegBackward0",
+              "NllLossBackward0",
+              "PermuteBackward0",
+              "PowBackward0",
+              "ReshapeAliasBackward0",
+              "ScatterAddBackward0",
+              "SelectBackward0",
+              "SigmoidBackward0",
+              "SliceBackward0",
+              "SoftplusBackward0",
+              "SqueezeBackward1",
+              "SubBackward0",
+              "SumBackward1",
+              "TBackward0",
+              "UnsafeViewBackward0",
+              "UnsqueezeBackward0",
+              "UpsampleNearest3DBackward0",
+              "UpsampleTrilinear3DBackward0",
+              "ViewBackward0"
+            ],
+            "requires_grad": true
+          },
+          {
+            "id": "registration",
+            "name": "Image registration",
+            "definition": "GCC",
+            "supervision": "Fixed MRI template",
+            "weight": 0.1,
+            "value": 0.4855339527130127,
+            "weighted_value": 0.04855339527130127,
+            "operations": [
+              "AccumulateGrad",
+              "AddBackward0",
+              "AddmmBackward0",
+              "AffineGridGeneratorBackward0",
+              "AsStridedBackward0",
+              "BmmBackward0",
+              "CatBackward0",
+              "ConvolutionBackward0",
+              "CopySlices",
+              "CudnnBatchNormBackward0",
+              "DivBackward0",
+              "ExpandBackward0",
+              "GridSampler3DBackward0",
+              "IndexBackward0",
+              "LeakyReluBackward0",
+              "LeakyReluBackward1",
+              "MeanBackward0",
+              "MulBackward0",
+              "PermuteBackward0",
+              "PowBackward0",
+              "ReshapeAliasBackward0",
+              "SelectBackward0",
+              "SigmoidBackward0",
+              "SliceBackward0",
+              "SqrtBackward0",
+              "SubBackward0",
+              "TBackward0",
+              "UnsafeViewBackward0",
+              "UnsqueezeBackward0",
+              "UpsampleNearest3DBackward0",
+              "UpsampleTrilinear3DBackward0",
+              "ViewBackward0"
+            ],
+            "requires_grad": true
+          },
+          {
+            "id": "regularization",
+            "name": "Deformation regularization",
+            "definition": "Smoothness",
+            "supervision": "Deformation field",
+            "weight": 0.01,
+            "value": 1.9867298917120024e-09,
+            "weighted_value": 1.9867298917120024e-11,
+            "operations": [
+              "AccumulateGrad",
+              "AddBackward0",
+              "AddmmBackward0",
+              "AffineGridGeneratorBackward0",
+              "AsStridedBackward0",
+              "BmmBackward0",
+              "CatBackward0",
+              "ConvolutionBackward0",
+              "CopySlices",
+              "CudnnBatchNormBackward0",
+              "DivBackward0",
+              "ExpandBackward0",
+              "GridSampler3DBackward0",
+              "LeakyReluBackward0",
+              "LeakyReluBackward1",
+              "MeanBackward0",
+              "MulBackward0",
+              "PowBackward0",
+              "SigmoidBackward0",
+              "SliceBackward0",
+              "SubBackward0",
+              "TBackward0",
+              "UnsafeViewBackward0",
+              "UpsampleNearest3DBackward0",
+              "UpsampleTrilinear3DBackward0",
+              "ViewBackward0"
+            ],
+            "requires_grad": true
+          }
+        ],
+        "profile": "Executed full UniBrain",
+        "modules": [
+          {
+            "id": "ext_net",
+            "name": "multi_stage_ext (ext_net)"
+          },
+          {
+            "id": "feature_net",
+            "name": "Roi_feature_net (feature_net)"
+          },
+          {
+            "id": "gnn_pred",
+            "name": "GNN_predictor (gnn_pred)"
+          },
+          {
+            "id": "par_net",
+            "name": "Unet (par_net)"
+          },
+          {
+            "id": "reg_net",
+            "name": "FullRegistration (reg_net)"
+          },
+          {
+            "id": "seg_net",
+            "name": "Unet (seg_net)"
+          }
+        ],
+        "connections": [
+          {
+            "loss": "extraction",
+            "module": "ext_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "segmentation",
+            "module": "ext_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "segmentation",
+            "module": "reg_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "segmentation",
+            "module": "seg_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "classification",
+            "module": "ext_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "classification",
+            "module": "feature_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "classification",
+            "module": "gnn_pred",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "classification",
+            "module": "reg_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "registration",
+            "module": "ext_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "registration",
+            "module": "reg_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "regularization",
+            "module": "ext_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "regularization",
+            "module": "reg_net",
+            "status": "autograd_path"
+          }
+        ],
+        "total": 2.8199920654296875,
+        "reconstructed_total": 2.819991934319336,
+        "connection_evidence": "Autograd paths; nonzero gradients are reported separately.",
+        "gradient_verification": {
+          "protocol_version": 3,
+          "classification_to_candidates": {
+            "reg_net": {
+              "tensor_count": 52,
+              "observed_tensors": 52,
+              "nonzero_elements": 6790376,
+              "finite": true,
+              "nonzero": true,
+              "l1": 1.113289784693687,
+              "required": true,
+              "parameter_names": [
+                "affine.affine.inconv.conv.0.weight",
+                "affine.affine.inconv.conv.0.bias",
+                "affine.affine.inconv.conv.1.weight",
+                "affine.affine.inconv.conv.1.bias",
+                "affine.affine.down1.conv.0.weight",
+                "affine.affine.down1.conv.0.bias",
+                "affine.affine.down1.conv.1.weight",
+                "affine.affine.down1.conv.1.bias",
+                "affine.affine.down2.conv.0.weight",
+                "affine.affine.down2.conv.0.bias",
+                "affine.affine.down2.conv.1.weight",
+                "affine.affine.down2.conv.1.bias",
+                "affine.affine.down3.conv.0.weight",
+                "affine.affine.down3.conv.0.bias",
+                "affine.affine.down3.conv.1.weight",
+                "affine.affine.down3.conv.1.bias",
+                "affine.affine.down4.conv.0.weight",
+                "affine.affine.down4.conv.0.bias",
+                "affine.affine.down4.conv.1.weight",
+                "affine.affine.down4.conv.1.bias",
+                "affine.affine.down5.conv.0.weight",
+                "affine.affine.down5.conv.0.bias",
+                "affine.affine.down5.conv.1.weight",
+                "affine.affine.down5.conv.1.bias",
+                "affine.affine.fc_loc.0.weight",
+                "affine.affine.fc_loc.0.bias",
+                "affine.affine.fc_loc.2.weight",
+                "affine.affine.fc_loc.2.bias",
+                "core.unet_model.downarm.0.main.weight",
+                "core.unet_model.downarm.0.main.bias",
+                "core.unet_model.downarm.1.main.weight",
+                "core.unet_model.downarm.1.main.bias",
+                "core.unet_model.downarm.2.main.weight",
+                "core.unet_model.downarm.2.main.bias",
+                "core.unet_model.downarm.3.main.weight",
+                "core.unet_model.downarm.3.main.bias",
+                "core.unet_model.uparm.0.main.weight",
+                "core.unet_model.uparm.0.main.bias",
+                "core.unet_model.uparm.1.main.weight",
+                "core.unet_model.uparm.1.main.bias",
+                "core.unet_model.uparm.2.main.weight",
+                "core.unet_model.uparm.2.main.bias",
+                "core.unet_model.uparm.3.main.weight",
+                "core.unet_model.uparm.3.main.bias",
+                "core.unet_model.extras.0.main.weight",
+                "core.unet_model.extras.0.main.bias",
+                "core.unet_model.extras.1.main.weight",
+                "core.unet_model.extras.1.main.bias",
+                "core.unet_model.extras.2.main.weight",
+                "core.unet_model.extras.2.main.bias",
+                "core.flow.weight",
+                "core.flow.bias"
+              ],
+              "expected_absent": false,
+              "reason": null
+            }
+          },
+          "classification_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 0.017939375713467598,
+            "required": true
+          },
+          "input_required": true,
+          "total_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 1.1296483278274536
+          },
+          "total_to_candidates": {
+            "reg_net": {
+              "tensor_count": 52,
+              "observed_tensors": 52,
+              "nonzero_elements": 6790378,
+              "finite": true,
+              "nonzero": true,
+              "l1": 30.852064169707816
+            }
+          },
+          "warmup": {
+            "status": "not_needed",
+            "module": null,
+            "first_step": null,
+            "confirmed_step": null,
+            "reason": null,
+            "initialization": null
+          }
+        }
+      },
+      "gradient_verified_steps": 2,
+      "diagnosis_reaches_candidates": true
+    },
+    {
+      "method": "redwgan",
+      "status": "complete",
+      "steps": 2,
+      "scope": "Full UniBrain, original 96 cubed input, two subject ABIDE round 1 acceptance subset; no convergence claim",
+      "objective": {
+        "version": 1,
+        "status": "observed",
+        "step": 2,
+        "terms": [
+          {
+            "id": "extraction",
+            "name": "Brain extraction",
+            "definition": "BCE",
+            "supervision": "Subject brain mask",
+            "weight": 1.0,
+            "value": 0.6891913414001465,
+            "weighted_value": 0.6891913414001465,
+            "operations": [
+              "AccumulateGrad",
+              "AddBackward0",
+              "BinaryCrossEntropyBackward0",
+              "CatBackward0",
+              "ConvolutionBackward0",
+              "CudnnBatchNormBackward0",
+              "LeakyReluBackward0",
+              "LeakyReluBackward1",
+              "MulBackward0",
+              "ReluBackward0",
+              "SigmoidBackward0",
+              "UpsampleNearest3DBackward0"
+            ],
+            "requires_grad": true
+          },
+          {
+            "id": "segmentation",
+            "name": "Tissue segmentation",
+            "definition": "CE",
+            "supervision": "Tissue reference",
+            "weight": 1.0,
+            "value": 1.3803801536560059,
+            "weighted_value": 1.3803801536560059,
+            "operations": [
+              "AccumulateGrad",
+              "AddBackward0",
+              "AddmmBackward0",
+              "AffineGridGeneratorBackward0",
+              "AsStridedBackward0",
+              "BmmBackward0",
+              "CatBackward0",
+              "ClampMinBackward0",
+              "ConvolutionBackward0",
+              "CopySlices",
+              "CudnnBatchNormBackward0",
+              "DivBackward0",
+              "DivBackward1",
+              "ExpandBackward0",
+              "GridSampler3DBackward0",
+              "LeakyReluBackward0",
+              "LeakyReluBackward1",
+              "LinalgInvExBackward0",
+              "LogSoftmaxBackward0",
+              "MulBackward0",
+              "NegBackward0",
+              "ReluBackward0",
+              "SigmoidBackward0",
+              "SliceBackward0",
+              "SumBackward0",
+              "SumBackward1",
+              "TBackward0",
+              "UnsafeViewBackward0",
+              "UpsampleNearest3DBackward0",
+              "ViewBackward0"
+            ],
+            "requires_grad": true
+          },
+          {
+            "id": "classification",
+            "name": "Diagnosis classification",
+            "definition": "CE",
+            "supervision": "Subject class label",
+            "weight": 1.0,
+            "value": 0.7040868997573853,
+            "weighted_value": 0.7040868997573853,
+            "operations": [
+              "AccumulateGrad",
+              "AddBackward0",
+              "AddmmBackward0",
+              "AffineGridGeneratorBackward0",
+              "AsStridedBackward0",
+              "BmmBackward0",
+              "CatBackward0",
+              "ClampMinBackward0",
+              "ConvolutionBackward0",
+              "CopySlices",
+              "CudnnBatchNormBackward0",
+              "DivBackward0",
+              "ExpandBackward0",
+              "GridSampler3DBackward0",
+              "IndexBackward0",
+              "IndexPutBackward0",
+              "IndexSelectBackward0",
+              "LeakyReluBackward0",
+              "LeakyReluBackward1",
+              "LinalgInvExBackward0",
+              "LinalgVectorNormBackward0",
+              "LogSoftmaxBackward0",
+              "MaskedFillBackward0",
+              "MmBackward0",
+              "MulBackward0",
+              "NllLossBackward0",
+              "PermuteBackward0",
+              "PowBackward0",
+              "ReluBackward0",
+              "ReshapeAliasBackward0",
+              "ScatterAddBackward0",
+              "SelectBackward0",
+              "SigmoidBackward0",
+              "SliceBackward0",
+              "SoftplusBackward0",
+              "SqueezeBackward1",
+              "SumBackward1",
+              "TBackward0",
+              "UnsafeViewBackward0",
+              "UnsqueezeBackward0",
+              "UpsampleNearest3DBackward0",
+              "ViewBackward0"
+            ],
+            "requires_grad": true
+          },
+          {
+            "id": "registration",
+            "name": "Image registration",
+            "definition": "GCC",
+            "supervision": "Fixed MRI template",
+            "weight": 0.1,
+            "value": 0.5599933862686157,
+            "weighted_value": 0.05599933862686157,
+            "operations": [
+              "AccumulateGrad",
+              "AddBackward0",
+              "AddmmBackward0",
+              "AffineGridGeneratorBackward0",
+              "AsStridedBackward0",
+              "BmmBackward0",
+              "CatBackward0",
+              "ConvolutionBackward0",
+              "CopySlices",
+              "CudnnBatchNormBackward0",
+              "DivBackward0",
+              "ExpandBackward0",
+              "GridSampler3DBackward0",
+              "LeakyReluBackward0",
+              "LeakyReluBackward1",
+              "MeanBackward0",
+              "MulBackward0",
+              "PowBackward0",
+              "ReluBackward0",
+              "SigmoidBackward0",
+              "SliceBackward0",
+              "SqrtBackward0",
+              "SubBackward0",
+              "TBackward0",
+              "UnsafeViewBackward0",
+              "UpsampleNearest3DBackward0",
+              "ViewBackward0"
+            ],
+            "requires_grad": true
+          }
+        ],
+        "profile": "Executed full UniBrain",
+        "modules": [
+          {
+            "id": "ext_net",
+            "name": "multi_stage_ext (ext_net)"
+          },
+          {
+            "id": "feature_net",
+            "name": "Roi_feature_net (feature_net)"
+          },
+          {
+            "id": "gnn_pred",
+            "name": "GNN_predictor (gnn_pred)"
+          },
+          {
+            "id": "par_net",
+            "name": "Unet (par_net)"
+          },
+          {
+            "id": "preprocessor",
+            "name": "FullPreprocessor (preprocessor)"
+          },
+          {
+            "id": "reg_net",
+            "name": "multi_stage_reg (reg_net)"
+          },
+          {
+            "id": "seg_net",
+            "name": "Unet (seg_net)"
+          }
+        ],
+        "connections": [
+          {
+            "loss": "extraction",
+            "module": "ext_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "extraction",
+            "module": "preprocessor",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "segmentation",
+            "module": "ext_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "segmentation",
+            "module": "preprocessor",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "segmentation",
+            "module": "reg_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "segmentation",
+            "module": "seg_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "classification",
+            "module": "ext_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "classification",
+            "module": "feature_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "classification",
+            "module": "gnn_pred",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "classification",
+            "module": "preprocessor",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "classification",
+            "module": "reg_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "registration",
+            "module": "ext_net",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "registration",
+            "module": "preprocessor",
+            "status": "autograd_path"
+          },
+          {
+            "loss": "registration",
+            "module": "reg_net",
+            "status": "autograd_path"
+          }
+        ],
+        "total": 2.829657554626465,
+        "reconstructed_total": 2.829657733440399,
+        "connection_evidence": "Autograd paths; nonzero gradients are reported separately.",
+        "gradient_verification": {
+          "protocol_version": 3,
+          "classification_to_candidates": {
+            "preprocessor": {
+              "tensor_count": 30,
+              "observed_tensors": 30,
+              "nonzero_elements": 2326272,
+              "finite": true,
+              "nonzero": true,
+              "l1": 19.60512302244456,
+              "required": true,
+              "parameter_names": [
+                "core.conv1.0.weight",
+                "core.conv1.0.bias",
+                "core.conv1.1.weight",
+                "core.conv1.1.bias",
+                "core.conv2.0.weight",
+                "core.conv2.0.bias",
+                "core.conv2.1.weight",
+                "core.conv2.1.bias",
+                "core.conv3.0.weight",
+                "core.conv3.0.bias",
+                "core.conv3.1.weight",
+                "core.conv3.1.bias",
+                "core.conv4.0.weight",
+                "core.conv4.0.bias",
+                "core.conv4.1.weight",
+                "core.conv4.1.bias",
+                "core.deConv1_1.weight",
+                "core.deConv1_1.bias",
+                "core.deConv1.0.weight",
+                "core.deConv1.0.bias",
+                "core.deConv2_1.weight",
+                "core.deConv2_1.bias",
+                "core.deConv2.0.weight",
+                "core.deConv2.0.bias",
+                "core.deConv3_1.weight",
+                "core.deConv3_1.bias",
+                "core.deConv3.0.weight",
+                "core.deConv3.0.bias",
+                "core.deConv4_1.weight",
+                "core.deConv4_1.bias"
+              ],
+              "expected_absent": false,
+              "reason": null
+            }
+          },
+          "classification_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 0.2661098837852478,
+            "required": true
+          },
+          "input_required": true,
+          "total_to_input": {
+            "tensor_count": 1,
+            "observed_tensors": 1,
+            "nonzero_elements": 884736,
+            "finite": true,
+            "nonzero": true,
+            "l1": 1.5361557006835938
+          },
+          "total_to_candidates": {
+            "preprocessor": {
+              "tensor_count": 30,
+              "observed_tensors": 30,
+              "nonzero_elements": 2326273,
+              "finite": true,
+              "nonzero": true,
+              "l1": 362.3136624474928
+            }
+          },
+          "warmup": {
+            "status": "not_needed",
+            "module": null,
+            "first_step": null,
+            "confirmed_step": null,
+            "reason": null,
+            "initialization": null
+          }
+        }
+      },
+      "gradient_verified_steps": 2,
+      "diagnosis_reaches_candidates": true
+    }
+  ]
+}
