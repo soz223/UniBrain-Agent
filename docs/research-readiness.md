@@ -7,6 +7,9 @@ configuration, input and source hashes, observed metrics and checkpoints.
 The existing original baseline service is not modified by these programs.
 Measured software checks are recorded in
 [the public verification record](../catalog/paper_program_verification.json).
+The [extended acceptance record](../catalog/full_program_acceptance_20261111.json)
+contains the subsequent ABIDE and ADHD checks. Historical checks below retain
+their original scope; short runs do not establish full cohort performance.
 
 ## Executable components
 
@@ -15,10 +18,11 @@ Measured software checks are recorded in
 | Original baseline | `scripts/run_upstream.py` | Existing upstream reproduction; source pinned and unchanged |
 | Matched full model training | `scripts/train_replacement.py` | Full SynthStrip host completed one update, validation, test and checkpoint saving on a distinct tiny sample split |
 | Full registration replacements | `full_candidates.py` and the comparison trainer | Full VoxelMorph host passed one CUDA joint update, core and spatial agreement, all 24 candidate parameter gradients and diagnosis gradients into registration; full three-level LapIRN passed CPU core forward, gradients and an update |
-| Planned tissue replacement | `scripts/prepare_nnunet.py` and the comparison trainer | Official planner ran on a training sample; its unchanged 64 by 96 by 96 patch plan produced a 16,548,560 parameter candidate that passed CPU forward, gradients and an update at full 96 cubed execution; full host GPU acceptance remains pending |
+| Planned tissue replacement | `scripts/prepare_nnunet.py` and the comparison trainer | Actual train-only plans and full host GPU checks passed on both dataset subsets; the auxiliary tissue head receives tissue supervision, not diagnosis gradients |
 | Agent generation and repair | `scripts/run_full_replacement.py` and the integration benchmark | Actual earlier SynthStrip generation and repair trace retained; controlled injected fault is labeled explicitly |
-| Additional full candidates | `full_preprocessing.py`, `full_anatomy_candidates.py`, `full_graph_candidates.py` | Ten added candidates passed CPU full-core forward, input/parameter gradient and optimizer-update checks at native 96 cubed volumes or 116-node graphs; their full-host GPU evaluations remain pending |
-| Selection to training cycle | `scripts/run_research_cycle.py` | Real provider and trainer calls are implemented; mocked CPU orchestration verifies accepted code hash/path reuse and separate update budgets; a real complete AI/GPU cycle for this new runner remains pending |
+| Additional full candidates | `full_preprocessing.py`, `full_anatomy_candidates.py`, `full_graph_candidates.py` | Ten added candidates passed native-size CPU checks; the dataset-specific full host GPU matrix records passed, failed and pending executions separately |
+| Selection to training cycle | `scripts/run_research_cycle.py` | Actual Codex selection, generated BrainNetCNN adapter, independent acceptance and two joint updates completed on both dataset subsets; the accepted code hash was preserved |
+| Training coordination | `taskforce.py` and the comparison trainer | Eight full host updates on each dataset; all four actors and four critics changed parameters with four optimizer steps each; overall validation loss did not decrease |
 | Gradient path controls | `full_connectivity.py` and trainer options | Soft label transfer, straight through and Gumbel strategies, selected cuts, mask/graph/sampling undo controls; CPU gradient tests |
 | Independent versus joint training | Comparison trainer settings | Explicit weight provenance, frozen parameters and buffers, standalone training followed by host training, joint training; completed cohort comparison remains pending |
 | Two module composition | `scripts/run_composition.py` | Actual full trained extraction checkpoint reconstructed on CPU; 256 state tensors retained and 26 new VoxelMorph tensors added; GPU composition remains pending |
@@ -33,9 +37,11 @@ Measured software checks are recorded in
 The full paper plan includes 14 candidate methods. Full candidate constructors,
 generated stage adapters, independent evaluator paths and configuration
 generation now cover all 14. nnU-Net requires a real compatible dataset plan.
-This code coverage is separate from execution evidence. The ten newly added
-candidates have native-size CPU component checks; none of those checks proves
-a completed full UniBrain GPU integration or a successful Agent trial.
+This code coverage is separate from execution evidence. Native-size CPU
+component checks, full host GPU checks and actual provider trials have distinct
+records. The full host matrix uses two training and two validation subjects per
+dataset from the preserved first fold. It does not use reduced architectures.
+Its subjects and automatic reference labels are not a full cohort experiment.
 
 The new preprocessing candidates are RED-WGAN, DeepN4, deepNormalize and the
 HarmonizingFlows harmonizer component. Anatomy candidates add complete ERNet

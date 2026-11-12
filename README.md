@@ -131,6 +131,11 @@ compact profile. [Full composition](docs/full-composition.md) adds simultaneous
 or sequential extraction and registration replacement with audited state
 transfer.
 
+The [saved pipeline evaluator](docs/replacement-evaluation.md) reconstructs a
+full trained replacement or composition from its checkpoint and verifies
+data, adapter and architecture provenance. It supports explicit relocated
+paths and evaluates the chosen split without optimizer updates.
+
 The [integration benchmark](docs/integration-benchmark.md) runs controlled
 Agent prompts and independent checks. It is not a reproduction of every named
 external Agent system. `scripts/summarize_case_study.py` audits actual retained
