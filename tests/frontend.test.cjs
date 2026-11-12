@@ -49,3 +49,8 @@ test('declared coordinated subterms share the backend supplied weight group',()=
  assert.equal(objectiveContext.objectiveFormula(packet)[0].expression,'0.01 × w(registration, t)');
  packet.status='observed';assert.equal(objectiveContext.objectiveFormula(packet)[0].expression,'0.001');
 });
+
+test('loss colors follow their owning stage rather than loss order',()=>{
+ const packet={stages:[{id:'denoising',loss_ids:[]},{id:'registration',loss_ids:['registration','regularization']}]};
+ assert.equal(objectiveContext.objectiveTermColor(packet,'registration',0),objectiveContext.objectiveTermColor(packet,'regularization',4));
+});

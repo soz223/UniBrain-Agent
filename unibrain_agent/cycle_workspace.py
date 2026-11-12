@@ -175,6 +175,9 @@ class CycleWorkspace:
         updates = tail_updates(root / "cycle/training/updates.jsonl")
         objective = updates[-1].get("objective") if updates else training.get("objective")
         if objective:
+            from .objective import with_stage_layout, METHOD_STAGES
+            from .catalog import DEFAULTS
+            objective = with_stage_layout(objective, selection={**DEFAULTS, **METHOD_STAGES.get(report.get("method"), {})})
             objective = {**objective, "profile": "Full UniBrain · " + str(report.get("method", "recorded run"))}
         running = job["status"] == "running" and self.active == identifier
         status = "running" if running else "interrupted" if job["status"] == "running" else job["status"]

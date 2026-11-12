@@ -10,6 +10,43 @@ LABELS = {'extraction': ('Brain extraction', 'BCE', 'Subject brain mask'),
           'regularization': ('Deformation regularization', 'Smoothness', 'Deformation field')}
 
 
+STAGE_ORDER = ('denoising', 'bias', 'extraction', 'normalization', 'registration',
+               'parcellation', 'graph', 'segmentation', 'classification', 'surface')
+METHOD_STAGES = {
+    'synthstrip': {'extraction': 'M02'}, 'voxelmorph': {'registration': 'M06'},
+    'lapirn': {'registration': 'M07'}, 'nnunet': {'segmentation': 'M08'},
+    'redwgan': {'denoising': 'M14'}, 'deepn4': {'bias': 'M01'},
+    'ernet': {'extraction': 'M03', 'registration': 'M03'},
+    'deepnormalize': {'normalization': 'M04'}, 'harmonizing_flows': {'normalization': 'M05'},
+    'fastsurfer': {'parcellation': 'M09'}, 'nobrainer': {'parcellation': 'M10'},
+    'fbnetgen': {'graph': 'M11'}, 'brainnetcnn': {'classification': 'M12'},
+    'bnt': {'classification': 'M13'},
+}
+
+
+def with_stage_layout(packet, selection=None, method=None):
+    """Associate objective terms with their pipeline stages, including lossless stages."""
+    from .catalog import DEFAULTS, catalog
+    selection = selection or packet.get('selection')
+    if selection is None:
+        selection = {**DEFAULTS, **METHOD_STAGES.get(method or packet.get('method'), {})}
+    stages = {stage['id']: stage for stage in catalog()['stages']}
+    layout = []
+    for identifier in STAGE_ORDER:
+        stage = stages[identifier]
+        option = next(option for option in stage['options'] if option['id'] == selection[identifier])
+        if option['id'] == 'none':
+            continue
+        losses = [term['id'] for term in packet['terms']
+                  if ('registration' if term['id'] == 'regularization' else term['id']) == identifier]
+        layout.append(dict(id=identifier, name=stage['name'], method=option.get('method') or option['label'],
+                           loss_ids=losses, branch=identifier in {'segmentation', 'surface'},
+                           note='' if losses else 'N/A: no independent loss. See measured downstream connections below.'))
+    assigned = {identifier for stage in layout for identifier in stage['loss_ids']}
+    return {**packet, 'selection': dict(selection), 'stages': layout,
+            'unassigned_loss_ids': [term['id'] for term in packet['terms'] if term['id'] not in assigned]}
+
+
 def preview_objective(selection, coordination='single', build=None):
     from .catalog import DEFAULTS, catalog, validate_selection
     selection = validate_selection(selection)
@@ -35,10 +72,10 @@ def preview_objective(selection, coordination='single', build=None):
         option = next(option for option in stage['options'] if option['id'] == selection[stage['id']])
         if option['id'] != 'none':
             modules.append({'id': stage['id'], 'name': option.get('method') or option['label'].split(' (')[0]})
-    return dict(version=1, status='declared', profile='Original full UniBrain' if original else 'Compact adapter preview',
+    return with_stage_layout(dict(version=1, status='declared', profile='Original full UniBrain' if original else 'Compact adapter preview',
                 selection=selection, coordination=coordination, terms=terms, modules=modules, connections=[],
                 connection_evidence='Configured objective preview. Actual connections and coefficients appear after an executed forward pass.',
-                explanation='Optional preprocessing learns through downstream objectives unless an explicit loss is declared.')
+                explanation='Optional preprocessing learns through downstream objectives unless an explicit loss is declared.'))
 
 
 def observe_objective(model, losses, weights, total, step):
@@ -77,9 +114,11 @@ def observe_objective(model, losses, weights, total, step):
     actual = float(total.detach())
     if not math.isfinite(actual) or not math.isclose(actual, reconstructed, rel_tol=2e-5, abs_tol=2e-5):
         raise ValueError('Objective manifest does not reconstruct the executed total')
-    return {'version': 1, 'status': 'observed', 'step': step, 'terms': terms,
+    packet = {'version': 1, 'status': 'observed', 'step': step, 'terms': terms,
             'profile': 'Executed full UniBrain',
             'modules': [{'id': module, 'name': type(getattr(model, module, model)).__name__ + ' (' + module + ')'} for module in sorted(modules)],
             'connections': connections, 'total': actual,
             'reconstructed_total': reconstructed,
             'connection_evidence': 'Autograd paths; nonzero gradients are reported separately.'}
+
+    return with_stage_layout(packet, getattr(getattr(model, 'config', None), 'stages', None))

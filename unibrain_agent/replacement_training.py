@@ -932,7 +932,8 @@ def train(args):
                         paths = classification_gradient_paths(model, losses["classification"], args.method, required, image) if "classification" in losses else None
                         gradient_record = {"protocol_version": 3, "classification_to_candidates": paths["candidates"] if paths else {},
                                            "classification_to_input": paths["input"] if paths else None, "input_required": required}
-                    from .objective import observe_objective
+                    from .objective import observe_objective, with_stage_layout, METHOD_STAGES
+                    from .catalog import DEFAULTS
                     objective_losses = dict(losses)
                     objective_weights = dict(weights) if not (standalone and args.method == "synthstrip") else {"extraction": 1.}
                     if standalone:
@@ -945,6 +946,7 @@ def train(args):
                         objective_losses["regularization"] = regularization_term
                         objective_weights["regularization"] = args.regularization
                     objective = observe_objective(model, objective_losses, objective_weights, total, progress["steps"] + 1)
+                    objective = with_stage_layout(objective, selection={**DEFAULTS, **METHOD_STAGES.get(args.method, {})})
                     objective.update(method=args.method, profile="Full UniBrain · " + args.method)
                     total.backward()
                     if gradient_record is not None:

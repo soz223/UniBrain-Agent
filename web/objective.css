@@ -44,3 +44,23 @@
 @keyframes objective-backward {0% {left:96%;opacity:0;}20%,80% {opacity:.85;}100% {left:4%;opacity:0;}}
 @media(prefers-reduced-motion:reduce) {.objective-scan,.objective-pulse,.objective-loop::after,.objective-loop::before {animation:none!important;}}
 @media(max-width:750px) {.objective-panel {margin:0 12px 16px;padding:14px 12px 10px;}.objective-terms {grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}.objective-terms-many .objective-term:last-child {grid-column:span 2;}.objective-term::after,.objective-bus {display:none;}.objective-loop {flex-wrap:wrap;gap:8px;margin-top:10px;padding:10px 8px;}.objective-formula {font-size:20px;gap:7px;padding:16px 0;}.objective-footer {display:block;}.objective-schematic {display:block;}.objective-heading {align-items:flex-start;}.objective-actions {flex-direction:column;align-items:flex-end;}.objective-detail {min-height:0;}}
+
+/* Match stage columns across the pipeline and objective views. */
+.stage-choices,.objective-terms {grid-template-columns:repeat(var(--stage-count,6),minmax(0,1fr));gap:10px;}
+.stage-choices {padding-left:41px;padding-right:41px;}
+.stage-choice {min-width:0;}
+.stage-choice:disabled {opacity:1;}
+.stage-top {flex-wrap:wrap;}
+.stage-tool {overflow-wrap:anywhere;}
+.objective-no-loss::after {display:none;}
+.objective-term .stage-number {align-self:flex-start;font-size:9px;color:var(--muted);}
+.objective-terms {gap:0;}
+.objective-term {margin:0 5px;}
+.objective-term:first-child {margin-left:0;}
+.objective-term:last-child {margin-right:0;}
+.recorded-pipeline-note {font-size:11px;color:var(--muted);}
+.branch-choices {display:flex;flex-wrap:wrap;gap:12px;}
+@media(max-width:1000px) {.stage-choices,.objective-terms {grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}.objective-term {margin:0;}.objective-term::after,.objective-bus {display:none;}}
+@media(max-width:750px) {.stage-choices,.objective-terms {grid-template-columns:repeat(2,minmax(0,1fr));}.stage-choices {padding-left:25px;padding-right:25px;}}
+
+.stage-choice::after {display:none;}

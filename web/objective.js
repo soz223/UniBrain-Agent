@@ -16,8 +16,12 @@ let objectiveRequest = 0;
 let objectiveCacheKey = "";
 let objectivePacket = null;
 let objectivePreviousPacket = null;
-let objectiveObservedCycle = null;
 const objectiveColors = ["#a6d8c7", "#a9c7ed", "#d2b9e6", "#e2c08c", "#dfafb9"];
+
+function objectiveTermColor(packet, id, fallback) {
+  const index = (packet.stages || []).findIndex(stage => stage.loss_ids.includes(id));
+  return objectiveColors[(index < 0 ? fallback : index) % objectiveColors.length];
+}
 
 function objectiveFormula(packet) {
   return packet.terms.map(term => ({name: term.name, symbol: term.id, coefficient: term.weight,
@@ -31,13 +35,30 @@ function paintObjective(packet) {
   if (packet) objectivePreviousPacket = packet;
   byId("objectiveProfile").textContent = packet ? packet.profile + " · " + (packet.status === "observed" ? "Observed update " + packet.step : "Backend definition preview") : "Connect the updated backend to resolve this selection";
   byId("objectiveFormula").innerHTML = packet ? '<span><i>L</i><sub>joint</sub> =</span>' + objectiveFormula(packet).map((term, i) =>
-    (i ? '<span class="objective-plus">+</span>' : '') + '<span class="objective-part" style="--loss-color:' + objectiveColors[i % objectiveColors.length] + '"><span class="objective-weight">' + escapeHtml(term.expression) + '</span><i>L</i><sub>' + escapeHtml(term.symbol) + '</sub></span>').join('') : '';
+    (i ? '<span class="objective-plus">+</span>' : '') + '<span class="objective-part" style="--loss-color:' + objectiveTermColor(packet, term.symbol, i) + '"><span class="objective-weight">' + escapeHtml(term.expression) + '</span><i>L</i><sub>' + escapeHtml(term.symbol) + '</sub></span>').join('') : '';
   const terms = packet?.terms || [];
-  const selected = terms.find(term => term.id === objectiveSelected) || terms[0];
+  const stages = packet?.stages || [];
+  const selected = stages.find(stage => stage.id === objectiveSelected) || stages[0];
   objectiveSelected = selected?.id || '';
-  byId("objectiveTerms").classList.toggle("objective-terms-many", terms.length > 4);
-  byId("objectiveTerms").innerHTML = terms.map((term, i) => '<button class="objective-term" data-loss-index="' + i + '" aria-pressed="' + (term.id === objectiveSelected) + '" style="--loss-color:' + objectiveColors[i % objectiveColors.length] + '">' + objectiveArt(term.id) + '<strong>' + escapeHtml(term.name) + '</strong><span class="objective-loss">' + escapeHtml(term.definition) + '</span></button>').join('');
-  byId("objectiveDetail").textContent = selected ? selected.name + ': ' + selected.definition + '. Reference: ' + selected.supervision + (Number.isFinite(selected.value) ? '. Observed loss: ' + selected.value.toPrecision(5) + '; weighted: ' + selected.weighted_value.toPrecision(5) : '') : '';
+  renderStageChoices(packet);
+  byId("objectiveTerms").style.setProperty('--stage-count', stages.length || 1);
+  byId("objectiveTerms").innerHTML = stages.map((stage, i) => {
+    const losses = terms.filter(term => stage.loss_ids.includes(term.id));
+    return '<button class="objective-term' + (losses.length ? '' : ' objective-no-loss') + '" data-loss-index="' + i +
+      '" aria-pressed="' + (stage.id === objectiveSelected) + '" style="--loss-color:' + objectiveColors[i % objectiveColors.length] +
+      '"><span class="stage-number">' + String(i + 1).padStart(2, '0') + '</span>' + objectiveArt(stage.id) +
+      '<strong>' + escapeHtml(stage.name) + '</strong><span class="objective-loss">' +
+      (losses.length ? losses.map(term => escapeHtml(term.definition)).join(' + ') : 'N/A') +
+      '</span>' + (!losses.length ? '<small class="objective-method">No independent loss</small>' : '') + '</button>';
+  }).join('');
+  const details = selected ? terms.filter(term => selected.loss_ids.includes(term.id)) : [];
+  byId("objectiveDetail").textContent = selected ? selected.name + ': ' + (details.length ? details.map(term =>
+    term.name + ' = ' + term.definition + '. Reference: ' + term.supervision + (Number.isFinite(term.value) ?
+    '. Observed loss: ' + term.value.toPrecision(5) + '; weighted: ' + term.weighted_value.toPrecision(5) : '')).join('. ') : selected.note) : '';
+  const connected = stages.map((stage, i) => stage.loss_ids.length ? i : -1).filter(i => i >= 0);
+  const bus = document.querySelector('.objective-bus');
+  bus.style.left = connected.length ? ((connected[0] + .5) / stages.length * 100) + '%' : '50%';
+  bus.style.right = connected.length ? ((stages.length - connected.at(-1) - .5) / stages.length * 100) + '%' : '50%';
   byId("objectiveBoundary").textContent = packet?.connection_evidence || 'No loss definition is available for this configuration. No stale formula is shown.';
   const changed = previous && packet ? packet.terms.filter(term => JSON.stringify(term) !== JSON.stringify(previous.terms.find(item => item.id === term.id))).map(term => term.name) : [];
   const modulesChanged = previous && packet ? packet.modules.filter(module => !previous.modules.some(item => item.id === module.id && item.name === module.name)).map(module => module.name) : [];
@@ -49,7 +70,7 @@ function paintObjective(packet) {
     return '<div><strong>' + escapeHtml(module.name) + '</strong><span>' + escapeHtml(packet.status === 'observed' ? (losses.length ? losses.join(' + ') + ' → autograd path' : 'No exposed autograd path from reported losses') : 'Connection awaiting execution') + (gradient ? '<small>' + escapeHtml(gradient.finite && gradient.nonzero ? 'Diagnosis gradient: finite and nonzero' : 'Diagnosis gradient: not confirmed active') + '</small>' : '') + '</span></div>';
   }).join('');
   byId("objectiveTerms").querySelectorAll('[data-loss-index]').forEach(node => node.onclick = () => {
-    objectiveSelected = terms[Number(node.dataset.lossIndex)].id; paintObjective(packet);
+    objectiveSelected = stages[Number(node.dataset.lossIndex)].id; paintObjective(packet);
   });
   byId("objectivePanel").classList.toggle('objective-paused', objectivePaused || !packet);
   byId("objectiveMotion").textContent = objectivePaused ? '▷ Play motion' : 'Ⅱ Pause motion';

@@ -28,10 +28,6 @@ function cyclePolicyStatus(record) {
 
 function showCycle(record) {
   fullCycle=record;
-  if (record.objective && objectiveObservedCycle !== record.id) {
-    objectiveObservedCycle=record.id;
-    objectiveScope='research';
-  }
   renderObjective();
   byId('cycleProgress').hidden=false;
   const busy=record.status==='running';

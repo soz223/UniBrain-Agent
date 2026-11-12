@@ -47,3 +47,16 @@ arrays were retained from the same acceptance subset.
 
 The verification used an isolated checkout and output directories on an idle
 GPU. Existing training processes and their source directories were not changed.
+
+
+### Stage alignment
+
+The backend supplies an ordered `stages` list with `loss_ids` for each active stage.
+Both pipeline cards and objective cards use this order. Regularization belongs to
+registration; stages with no independent objective retain an N/A card and do not
+connect to the loss summation bus. N/A does not establish gradient connectivity.
+The measured autograd connections remain separate evidence.
+
+The selection view stays selected when a saved research run is loaded. Choosing
+Full research run switches both rows together to the recorded configuration and
+disables draft preparation until the selection view is restored.

@@ -42,6 +42,25 @@ class ObjectiveTests(unittest.TestCase):
         self.assertEqual(result['connections'], [])
         self.assertEqual(result['status'], 'declared')
 
+    def test_stage_layout_keeps_lossless_stages_and_groups_registration_penalty(self):
+        from unibrain_agent.catalog import DEFAULTS
+        from unibrain_agent.objective import with_stage_layout
+        baseline = preview_objective(DEFAULTS)
+        self.assertEqual([stage['id'] for stage in baseline['stages']],
+                         ['extraction', 'registration', 'parcellation', 'graph', 'segmentation', 'classification'])
+        self.assertEqual(len(baseline['terms']), 4)
+        candidate = preview_objective({**DEFAULTS, 'registration': 'M06', 'denoising': 'M14'})
+        stages = {stage['id']: stage for stage in candidate['stages']}
+        self.assertEqual(len(stages), 7)
+        self.assertEqual(stages['registration']['loss_ids'], ['registration', 'regularization'])
+        self.assertEqual(stages['denoising']['loss_ids'], [])
+        self.assertEqual(stages['graph']['loss_ids'], [])
+        self.assertEqual(stages['parcellation']['loss_ids'], [])
+        self.assertEqual(candidate['unassigned_loss_ids'], [])
+        recorded = with_stage_layout({'terms': baseline['terms']}, method='redwgan')
+        self.assertEqual(recorded['stages'][0]['id'], 'denoising')
+        self.assertEqual(recorded['selection']['denoising'], 'M14')
+
     def test_executed_weights_and_detached_path(self):
         model = torch.nn.ModuleDict({'denoising': torch.nn.Linear(2, 2), 'classifier': torch.nn.Linear(2, 1)})
         image = torch.ones(1, 2)

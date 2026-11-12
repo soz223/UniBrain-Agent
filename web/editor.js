@@ -37,20 +37,34 @@ function renderChoices() {
     byId("teamTrainingLabel").textContent = isOriginal() ? "Learned gradient policy" : "Use training roles";
     byId("teamTrainingNote").textContent = isOriginal() ? "TaskForce-style actors learn from losses and task gradients at every update. The original model architecture is retained." : "Four task specialists and a coordinator review measured gradients before update 2.";
   }
-  const button = (stage, index) => {
-    const option = chosenOption(stage);
-    const optional = stage.options.some(item => item.id === "none");
-    const skipped = option.id === "none";
-    return '<button class="stage-choice ' + (skipped ? "skipped" : "enabled") + '" data-choice-stage="' + stage.id +
-      '" aria-label="' + escapeHtml(stage.name + ": " + toolName(option) + ". Change tool") + '"' + (buildBusy ? " disabled" : "") +
-      '><span class="stage-top"><span class="stage-number">' + (index === null ? "↳" : String(index + 1).padStart(2, "0")) +
-      '</span><strong>' + escapeHtml(stageNames[stage.id] || stage.name) + '</strong>' + (optional ? '<small>optional</small>' : "") +
-      '</span><span class="stage-tool"><span>' + (skipped ? "○ " : "✓ ") + escapeHtml(toolName(option)) + (option.id === "unibrain" ? '<small class="method-origin">(UniBrain original)</small>' : "") + '</span><span>⌄</span></span></button>';
-  };
-  byId("stageChoices").innerHTML = mainStages.map((id, index) => button(library.stages.find(stage => stage.id === id), index)).join("");
-  byId("branchChoices").innerHTML = ["segmentation", "surface"].map(id => button(library.stages.find(stage => stage.id === id), null)).join("");
-  document.querySelectorAll("[data-choice-stage]").forEach(node => node.onclick = () => chooseTool(node.dataset.choiceStage));
+  renderStageChoices();
   renderObjective();
+}
+
+function renderStageChoices(packet = null) {
+  const recorded = objectiveScope === 'research' && packet?.stages;
+  const selection = recorded ? packet.selection : draft;
+  byId('prepareBuild').disabled = buildBusy || Boolean(recorded);
+  byId('profileLabel').textContent = recorded ? '◉ Recorded full pipeline' : (isOriginal() ? '⚙ Original full UniBrain' : '○ Legacy compact pipeline');
+  const order = appConfig.objective.stages.map(stage => stage.id);
+  const active = packet?.stages || library.stages.filter(stage => selection[stage.id] !== 'none')
+    .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  byId('stageChoices').style.setProperty('--stage-count', active.length);
+  byId('stageChoices').innerHTML = active.map((item, index) => {
+    const stage = library.stages.find(stage => stage.id === item.id);
+    const option = chosenOption(stage, selection);
+    return '<button class="stage-choice enabled" data-choice-stage="' + stage.id + '"' +
+      (buildBusy || recorded ? ' disabled' : '') + '><span class="stage-top"><span class="stage-number">' +
+      String(index + 1).padStart(2, '0') + '</span><strong>' + escapeHtml(stage.name) +
+      '</strong></span><span class="stage-tool"><span>' + escapeHtml(toolName(option)) +
+      (option.id === 'unibrain' ? '<small class="method-origin">(UniBrain original)</small>' : '') +
+      '</span></span>' + (item.branch || stage.id === 'segmentation' ? '<small>Input branch</small>' : '') + '</button>';
+  }).join('');
+  byId('branchChoices').innerHTML = recorded ? '<span class="recorded-pipeline-note">Recorded pipeline. Select Your selection to edit your draft.</span>' :
+    library.stages.filter(stage => selection[stage.id] === 'none').map(stage =>
+      '<button class="text-button" data-choice-stage="' + stage.id + '">+ ' + escapeHtml(stage.name) + ' <small>Skipped</small></button>').join('');
+  document.querySelector('.branch-label').innerHTML = recorded ? 'Viewing run' : 'Optional stages';
+  document.querySelectorAll('[data-choice-stage]').forEach(node => node.onclick = () => chooseTool(node.dataset.choiceStage));
 }
 
 function chooseTool(stageId) {
