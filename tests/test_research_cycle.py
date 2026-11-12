@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -64,9 +65,10 @@ class ResearchCycleTests(unittest.TestCase):
         (output / "report.json").write_text(json.dumps(result))
         return 0
 
-    def execute_cycle(self, root, choice=None, blocked=False, trial=None, execute=None, mode=None, coordination="none", checkpoint_mode="weights"):
+    def execute_cycle(self, root, choice=None, blocked=False, trial=None, execute=None, mode=None, coordination="none", checkpoint_mode="weights", training_timeout_seconds=86400):
         args = self.arguments(root)
         args.coordination, args.checkpoint_mode = coordination, checkpoint_mode
+        args.training_timeout_seconds = training_timeout_seconds
         if mode:
             setattr(args, mode, True)
         choice = choice or {"method": "fbnetgen", "rationale": "Use the trainable pair MLP", "expected_benefit": "Task adaptation", "risks": []}
@@ -96,6 +98,32 @@ class ResearchCycleTests(unittest.TestCase):
                 "status": "failed", "final_valid": False, "optimizer_updates": 0})
             self.assertEqual(result["status"], "failed")
             self.assertEqual(executions, 0)
+
+    def test_training_timeout_is_separate_from_preflight_timeout(self):
+        observed = []
+        def execute(command, log, timeout):
+            observed.append(timeout)
+            return self.training(command, log, timeout)
+        with tempfile.TemporaryDirectory() as temporary:
+            result, _, _, _ = self.execute_cycle(Path(temporary), execute=execute, training_timeout_seconds=7200)
+            self.assertEqual(result["status"], "complete")
+            self.assertEqual(observed, [3600, 7200])
+            self.assertEqual(result["budgets"]["training_timeout_seconds"], 7200)
+
+    def test_training_timeout_retains_partial_update_evidence(self):
+        def execute(command, log, timeout):
+            if "--preflight" in command:
+                return self.training(command, log, timeout)
+            output = Path(command[command.index("--output") + 1])
+            output.mkdir()
+            (output / "report.json").write_text(json.dumps({"status": "running", "steps": 1}))
+            raise subprocess.TimeoutExpired(command, timeout)
+        with tempfile.TemporaryDirectory() as temporary:
+            result, _, _, _ = self.execute_cycle(Path(temporary), execute=execute, training_timeout_seconds=9)
+            self.assertEqual(result["status"], "timeout")
+            self.assertEqual(result["timed_out_phase"], "joint_training")
+            self.assertEqual(result["actual_updates"]["training"], 1)
+            self.assertEqual(result["timeout_seconds"], 9)
 
     def test_missing_sources_block_before_any_provider_call(self):
         with tempfile.TemporaryDirectory() as temporary:

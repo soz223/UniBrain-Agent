@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -278,7 +279,8 @@ def preflight_ready(log):
 
 def run_cycle(args):
     if (args.acceptance_steps not in (1, 2) or args.train_steps < 1 or args.epochs < 1 or args.eval_limit < 1
-            or not 2 <= args.max_calls <= 20 or args.timeout < 1 or not args.task.strip()):
+            or not 2 <= args.max_calls <= 20 or args.timeout < 1
+            or args.training_timeout_seconds < 1 or not args.task.strip()):
         raise ValueError("Invalid task or execution budget")
     if args.evaluate_test and not args.full_training:
         raise ValueError("Test evaluation requires explicit full training")
@@ -294,7 +296,9 @@ def run_cycle(args):
               "budgets": {"selection_calls": 1, "integration_calls": args.max_calls,
                           "acceptance_updates": args.acceptance_steps,
                           "training_updates": None if args.full_training else args.train_steps,
-                          "training_epochs": args.epochs},
+                          "training_epochs": args.epochs,
+                          "training_timeout_seconds": args.training_timeout_seconds,
+                          "operation_timeout_seconds": args.timeout},
               "actual_updates": {"acceptance": 0, "training": 0}, "validation_weights_reused": False,
               "training_protocol": {"coordination": args.coordination, "checkpoint_mode": args.checkpoint_mode,
                                     "selection_metric": args.selection_metric,
@@ -402,7 +406,7 @@ def run_cycle(args):
             raise ValueError("Accepted adapter changed during training preflight")
         report["phase"] = "joint_training"
         save(root / "report.json", report)
-        exit_code = execute(command, root / "training.log", args.timeout)
+        exit_code = execute(command, root / "training.log", args.training_timeout_seconds)
         result_path = output / "report.json"
         if not result_path.is_file():
             raise ValueError("Trainer produced no report")
@@ -423,6 +427,8 @@ def run_cycle(args):
         return report
     except Exception as error:
         report.update(status="blocked", error=str(error))
+        if isinstance(error, subprocess.TimeoutExpired):
+            report.update(status="timeout", timed_out_phase=report["phase"], timeout_seconds=error.timeout)
         partial = root / "training/report.json"
         if partial.is_file():
             try:
@@ -458,6 +464,7 @@ def parser():
     result.add_argument("--seed", type=int, default=17)
     result.add_argument("--gpu", type=int, default=0)
     result.add_argument("--timeout", type=int, default=3600)
+    result.add_argument("--training-timeout-seconds", type=int, default=86400)
     result.add_argument("--coordination", choices=("none", "taskforce"), default="none")
     result.add_argument("--checkpoint-mode", choices=("weights", "resume"), default="weights")
     result.add_argument("--selection-metric", choices=("classification_loss", "reference_loss"), default="classification_loss")

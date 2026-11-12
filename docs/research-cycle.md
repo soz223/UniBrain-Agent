@@ -72,7 +72,7 @@ limited to two cases and is diagnostic, not a cohort accuracy estimate.
 For a complete preserved fold, use the explicit full training mode:
 
 ```sh
-python scripts/run_research_cycle.py --source sources/reg_unibrain --data data/abide_fold1 --dataset abide --fold 1 --output private_runs/full_cycle --provider codex --task "Adapt the structural brain graph for diagnosis" --full-training --epochs 20 --evaluate-test --timeout 172800
+python scripts/run_research_cycle.py --source sources/reg_unibrain --data data/abide_fold1 --dataset abide --fold 1 --output private_runs/full_cycle --provider codex --task "Adapt the structural brain graph for diagnosis" --full-training --epochs 20 --evaluate-test --training-timeout-seconds 172800
 ```
 
 This mode requires a version 2 `full_fold` manifest and verifies all six input
@@ -82,8 +82,13 @@ one validation record per epoch, and matching cohort identity. With
 `--evaluate-test`, the complete test split is evaluated only after training,
 using the validation selected checkpoint. Its recorded checksum must match
 the retained `best.pt`. Test evaluation is rejected for bounded cycles.
-The declared timeout must accommodate the complete run. The suite reports
-bounded cycles separately from these formal experiments.
+`--training-timeout-seconds` bounds the training subprocess independently and
+defaults to 86400 seconds. Set it for the complete run, including final test
+evaluation. `--timeout` retains its separate operation and preflight budget,
+defaulting to 3600 seconds. A training timeout preserves the partial training
+report and observed update count and records `status: timeout`. The caller's
+overall process timeout must also accommodate selection, repair and training.
+The suite reports bounded cycles separately from formal experiments.
 
 `report.json` records selection rationale, actual provider usage, source audit,
 validation and repair trace, accepted code identity, training command, status
@@ -100,3 +105,6 @@ The dashboard's [full research panel](full-research-workspace.md) launches a
 bounded cycle and displays its measured progress. Its provider calls use the
 shared constrained prompting harness, not a complete standalone
 Codex, Claude Code or MLE-STAR system reproduction.
+
+Saved full replacement models can subsequently be evaluated with the
+[independent checkpoint evaluator](replacement-evaluation.md).
