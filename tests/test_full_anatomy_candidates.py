@@ -4,11 +4,59 @@ import unittest
 import torch
 from torch import nn
 
-from unibrain_agent.full_anatomy_candidates import build_anatomy_modules, memory_forward, FullFastSurferParcellation, FullERNetRegistration
+from unibrain_agent.full_anatomy_candidates import build_anatomy_modules, memory_forward, PreserveRunningBuffers, FullFastSurferParcellation, FullERNetRegistration
 from unibrain_agent.paths import SOURCES
 
 
 class AnatomyCandidateContracts(unittest.TestCase):
+    def test_repeated_gradient_probes_then_training_match_native_batchnorm(self):
+        torch.manual_seed(23)
+        native = nn.Sequential(nn.Conv3d(1, 3, 3, padding=1), nn.BatchNorm3d(3), nn.ReLU(), nn.Conv3d(3, 2, 1))
+        replayed = copy.deepcopy(native)
+        first = torch.randn(2, 1, 4, 4, 4, requires_grad=True)
+        second = first.detach().clone().requires_grad_(True)
+        expected, actual = native(first), memory_forward(replayed, second)
+        native_parameters, replayed_parameters = list(native.parameters()), list(replayed.parameters())
+        initial = [value.detach().clone() for value in replayed_parameters]
+        for _ in range(3):
+            direct = torch.autograd.grad(expected.square().mean(), native_parameters + [first], retain_graph=True)
+            recomputed = torch.autograd.grad(actual.square().mean(), replayed_parameters + [second], retain_graph=True)
+            for left, right in zip(direct, recomputed):
+                torch.testing.assert_close(left, right)
+                self.assertTrue(torch.isfinite(right).all())
+            self.assertGreater(float(recomputed[-1].abs().sum()), 0.)
+            for left, right in zip(native.buffers(), replayed.buffers()):
+                torch.testing.assert_close(left, right)
+        (expected.square().mean() + expected.mean()).backward()
+        (actual.square().mean() + actual.mean()).backward()
+        torch.testing.assert_close(first.grad, second.grad)
+        for left, right in zip(native_parameters, replayed_parameters):
+            torch.testing.assert_close(left.grad, right.grad)
+        for model in (native, replayed):
+            torch.optim.SGD(model.parameters(), lr=.01).step()
+            self.assertEqual(int(model[1].num_batches_tracked), 1)
+        self.assertTrue(any(not torch.equal(left, right) for left, right in zip(initial, replayed_parameters)))
+        for left, right in zip(native.state_dict().values(), replayed.state_dict().values()):
+            torch.testing.assert_close(left, right)
+
+    def test_buffer_context_restores_nested_and_exception_entries(self):
+        layer = nn.BatchNorm3d(2)
+        context = PreserveRunningBuffers(layer)
+        initial = {key: value.clone() for key, value in layer.named_buffers()}
+        for _ in range(2):
+            with self.assertRaisesRegex(RuntimeError, "recompute interrupted"):
+                with context:
+                    layer(torch.randn(2, 2, 2, 2, 2))
+                    outer = {key: value.clone() for key, value in layer.named_buffers()}
+                    with context:
+                        layer(torch.randn(2, 2, 2, 2, 2))
+                    for key, value in layer.named_buffers():
+                        torch.testing.assert_close(value, outer[key])
+                    raise RuntimeError("recompute interrupted")
+            self.assertEqual(context.stack, [])
+            for key, value in layer.named_buffers():
+                torch.testing.assert_close(value, initial[key])
+
     def test_activation_recomputation_preserves_gradients_and_batchnorm_statistics(self):
         torch.manual_seed(5)
         native = nn.Sequential(nn.Conv3d(1, 3, 3, padding=1), nn.BatchNorm3d(3), nn.ReLU(), nn.Conv3d(3, 2, 1))

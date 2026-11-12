@@ -1592,11 +1592,96 @@
   ],
   "dashboard_full_cycle": {
     "implemented": true,
-    "scope": "Authenticated bounded cycle action with real checker and training progress; CPU/API and browser controls checked. No new GPU cycle was launched from the UI."
+    "scope": "Authenticated bounded cycle action with real checker and training progress; CPU/API and browser controls checked. No new GPU cycle was launched from the UI.",
+    "actual_worker_preflight": [
+      {
+        "dataset": "abide",
+        "status": "passed",
+        "checks": {
+          "workspace_ready": true,
+          "worker_ready": true,
+          "process_exit_zero": true,
+          "static_preflight": true,
+          "zero_updates": true,
+          "no_provider_calls": true,
+          "no_model_execution": true,
+          "no_proposals": true,
+          "provider_available": true,
+          "candidate_sources_ready": true,
+          "data_unchanged": true,
+          "workspace_released": true
+        },
+        "actual_updates": {
+          "acceptance": 0,
+          "training": 0
+        },
+        "report_sha256": "423ee34ad79e6a3f5c560e83b9030cfccf48e44f224293340be1bd678040b3e0",
+        "job_sha256": "7c18332873f0684e62177f33331807a46dcc09d26c5cee15ee20d9a21786e6c5",
+        "process_log_sha256": "a98ee98da5ded5701c5a6a7989556c18beac7fc54ae9fa8747ea62512bdb72cd"
+      },
+      {
+        "dataset": "adhd",
+        "status": "passed",
+        "checks": {
+          "workspace_ready": true,
+          "worker_ready": true,
+          "process_exit_zero": true,
+          "static_preflight": true,
+          "zero_updates": true,
+          "no_provider_calls": true,
+          "no_model_execution": true,
+          "no_proposals": true,
+          "provider_available": true,
+          "candidate_sources_ready": true,
+          "data_unchanged": true,
+          "workspace_released": true
+        },
+        "actual_updates": {
+          "acceptance": 0,
+          "training": 0
+        },
+        "report_sha256": "2ef026d1b5a24e068cb38124618922f464c6f85e6bc1caaf3f3ecd4762c9a529",
+        "job_sha256": "905ef7a36f4ce7ecedaf1bd7619772adb0ab3484d817871b723b00a927d0c012",
+        "process_log_sha256": "14a1215020f961f5770e458cc3a8b7db5c9a97aab39f78a58b6558f854e3af88"
+      }
+    ]
   },
   "formal_cycle_program": {
     "implemented": true,
     "selection_metric": "classification_loss",
     "verification": "CPU fixtures cover actual test identity, metric recomputation, accepted adapter binding and validation selected checkpoint identity; full cohort execution remains pending"
+  },
+  "repeated_backward_fix": {
+    "regression": {
+      "status": "passed",
+      "torch": "2.5.1+cu121",
+      "device": "cpu",
+      "shape": [
+        2,
+        1,
+        4,
+        4,
+        4
+      ],
+      "gradient_probes": 3,
+      "optimizer_updates": 1,
+      "probe_max_abs_differences": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final_gradient_max_abs_difference": 0.0,
+      "input_gradient_nonzero": true,
+      "batchnorm_updates": 1,
+      "changed_parameter_tensors": 5,
+      "source_sha256": "7f48dd46b2825773b90be0b98d08a47d846402aace164333e1452316bbad876b",
+      "source_last_write_utc": "2026-11-12T01:56:43.833151+00:00"
+    },
+    "affected_methods": [
+      "fastsurfer",
+      "nobrainer"
+    ],
+    "observed_failure": "Full ABIDE training failed on repeated checkpoint context entry before any optimizer update",
+    "scope": "Synthetic CPU regression matches native gradients and preserves BatchNorm state; full host retries pending"
   }
 }

@@ -1,6 +1,6 @@
 """Full resolution anatomy candidates loaded from pinned upstream definitions."""
 
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import torch
@@ -16,14 +16,19 @@ def volume_contract(image):
         raise ValueError("The full UniBrain interface requires one single channel 96 cubed volume")
 
 
-@contextmanager
-def preserve_running_buffers(module):
-    saved = [(buffer, buffer.detach().clone()) for layer in module.modules()
-             if isinstance(layer, nn.modules.batchnorm._BatchNorm) and layer.training
-             for buffer in layer.buffers(recurse=False)]
-    try:
-        yield
-    finally:
+class PreserveRunningBuffers:
+    def __init__(self, module):
+        self.module = module
+        self.stack = []
+
+    def __enter__(self):
+        self.stack.append([(buffer, buffer.detach().clone()) for layer in self.module.modules()
+                           if isinstance(layer, nn.modules.batchnorm._BatchNorm) and layer.training
+                           for buffer in layer.buffers(recurse=False)])
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        saved = self.stack.pop()
         with torch.no_grad():
             for buffer, previous in saved:
                 buffer.copy_(previous)
@@ -33,7 +38,7 @@ def memory_forward(module, value):
     if not torch.is_grad_enabled():
         return module(value)
     return checkpoint(module, value, use_reentrant=False,
-                      context_fn=lambda: (nullcontext(), preserve_running_buffers(module)))
+                      context_fn=lambda: (nullcontext(), PreserveRunningBuffers(module)))
 
 
 def fastsurfer_core():

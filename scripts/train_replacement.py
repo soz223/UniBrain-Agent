@@ -2,6 +2,7 @@
 
 import json
 import sys
+import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -15,5 +16,6 @@ if __name__ == "__main__":
         result = train(args)
         print(json.dumps({"status": result["status"], "steps": result.get("steps"), "report": str(args.output / "report.json")}))
     except Exception as error:
+        traceback.print_exc()
         print(json.dumps({"status": "failed", "error": str(error)}))
         raise SystemExit(1)

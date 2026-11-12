@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-11-11",
+  "kind": "readiness_audit",
+  "execution_verified": false,
+  "executors_registered": false,
+  "scope": "Official source and interface inspection only; no installed or executed external baseline is claimed.",
+  "status_definitions": {
+    "executable_available": "The official program can be obtained; local execution and task compatibility are unverified.",
+    "adapter_missing": "This repository needs a real system runner, task integration and result adapter.",
+    "upstream_incomplete": "Inspected public author resources do not provide the complete named system."
+  },
+  "systems": [
+    {
+      "id": "codex",
+      "suite_labels": ["codex", "codex_unibrain"],
+      "repository": "https://github.com/openai/codex",
+      "commit": "c40729ea5cf8e947481b130c59807273eda2f8e9",
+      "source_url": "https://github.com/openai/codex/tree/c40729ea5cf8e947481b130c59807273eda2f8e9",
+      "version": "rust-v0.167.0-alpha.3.2",
+      "version_evidence": "Local CLI version matched the public tag; the tag's peeled commit was read with git ls-remote.",
+      "upstream_status": "executable_available",
+      "integration_status": "adapter_missing",
+      "task_scope": "General coding tool loop; supplied UniBrain adaptation is feasible.",
+      "prerequisites": ["Official CLI and valid provider access", "Isolated task workspace", "UniBrain execution environment"],
+      "missing_program": "Official workspace-editing CLI runner, JSONL artifact collector and independent result adapter",
+      "interface_url": "https://learn.chatgpt.com/docs/non-interactive-mode"
+    },
+    {
+      "id": "claude",
+      "suite_labels": ["claude", "claude_unibrain"],
+      "repository": "https://github.com/anthropics/claude-code",
+      "commit": "6e1e44f6433bfa17d198e932bff53373aa229eea",
+      "source_url": "https://github.com/anthropics/claude-code/tree/6e1e44f6433bfa17d198e932bff53373aa229eea",
+      "version": "v2.1.322",
+      "version_evidence": "Official release tag; repository metadata does not establish full runtime source availability.",
+      "upstream_status": "executable_available",
+      "integration_status": "adapter_missing",
+      "task_scope": "General coding tool loop; supplied UniBrain adaptation is feasible.",
+      "prerequisites": ["Official CLI and valid provider access", "Isolated task workspace", "UniBrain execution environment"],
+      "missing_program": "Official CLI runner with real editing and execution tools, event collection and result adapter",
+      "interface_url": "https://code.claude.com/docs/en/headless"
+    },
+    {
+      "id": "openclaw",
+      "suite_labels": ["openclaw_unibrain"],
+      "repository": "https://github.com/openclaw/openclaw",
+      "commit": "1cbfc6eeba6df6de89312040be442388692d977c",
+      "source_url": "https://github.com/openclaw/openclaw/tree/1cbfc6eeba6df6de89312040be442388692d977c",
+      "version": "2026.11.3",
+      "upstream_status": "executable_available",
+      "integration_status": "adapter_missing",
+      "task_scope": "Configurable agent runtime operating on a supplied UniBrain workspace.",
+      "prerequisites": ["Official CLI", "Node >=24.16.0 <25 or >=26.1.0 for the inspected source", "Pinned runtime and tool configuration", "Valid provider access", "UniBrain execution environment"],
+      "missing_program": "Official agent exec runner with pinned harness/model, transcript collection and result adapter",
+      "interface_url": "https://docs.openclaw.ai/cli/agent"
+    },
+    {
+      "id": "mle_star",
+      "suite_labels": ["mle_star"],
+      "repository": "https://github.com/google/adk-recipes",
+      "previous_repository": "https://github.com/google/adk-samples",
+      "commit": "9bf35ee20cc6ee487be27fa9f0017c558559742f",
+      "source_url": "https://github.com/google/adk-recipes/tree/9bf35ee20cc6ee487be27fa9f0017c558559742f/python/agents/machine-learning-engineering",
+      "version": "0.1.0",
+      "upstream_status": "executable_available",
+      "integration_status": "adapter_missing",
+      "task_scope": "Model search, code execution, targeted refinement, ensembling and submission; sMRI task integration is needed.",
+      "prerequisites": ["Python >=3.12", "Pinned sample dependencies including Google ADK", "Gemini API or Vertex access", "Google search tool access", "UniBrain execution environment"],
+      "missing_program": "Isolated task_description.txt and data package, ADK runner, validation objective and submission/result adapter",
+      "boundaries": ["Current main removed this sample; pin the historical commit", "Default data leakage and data usage checkers are disabled; record actual configuration", "Preserve the official multi-agent refinement workflow"],
+      "removal_commit_url": "https://github.com/google/adk-recipes/commit/63bfb33c4df5d00b6ef9e2e0e864fbcb01e37645"
+    },
+    {
+      "id": "nexus",
+      "suite_labels": ["nexus"],
+      "repository": "https://github.com/LearningKeqi/Virtual-Neuroscientist-NEXUS",
+      "commit": "c2e15d4983489fd89d604fdbbefbbf1726958068",
+      "source_url": "https://github.com/LearningKeqi/Virtual-Neuroscientist-NEXUS/tree/c2e15d4983489fd89d604fdbbefbbf1726958068",
+      "version": null,
+      "upstream_status": "executable_available",
+      "integration_status": "adapter_missing",
+      "task_scope": "Autonomous neuroimaging inspection, preprocessing, QC and downstream prediction.",
+      "prerequisites": ["LangGraph, LangChain and documented Python dependencies", "Configured OpenAI-compatible model access", "Selected neuroimaging tools", "SLURM execution or a documented infrastructure adaptation", "Native NIfTI/BIDS geometry for native preprocessing"],
+      "missing_program": "Portable task entry, execution backend, dataset adapter and result collector",
+      "boundaries": ["Python execution tool hardcodes sbatch, h200day and a workspace path", "Original task examples are ADHD fMRI and ADNI sMRI; neither directly consumes the UniBrain master array"]
+    },
+    {
+      "id": "neura",
+      "suite_labels": ["neura", "neura_unibrain"],
+      "repository": "https://github.com/NeuroScienceLab/NEURA",
+      "commit": "c349dde3e9d713181ecb7b734c8bb42fe9646c37",
+      "source_url": "https://github.com/NeuroScienceLab/NEURA/tree/c349dde3e9d713181ecb7b734c8bb42fe9646c37",
+      "version": null,
+      "upstream_status": "executable_available",
+      "integration_status": "adapter_missing",
+      "task_scope": "Research planning, registered imaging analysis, QC and reports; adding a UniBrain training tool is an explicit adaptation.",
+      "prerequisites": ["Python >=3.9 and documented requirements", "Configured SiliconFlow endpoint", "Selected imaging backends, potentially MATLAB/SPM/DPABI, DSI Studio, FSL or FreeSurfer", "Windows/WSL2 configuration or a documented portable adaptation"],
+      "missing_program": "Research-graph runner, data adapter, explicit BaseTool/ToolRegistry UniBrain extension and result collector"
+    },
+    {
+      "id": "neuropilot",
+      "suite_labels": ["neuropilot"],
+      "repository": "https://github.com/acmlab/CyberNeuro",
+      "commit": "0709f137b5097aea8ea2ca9877c783926bf2404b",
+      "source_url": "https://github.com/acmlab/CyberNeuro/tree/0709f137b5097aea8ea2ca9877c783926bf2404b",
+      "version": "paper v2",
+      "paper_url": "https://arxiv.org/html/2608.07541v2",
+      "upstream_status": "upstream_incomplete",
+      "integration_status": "adapter_missing",
+      "task_scope": "DICOM standardization, modality-specific preprocessing and human-supervised QC.",
+      "prerequisites": ["Complete identified paper skill set and agent runtime", "Native imaging inputs and metadata", "The selected preprocessing tools"],
+      "missing_program": "Complete preprocessing and QC skill implementation, then a task runner and result adapter",
+      "availability_evidence": "Inspected CyberNeuro tree contains only a PDF manual; the other two skills were not found in public author repositories or exact-name repository searches.",
+      "available_component": {
+        "repository": "https://github.com/acmlab/dcm2bids-skill",
+        "commit": "7e9880588e203404d08652aee576a2c68ee71f87",
+        "source_url": "https://github.com/acmlab/dcm2bids-skill/tree/7e9880588e203404d08652aee576a2c68ee71f87",
+        "version": "1.0.0",
+        "scope": "DICOM to BIDS conversion only",
+        "prerequisites": ["Agent runtime", "Python >=3.8", "dcm2bids", "dcm2niix", "bids-validator"]
+      }
+    }
+  ],
+  "label_definition_issue": {
+    "status": "unresolved",
+    "pairs": [["codex", "codex_unibrain"], ["claude", "claude_unibrain"], ["neura", "neura_unibrain"]],
+    "required_decision": "Define starting artifacts and permitted changes for each label before treating them as distinct experimental conditions."
+  },
+  "shared_boundaries": {
+    "prompt_variants": "Existing constrained provider calls and our repair loop are not full external-system reproductions.",
+    "test_isolation": "Export train/validation inputs with existing splits; keep test labels with an independent evaluator. Do not expose the complete master array to an editing agent.",
+    "native_geometry": "96 cubed arrays lack original physical geometry. Unit-affine NIfTI exports do not establish faithful native preprocessing.",
+    "evaluation": "Record actual artifacts, failure states, provider/tool versions and compute budgets; evaluate saved outputs independently."
+  },
+  "recommended_first_implementations": ["codex_unibrain", "mle_star"]
+}

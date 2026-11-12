@@ -51,6 +51,10 @@ contract, not those implementations. The classical stagewise comparator also
 needs a declared executable pipeline. These jobs remain blocked until the real
 programs and method-specific interfaces are supplied and checked.
 
+The [external baseline audit](external-baseline-readiness.md) identifies official
+source snapshots, missing adapters and incomplete public implementations. Its
+catalog records readiness only and does not register or validate executors.
+
 Codex/Claude provider calls under the shared general, checking and workflow
 prompts are controlled prompting comparisons. They do not reproduce all tools
 or behavior of a general external Agent system. The experiment suite and direct
