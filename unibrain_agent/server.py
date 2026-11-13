@@ -30,6 +30,8 @@ def create_server(port=8777, host="127.0.0.1", access=None):
              "message": "Ready", "error": None, "job": None, "build_id": None}
     lock = threading.RLock()
     monitor = RunMonitor()
+    from .training_monitor import TrainingMonitor
+    training = TrainingMonitor()
 
     def execute_cycle(identifier, configuration):
         try:
@@ -131,6 +133,10 @@ def create_server(port=8777, host="127.0.0.1", access=None):
                     elif snapshot["job"] == "research_cycle" and snapshot.get("cycle_id"):
                         snapshot["research_cycle"] = cycles.read(snapshot["cycle_id"])
                     self.respond(snapshot)
+                elif path == "/api/training-runs":
+                    self.respond({"runs": training.listing()})
+                elif path.startswith("/api/training-runs/"):
+                    self.respond(training.read(path.removeprefix("/api/training-runs/")))
                 elif path == "/api/research-cycles":
                     from .runtime import settings
                     self.respond({"defaults": cycles.defaults(settings(), data_workspace.selected),

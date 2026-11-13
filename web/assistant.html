@@ -8,9 +8,8 @@
   <p class="assistant-footnote">Online search retrieves publication metadata and available abstracts through Crossref. New papers need code inspection before integration. Model replies use the connection selected in AI settings.</p>
 </section>
 <section id="rolesView" class="assistant-view" data-workspace="roles" hidden>
-  <div class="heading-row"><div><h1>Training</h1><p>Gradient coordination for the selected pipeline.</p></div><span class="badge">Optional policy</span></div>
-  <p class="disclosure-note">Enable the policy in Pipeline to coordinate four losses during labeled training. Inference uses the resulting UniBrain checkpoint.</p>
-  <div class="team-flow"><span>Build policy</span><span aria-hidden="true">→</span><span>Coordinate task gradients</span><span aria-hidden="true">→</span><span>Use trained checkpoint</span></div>
+  <div class="heading-row"><div><h1>Training</h1><p>Watch task agents observe, coordinate and learn together.</p></div><span class="badge">Gradient aware</span></div>
+  __TRAINING_PANEL__
   <section class="panel learning-panel" id="gradientPanel" hidden><div class="panel-head"><h2>Training signals</h2><select id="gradientTask" aria-label="Learning signal"><option value="classification">Classification loss</option><option value="extraction">Extraction loss</option><option value="registration">Registration loss</option><option value="segmentation">Segmentation loss</option></select></div><p id="gradientExplanation" class="section-explanation"></p><div id="learningPaths" class="learning-paths"></div><details class="disclosure"><summary id="gradientDisclosure">Inspect measured gradients</summary><div id="gradientMatrix" class="table-wrap"></div><p id="gradientMeasurementNote" class="disclosure-note"></p></details><div id="trainingControl" class="training-control"></div></section>
   <details class="disclosure prompt-review"><summary>Prompt role review <span>Optional analysis for custom pipelines</span></summary>
     <div class="team-flow"><span>Measured losses & gradients</span><span aria-hidden="true">→</span><span>Task specialists</span><span aria-hidden="true">→</span><span>Coordinator</span><span aria-hidden="true">→</span><span>Bounded action</span></div>

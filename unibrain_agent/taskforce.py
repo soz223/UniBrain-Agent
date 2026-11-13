@@ -62,6 +62,8 @@ class GradientTeam:
         self.updates = 0
         self.last_record = None
         self.reward_terms = None
+        self.action_logits = None
+        self.learning_stats = {}
 
     def observe(self, losses, parameters):
         parameters = tuple(parameters)
@@ -89,6 +91,7 @@ class GradientTeam:
             logits = torch.cat([actor(observation[i]) for i, actor in enumerate(self.actors)])
             if explore:
                 logits += 0.05 * torch.randn(logits.shape, generator=self.generator)
+            self.action_logits = dict(zip(TASKS, logits.tolist()))
             return torch.softmax(logits, dim=0)
 
     def learn(self, observation, gram, values):
@@ -110,6 +113,7 @@ class GradientTeam:
         return action, reward
 
     def update(self):
+        self.learning_stats = {'actor_objectives': {}, 'critic_td_losses': {}}
         indices = torch.randperm(len(self.replay), generator=self.generator)[:self.batch_size].tolist()
         batch = [self.replay[index] for index in indices]
         states = torch.stack([row[0] for row in batch])
@@ -134,6 +138,8 @@ class GradientTeam:
             self.actor_optimizers[i].zero_grad()
             objective.backward()
             self.actor_optimizers[i].step()
+            self.learning_stats['actor_objectives'][TASKS[i]] = float(objective.detach())
+            self.learning_stats['critic_td_losses'][TASKS[i]] = float(error.detach())
             for source, target_module in ((self.actors[i], self.target_actors[i]), (self.critics[i], self.target_critics[i])):
                 for current, target_parameter in zip(source.parameters(), target_module.parameters()):
                     target_parameter.data.lerp_(current.data, 0.01)
@@ -149,6 +155,8 @@ class GradientTeam:
         norms = gram.diag().clamp_min(0).sqrt()
         cosine = (gram / (norms[:, None] * norms[None, :]).clamp_min(1e-12)).clamp(-1, 1)
         record = {"weights": weights, "task_losses": dict(zip(TASKS, values.tolist())),
+                  "observations": dict(zip(TASKS, observation.tolist())), "action_logits": self.action_logits,
+                  **self.learning_stats,
                   "base_weights": dict(zip(TASKS, self.base)), "actions": dict(zip(TASKS, action.tolist())),
                   "gradient_norms": dict(zip(TASKS, norms.tolist())), "cosine_similarity": cosine.tolist(),
                   "conflict_pairs": [[TASKS[i], TASKS[j]] for i in range(self.count) for j in range(i + 1, self.count) if gram[i, j] < 0],
@@ -183,6 +191,9 @@ class GradientTeam:
         self.previous = copy.deepcopy(state["previous"])
         self.updates = int(state["policy_updates"])
         self.last_record = copy.deepcopy(state["last_record"])
+        self.action_logits = (self.last_record or {}).get('action_logits')
+        self.learning_stats = {key: copy.deepcopy(self.last_record[key]) for key in ('actor_objectives', 'critic_td_losses')
+                               if self.last_record and key in self.last_record}
 
     def save(self, path):
         torch.save(self.state_dict(), path)

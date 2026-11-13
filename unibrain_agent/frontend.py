@@ -14,17 +14,18 @@ def document(payload=None, standalone=False):
     from .objective import preview_objective
     config['objective'] = preview_objective(config['catalog']['defaults'])
     parts = {
-        "__STYLE__": "\n".join((web / name).read_text(encoding="utf-8") for name in ("dashboard.css", "assistant.css", "settings.css", "data.css", "cycle.css", "objective.css")),
+        "__STYLE__": "\n".join((web / name).read_text(encoding="utf-8") for name in ("dashboard.css", "assistant.css", "settings.css", "data.css", "cycle.css", "objective.css", "training.css")),
         "__CONNECTION_SCRIPT__": (web / "connection.js").read_text(encoding="utf-8"),
         "__SCRIPT__": (web / "dashboard.js").read_text(encoding="utf-8"),
         "__EDITOR_SCRIPT__": "\n".join((web / name).read_text(encoding="utf-8") for name in ("objective.js", "editor.js")),
-        "__ASSISTANT_SCRIPT__": "\n".join((web / name).read_text(encoding="utf-8") for name in ("assistant.js", "settings.js", "data.js", "cycle.js")),
+        "__ASSISTANT_SCRIPT__": "\n".join((web / name).read_text(encoding="utf-8") for name in ("assistant.js", "settings.js", "data.js", "cycle.js", "training.js")),
         "__ASSISTANT_PANELS__": "\n".join((web / name).read_text(encoding="utf-8") for name in ("assistant.html", "settings.html")),
         "__APP_CONFIG__": json.dumps(config, ensure_ascii=False).replace("<", "\\u003c"),
         "__REPORT_JSON__": encoded,
         "__DATA_PANEL__": (web / "data.html").read_text(encoding="utf-8"),
         "__CYCLE_PANEL__": (web / "cycle.html").read_text(encoding="utf-8"),
         "__OBJECTIVE_PANEL__": (web / "objective.html").read_text(encoding="utf-8"),
+        "__TRAINING_PANEL__": (web / "training.html").read_text(encoding="utf-8"),
     }
     for key, value in parts.items():
         template = template.replace(key, value)

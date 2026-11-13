@@ -118,6 +118,19 @@ class GradientTeamTests(unittest.TestCase):
         GradientTeam(seed=112)
         self.assertTrue(torch.equal(state, torch.get_rng_state()))
 
+    def test_logged_actor_inputs_and_actions_match_the_executed_policy(self):
+        parameter = torch.nn.Parameter(torch.tensor([.3, .4, .5, .6]))
+        team = GradientTeam(seed=17, batch_size=1)
+        losses = {task: parameter[i].square() for i, task in enumerate(TASKS)}
+        observation, _, _ = team.observe(losses, [parameter])
+        _, record = team.combine(losses, [parameter])
+        torch.testing.assert_close(torch.tensor([record['observations'][task] for task in TASKS]), observation)
+        shares = torch.tensor([record['action_logits'][task] for task in TASKS]).softmax(0)
+        torch.testing.assert_close(shares, torch.tensor([record['actions'][task] for task in TASKS]))
+        _, record = team.combine(losses, [parameter])
+        self.assertEqual(set(record['critic_td_losses']), set(TASKS))
+        self.assertTrue(all(value >= 0 for value in record['critic_td_losses'].values()))
+
 
 if __name__ == "__main__":
     unittest.main()

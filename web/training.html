@@ -1,0 +1,25 @@
+<section class="training-lab" id="trainingLab" aria-label="Gradient agent training">
+  <div class="training-source"><label>Training run <select id="trainingRun" aria-label="Training run"><option value="current">Current workspace</option></select></label><span id="trainingFreshness" role="status">Waiting for recorded updates</span></div>
+  <div class="training-caption"><span class="source-tag">TASKFORCE INSPIRED · COOPERATIVE ACTOR CRITIC</span><span id="trainingMode" class="badge">Schematic</span></div>
+  <div class="training-phases" aria-label="Training cycle">
+    <button data-training-phase="observe" aria-pressed="true"><span>01</span> Observe</button><i>→</i>
+    <button data-training-phase="act" aria-pressed="false"><span>02</span> Weight</button><i>→</i>
+    <button data-training-phase="backward" aria-pressed="false"><span>03</span> Backpropagate</button><i>→</i>
+    <button data-training-phase="learn" aria-pressed="false"><span>04</span> Learn policy</button>
+    <button id="trainingAnimate" class="text-button" aria-pressed="false">Play flow</button>
+  </div>
+  <p id="trainingPhaseText" class="training-phase-text"></p>
+  <div class="training-graph" id="trainingGraph"></div>
+  <div class="training-legend"><span><i class="forward-key"></i>Forward computation</span><span><i class="backward-key"></i>Loss → parameter path</span><span>Arrow motion illustrates the training cycle.</span></div>
+  <div id="trainingActors" class="training-actors" aria-label="Task actors"></div>
+  <div id="trainingCritics" class="training-critics"></div>
+  <div class="training-cooperation" id="trainingCooperation"></div>
+  <div class="training-playback"><label for="trainingStep">Recorded update <strong id="trainingStepLabel">No records</strong></label><input id="trainingStep" type="range" min="0" max="0" value="0" disabled><button id="trainingLatest" class="text-button">Follow latest</button></div>
+  <div class="training-measurements">
+    <section class="training-card"><div class="panel-head"><h2>Gradient relationships</h2><select id="trainingMatrixMode" aria-label="Gradient matrix"><option value="cosine">Cosine</option><option value="gram">Gram matrix</option></select></div><div id="trainingMatrix"></div><p id="trainingMatrixNote" class="disclosure-note"></p></section>
+    <section class="training-card"><div class="panel-head"><h2>Task weights</h2><select id="trainingWeightMode" aria-label="Weight display"><option value="actions">Policy shares w</option><option value="weights">Effective coefficients λ</option></select></div><div id="trainingWeights"></div><p class="disclosure-note">w = softmax(a) · Applied λ = T × w × base coefficient.</p></section>
+  </div>
+  <details class="disclosure training-inspect"><summary>Inside the selected agent <span id="trainingSelectedTask">Extraction</span></summary><div id="trainingAgentDetail"></div></details>
+  <details class="disclosure training-inspect"><summary>Validation outcomes <span>Evaluation only</span></summary><div id="trainingValidation"></div></details>
+  <details class="disclosure training-inspect"><summary>Method and measurement scope</summary><p>Each task actor observes one gradient Gram row and its training loss. Four centralized critics each see all task observations and actions. A shared reward and replay buffer train the policies. Inference uses the trained UniBrain checkpoint.</p><p>This adaptation uses sampled parameter gradients, normalized observations and a scaled gradient penalty. It retains UniBrain base coefficients. It is not an exact reproduction of TaskForce. Validation does not drive the reward. A recorded autograd path establishes connectivity, not a nonzero gradient or convergence.</p><p><a href="https://openaccess.thecvf.com/content/CVPR2026/html/Choi_TaskForce_Cooperative_Multi-agent_Reinforcement_Learning_for_Multi-task_Optimization_CVPR_2026_paper.html" target="_blank" rel="noopener">TaskForce · CVPR 2026 ↗</a></p></details>
+</section>

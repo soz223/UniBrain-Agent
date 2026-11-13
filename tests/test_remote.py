@@ -53,6 +53,18 @@ class RemoteTests(unittest.TestCase):
         with self.assertRaises(HTTPError):
             self.request('/api/objective/preview', token=None, body=body)
 
+    def test_training_monitor_uses_existing_auth_and_registered_ids(self):
+        for path in ('/api/training-runs', '/api/training-runs/example'):
+            with self.assertRaises(HTTPError) as caught:
+                self.request(path, token=None)
+            self.assertEqual(caught.exception.code, 401)
+        with patch('unibrain_agent.training_monitor.TrainingMonitor.listing', return_value=[{'id':'example','label':'Example'}]):
+            with self.request('/api/training-runs') as response:
+                self.assertEqual(json.load(response)['runs'][0]['id'], 'example')
+        with self.assertRaises(HTTPError) as caught:
+            self.request('/api/training-runs/unregistered')
+        self.assertEqual(caught.exception.code, 404)
+
     def test_preflight_is_available_without_credentials_but_data_is_not(self):
         with self.request(token=None, method='OPTIONS') as response:
             self.assertIn('Authorization', response.headers['Access-Control-Allow-Headers'])
@@ -118,6 +130,8 @@ class AccountAndStaticTests(unittest.TestCase):
         self.assertNotIn('__LOGO_',html)
         self.assertNotIn('__CONNECTION_SCRIPT__',html)
         self.assertNotIn('__OBJECTIVE_PANEL__',html)
+        self.assertNotIn('__TRAINING_PANEL__',html)
+        self.assertIn('id="trainingLab"',html)
         self.assertIn('id="objectivePanel"',html)
         self.assertIn('function objectiveFormula(',html)
         self.assertNotIn('C:\\Users\\',html)

@@ -22,6 +22,18 @@ function openWorkspace(view, target) {
   byId("snapshotLabel").hidden = view !== "pipeline";
   history.replaceState(null, "", view === "pipeline" ? "#workspace" : "#" + view);
   (target ? byId(target) : byId(view + "View"))?.scrollIntoView({ block: "start" });
+  window.dispatchEvent(new CustomEvent('workspacechange', {detail:view}));
+}
+
+function workspaceRoute(hash) {
+  const name = hash.replace(/^#/, '');
+  if (['data', 'research', 'roles', 'settings'].includes(name)) return {view:name};
+  return {view:'pipeline', target:['builderPanel', 'runPanel', 'results'].includes(name) ? name : null};
+}
+
+function followWorkspaceRoute() {
+  const route = workspaceRoute(location.hash);
+  openWorkspace(route.view, route.target);
 }
 
 function assistantStatus(mode, record) {
@@ -148,6 +160,8 @@ function updateTrainingTeam(value) {
 }
 
 async function initializeAssistant() {
+  followWorkspaceRoute();
+  window.addEventListener('hashchange', followWorkspaceRoute);
   document.querySelectorAll('.sidebar nav a, .sidebar .brand').forEach(link => link.addEventListener('click', event => {
     event.preventDefault();
     openWorkspace(link.dataset.workspaceLink || 'pipeline', link.dataset.workspaceLink ? null : link.getAttribute('href').slice(1));
@@ -163,7 +177,6 @@ async function initializeAssistant() {
   byId('inspectRoleEvidence').onclick = () => showDetails('Measured context','<pre class="prompt-content">'+escapeHtml(JSON.stringify(rolesJob?.context || assistantConfig?.context,null,2))+'</pre>','AGGREGATE MEASUREMENTS');
   window.addEventListener('trainingtelemetry', event => updateTrainingTeam(event.detail));
   const connected = await backendReady;
-  openWorkspace(['#data','#research','#roles','#settings'].includes(location.hash) ? location.hash.slice(1) : !connected && appConfig.standalone ? 'settings' : 'pipeline');
   if (!connected) {
     assistantConfig = {roles:appConfig.roles,research_prompt:appConfig.research_prompt,context:null};
     assistantLibrary = appConfig.catalog;showRoles(null);

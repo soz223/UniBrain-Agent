@@ -28,6 +28,7 @@ function cyclePolicyStatus(record) {
 
 function showCycle(record) {
   fullCycle=record;
+  window.dispatchEvent(new CustomEvent('cycletrainingtelemetry',{detail:record}));
   renderObjective();
   byId('cycleProgress').hidden=false;
   const busy=record.status==='running';

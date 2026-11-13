@@ -43,8 +43,12 @@ def with_stage_layout(packet, selection=None, method=None):
                            loss_ids=losses, branch=identifier in {'segmentation', 'surface'},
                            note='' if losses else 'N/A: no independent loss. See measured downstream connections below.'))
     assigned = {identifier for stage in layout for identifier in stage['loss_ids']}
-    return {**packet, 'selection': dict(selection), 'stages': layout,
-            'unassigned_loss_ids': [term['id'] for term in packet['terms'] if term['id'] not in assigned]}
+    result = {**packet, 'selection': dict(selection), 'stages': layout,
+              'unassigned_loss_ids': [term['id'] for term in packet['terms'] if term['id'] not in assigned]}
+    if packet.get('paper_original'):
+        from .training_monitor import paper_layout
+        result = paper_layout(result)
+    return result
 
 
 def preview_objective(selection, coordination='single', build=None):
@@ -115,6 +119,7 @@ def observe_objective(model, losses, weights, total, step):
     if not math.isfinite(actual) or not math.isclose(actual, reconstructed, rel_tol=2e-5, abs_tol=2e-5):
         raise ValueError('Objective manifest does not reconstruct the executed total')
     packet = {'version': 1, 'status': 'observed', 'step': step, 'terms': terms,
+            'paper_original': getattr(model, 'paper_original', False),
             'profile': 'Executed full UniBrain',
             'modules': [{'id': module, 'name': type(getattr(model, module, model)).__name__ + ' (' + module + ')'} for module in sorted(modules)],
             'connections': connections, 'total': actual,

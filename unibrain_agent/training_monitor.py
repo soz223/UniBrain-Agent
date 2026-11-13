@@ -1,0 +1,152 @@
+"""Read bounded, aggregate training telemetry without loading model checkpoints."""
+
+import json
+import math
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+TASKS = ('extraction', 'registration', 'segmentation', 'classification')
+MAX_ROWS = 128
+MAX_BYTES = 4 * 1024 * 1024
+
+
+def number(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
+
+
+def numeric_map(value, keys=TASKS):
+    return {key: number(value[key]) for key in keys if isinstance(value, dict) and key in value}
+
+
+def matrix(value):
+    if not isinstance(value, list) or len(value) != 4 or any(not isinstance(row, list) or len(row) != 4 for row in value):
+        return None
+    return [[number(item) for item in row] for row in value]
+
+
+def policy_record(value):
+    if not isinstance(value, dict):
+        return None
+    result = {key: numeric_map(value.get(key, {})) for key in
+              ('weights', 'task_losses', 'base_weights', 'actions', 'gradient_norms', 'action_logits', 'actor_objectives', 'critic_td_losses')}
+    for key in ('gram', 'cosine_similarity'):
+        result[key] = matrix(value.get(key))
+    result.update({key: number(value.get(key)) for key in
+                   ('reward', 'policy_updates', 'actor_optimizer_steps', 'critic_optimizer_steps', 'replay_size')})
+    result['reward_terms'] = numeric_map(value.get('reward_terms'),
+                                       ('training_loss_improvement', 'gradient_norm_penalty', 'gradient_penalty_weight'))
+    result['gradient_scope'] = 'recorded_probe_parameters'
+    result['validation_used'] = False if (value.get('reward_terms') or {}).get('validation_used') is False else None
+    observations = value.get('observations')
+    if isinstance(observations, dict):
+        result['observations'] = {task: [number(x) for x in observations[task]] for task in TASKS
+                                  if isinstance(observations.get(task), list) and len(observations[task]) == 5}
+    return result
+
+
+def objective_record(value):
+    if not isinstance(value, dict):
+        return None
+    result = {key: value[key] for key in ('status', 'step', 'total', 'reconstructed_total') if key in value}
+    fields = {'stages': ('id', 'name', 'method', 'loss_ids', 'branch'),
+              'terms': ('id', 'name', 'definition', 'weight', 'value', 'requires_grad'),
+              'modules': ('id', 'name'), 'connections': ('loss', 'module', 'status')}
+    for key, allowed in fields.items():
+        result[key] = [{field: item[field] for field in allowed if field in item}
+                       for item in value.get(key, [])[:64] if isinstance(item, dict)]
+    return result
+
+
+def paper_layout(packet):
+    if packet is None:
+        return None
+    for stage in packet.get('stages', []):
+        if stage['id'] == 'parcellation':
+            stage['method'] = 'Inverse affine, trilinear atlas'
+    packet['forward_edges'] = [['input', 'extraction'], ['input', 'segmentation'], ['input', 'graph'],
+                               ['extraction', 'registration'], ['registration', 'parcellation'],
+                               ['parcellation', 'graph'], ['graph', 'classification']]
+    packet['layout_source'] = 'PaperUniBrain.forward; template inputs omitted from schematic'
+    return packet
+
+
+def tail_records(path):
+    if not path.is_file():
+        return []
+    with path.open('rb') as stream:
+        stream.seek(0, 2)
+        start = max(0, stream.tell() - MAX_BYTES)
+        stream.seek(start)
+        if start:
+            stream.readline()
+        lines = stream.read(MAX_BYTES).splitlines()
+    rows = []
+    for line in lines[-MAX_ROWS - 1:]:
+        try:
+            row = json.loads(line)
+            if isinstance(row, dict) and number(row.get('step')) is not None:
+                rows.append(row)
+        except (ValueError, UnicodeDecodeError):
+            continue
+    return rows[-MAX_ROWS:]
+
+
+def timestamp(value):
+    return datetime.fromtimestamp(value, timezone.utc).isoformat()
+
+
+def snapshot(folder, identifier, label=None):
+    folder = Path(folder)
+    mirror = folder / 'snapshot.json'
+    if mirror.is_file():
+        packet = json.loads(mirror.read_text(encoding='utf-8'))
+        packet.update(id=identifier, label=label or identifier)
+        return packet
+    report_path, updates_path = folder / 'report.json', folder / 'updates.jsonl'
+    try:
+        report = json.loads(report_path.read_text(encoding='utf-8')) if report_path.is_file() else {}
+    except (ValueError, UnicodeDecodeError):
+        report = {}
+    rows = tail_records(updates_path)
+    history = [{**numeric_map(row, ('step', 'epoch', 'total_loss', 'weighted_loss')),
+                'losses': numeric_map(row.get('losses')), 'gradient_policy': policy_record(row.get('gradient_policy')),
+                'objective': objective_record(row.get('objective'))} for row in rows]
+    config = report.get('config', {})
+    if config.get('paper_original'):
+        for row in history:
+            row['objective'] = paper_layout(row['objective'])
+    validation = [{**numeric_map(row, ('epoch',)), 'validation': numeric_map(row.get('validation'),
+                  ('accuracy', 'balanced_accuracy', 'auc', 'brain_dice', 'tissue_dice', 'atlas_dice', 'registration_dice', 'classification_loss'))}
+                  for row in report.get('history', [])[-1000:]]
+    files = [path for path in (report_path, updates_path) if path.is_file()]
+    return {'id': identifier, 'label': label or identifier, 'source': 'training_files',
+            'reported_status': report.get('status', 'no_records'),
+            'dataset': config.get('dataset') if config.get('dataset') in ('abide', 'adhd', 'hcp') else None,
+            'fold': number(config.get('fold')), 'epochs': number(config.get('epochs')),
+            'paper_original': config.get('paper_original') is True,
+            'coordination': 'taskforce' if config.get('coordination') == 'taskforce' else 'none',
+            'observed_at': timestamp(max(path.stat().st_mtime for path in files)) if files else None,
+            'captured_at': datetime.now(timezone.utc).isoformat(), 'history': history, 'validation': validation}
+
+
+class TrainingMonitor:
+    def __init__(self, entries=None, base=None):
+        if entries is None:
+            from .paths import LOCAL, CONFIG
+            entries, base = LOCAL.get('training_runs', {}), CONFIG.parent
+        self.entries = entries
+        self.base = Path(base or '.')
+
+    def listing(self):
+        return [{'id': key, 'label': value.get('label', key) if isinstance(value, dict) else key}
+                for key, value in self.entries.items() if re.fullmatch(r'[A-Za-z0-9_]+', key)]
+
+    def read(self, identifier):
+        if not re.fullmatch(r'[A-Za-z0-9_]+', identifier) or identifier not in self.entries:
+            raise ValueError('Unknown monitored run')
+        value = self.entries[identifier]
+        path = Path(value['path'] if isinstance(value, dict) else value).expanduser()
+        path = path if path.is_absolute() else self.base / path
+        return snapshot(path.resolve(), identifier, value.get('label') if isinstance(value, dict) else None)
