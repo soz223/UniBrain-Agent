@@ -31,6 +31,8 @@ test('core and legacy records retain their actual coefficient and replay semanti
   const legacy=context.trainingPolicyDescription({weights:{extraction:1}});
   assert.match(legacy.formula,/base coefficient/);assert.match(legacy.label,/LEGACY/);assert.equal(legacy.action,'w');
   assert.match(context.trainingPolicyDescription(null).scope,/await/);
+  assert.match(context.trainingPolicyDescription({profile:'paper_core',action_bound:1}).method,/±1 before softmax/);
+  assert.doesNotMatch(core.method,/bounds actor outputs/);
 });
 
 function assistantPage(hash) {

@@ -16,7 +16,7 @@ function trainingPolicyDescription(policy) {
   if(policy.profile==='paper_core')return {label:'TASKFORCE CORE · FULL GRADIENTS',
     formula:policy.gradient_normalization==='none'?'w = softmax(a) · Applied λ = w.':'w = softmax(a) · Applied λⱼ = wⱼ / ‖∇Lⱼ‖₂. Zero norms use scale 1.',
     scope:'Every trainable parameter is included. '+(policy.gradient_normalization==='none'?'Raw gradient Gram matrix.':'L2 normalized gradient Gram matrix.'),
-    method:'TaskForce core profile: local actors, centralized critics, raw action replay, shared loss and gradient reward, OU exploration, and policy learning after the model update. Normalization choices are recorded in the run.',action:'a'};
+    method:'TaskForce core profile: local actors, centralized critics, raw action replay, shared loss and gradient reward, OU exploration, and policy learning after the model update. Normalization choices are recorded in the run.'+(Number.isFinite(policy.action_bound)?' This run bounds actor outputs and exploration to ±'+policy.action_bound+' before softmax. This is an explicit stability setting.':''),action:'a'};
   return {label:'TASKFORCE INSPIRED · LEGACY PROFILE',formula:'w = softmax(a) · Applied λ = T × w × base coefficient.',
     scope:'Sampled, base-weighted parameter gradients.',method:'Legacy profile: sampled parameter gradients, UniBrain base coefficients, normalized action replay and policy learning before the next model update. This run was not upgraded to the core profile.',action:'w'};
 }
