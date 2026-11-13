@@ -165,6 +165,14 @@ def collect(args):
                       'prediction_foreground_center': center(prediction > 0), 'reference_foreground_center': center(reference > 0),
                       'reference_outside_brain_fraction': float(((reference > 0) & (brain.cpu().numpy().squeeze() < .5)).sum() / max(1, (reference > 0).sum()))}
         row_result['metric_absolute_error'] = abs(actual['foreground_macro_dice'] - row_result['upstream_dice'])
+        outside = (grid.abs() > 1).any(-1)
+        row_result['subject_tissue_outside_grid_fraction'] = float(outside[foreground].float().mean()) if foreground.any() else None
+        brain_foreground = brain[:, 0] > .5
+        row_result['subject_brain_outside_grid_fraction'] = float(outside[brain_foreground].float().mean()) if brain_foreground.any() else None
+        bottom = torch.tensor([[[0., 0., 0., 1.]]], device=args.device)
+        affine = torch.cat((output[3][-1], bottom), dim=1)
+        inverse = torch.cat((output[4][-1], bottom), dim=1)
+        row_result['affine_inverse_roundtrip_max_error'] = float((affine @ inverse - torch.eye(4, device=args.device)).abs().max().detach())
         target_ce = F.cross_entropy(logits, target, reduction='none')
         target_foreground = target.argmax(1) != 0
         row_result['target_foreground_fraction'] = float(target_foreground.float().mean())

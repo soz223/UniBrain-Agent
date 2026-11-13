@@ -66,6 +66,9 @@ diagnosis, not a cohort-level re-evaluation or an original UniBrain baseline.
 * About 78.4% to 79.7% of inverse-grid coordinates were outside the template
   domain. This includes background and is a warning, not proof that the same
   fraction of brain tissue was lost. The transferred tissue volume was small.
+  Restricting the check to subject tissue gave 1.7%, 20.0%, and 8.3% outside-grid
+  sampling. Forward and inverse affine roundtrip errors were below 1.2e-7; this
+  rules out a gross numerical inverse error, not anatomical registration error.
 * In one training-mode backward probe, all 42 segmentation, 28 registration and
   54 extraction parameter tensors had finite nonzero segmentation gradients.
   Detaching the target removed its registration and extraction paths, retaining

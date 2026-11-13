@@ -18,7 +18,8 @@ def diagnostic_context(report):
               'target_channel_sum_max', 'target_requires_grad', 'inverse_grid_outside_fraction',
               'affine_determinant', 'segmentation_gradient', 'detached_target_gradient',
               'physical_geometry', 'target_foreground_fraction', 'target_foreground_ce', 'target_background_ce',
-              'axis_flip_dice_diagnostic_only')
+              'axis_flip_dice_diagnostic_only', 'subject_tissue_outside_grid_fraction',
+              'subject_brain_outside_grid_fraction', 'affine_inverse_roundtrip_max_error')
     return {'scope': 'Read-only checkpoint diagnosis; no automatic training changes',
             'dataset': report.get('dataset'), 'fold': report.get('fold'),
             'checkpoint_sha256': report.get('checkpoint_sha256'),
