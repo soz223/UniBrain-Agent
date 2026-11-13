@@ -61,3 +61,33 @@ For acceptance, reproduce the failure, verify later native gradients and optimiz
 updates, then complete full validation cycles on the original split. Retain the
 pre-repair checkpoints and failed attempt reports. Report training probe AUC and
 full validation AUC separately.
+
+## Acceptance on ABIDE round 1
+
+The full 271,483,811-parameter paper model resumed its model, optimizer, policy and
+random states. Replaying step 35,419 reproduced a CE error log-probability of
+-106.2756. Native classification gradients were zero, but the exact direction
+probe verified every expected tensor and the positive classification coefficient.
+At step 35,420, native classification and total gradients were nonzero again and
+all five modules had sampled parameter updates. No diagnostic gradient was applied
+to the optimizer.
+
+Epoch 55 completed on all 217 validation subjects, followed by epoch 56. At step
+35,860 the worker was running, the policy had 35,796 updates, and seven numerical
+recoveries had been recorded with all consecutive counters back at zero. The
+original control process retained its original PID and remained active. These
+observations establish bounded execution recovery, not indefinite reliability.
+
+| Evaluation epoch | Training probe AUC, 64 subjects | Validation AUC, 217 subjects |
+| :--- | :--- | :--- |
+| 54 | 0.8066 | 0.5419 |
+| 55 | 0.7783 | 0.5197 |
+
+Classification generalization did not improve in these two evaluations. Recovery
+does not tune model weights against validation outcomes. Controlled full-model
+fault injections at logit margins 90 and 160 passed while preserving the native
+optimizer gradients. A double-precision stable-CE reference verified the normalized
+direction. Detached paths, zero coefficients, persistent underflow and nonfinite
+gradients remain rejected. Linux subprocess tests verified successful checkpoint
+restart and termination at the retry limit. Code CI passed on Linux Python 3.10,
+Linux Python 3.12 and Windows Python 3.12 for implementation commit `c93dbc5`.

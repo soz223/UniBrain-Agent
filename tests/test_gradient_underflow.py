@@ -7,6 +7,7 @@ from unibrain_agent.replacement_training import (
     PRE_UNDERFLOW_AUDIT_TRAINER, classification_gradient_paths, classification_path_valid,
     resume_identity_matches,
     gradient_statistics, probe_total_underflow, track_gradient_health,
+    normalized_ce_probe,
 )
 
 
@@ -131,3 +132,29 @@ class GradientUnderflowTests(unittest.TestCase):
                   'total_to_candidates': {'feature_net': gradient_statistics([model.feature_net.weight.grad])}}
         probe_total_underflow(model, total, loss, record)
         self.assertFalse(classification_path_valid(record['total_to_candidates']['feature_net']))
+
+    def test_direction_matches_stable_double_precision_ce_reference(self):
+        parameter = torch.tensor([.2, -.3], requires_grad=True)
+        matrix = torch.tensor([[1., 2.], [3., -1.], [-2., 4.]])
+        offset = torch.tensor([0., -4., 40.])
+        logits = (matrix @ parameter + offset).reshape(1, 3)
+        loss = torch.nn.functional.cross_entropy(logits, torch.tensor([2]))
+        gradients, evidence = normalized_ce_probe(loss, logits, torch.tensor([2]), [parameter])
+        precise = parameter.detach().double().requires_grad_(True)
+        values = matrix.double() @ precise + offset.double()
+        ratio = torch.exp(values[:2] - values[2]).sum()
+        stable_loss = torch.log1p(ratio)
+        expected = torch.autograd.grad(stable_loss, precise)[0] / (ratio.detach() / (1 + ratio.detach()))
+        torch.testing.assert_close(gradients[0].double(), expected, rtol=1e-6, atol=1e-6)
+        self.assertTrue(evidence['direct_ce_graph'])
+
+    def test_saturated_ce_does_not_rescue_structurally_zero_module(self):
+        model = torch.nn.Module()
+        model.feature_net = torch.nn.Linear(1, 1, bias=False)
+        model.candidate_modules = ('feature_net',)
+        image = torch.ones(1, 1, requires_grad=True)
+        logits = torch.stack((model.feature_net(image).sum() * 0, image.sum() * 0 + 160)).reshape(1, 2)
+        label = torch.tensor([1])
+        loss = torch.nn.functional.cross_entropy(logits, label)
+        paths = classification_gradient_paths(model, loss, 'original', True, image, logits, label)
+        self.assertFalse(classification_path_valid(paths['candidates']['feature_net']))
