@@ -167,7 +167,7 @@ async function initializeAssistant() {
     openWorkspace(link.dataset.workspaceLink || 'pipeline', link.dataset.workspaceLink ? null : link.getAttribute('href').slice(1));
   }));
   byId('resetPipeline').addEventListener('click', () => openWorkspace('pipeline'));
-  byId('openTrainingRoles').onclick = () => {openWorkspace('roles');document.querySelector('.prompt-review').open=true;};
+  byId('openTrainingRoles').onclick = () => openWorkspace('roles');
   byId('researchForm').onsubmit = event => { event.preventDefault(); submitAssistant('research'); };
   byId('researchInput').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey) {event.preventDefault();submitAssistant('research');} };
   byId('newResearch').onclick = () => { researchJob=null;byId('researchConversation').innerHTML='<div class="conversation-empty">Start a new research conversation.</div>';byId('researchProgress').hidden=true;byId('researchInput').focus(); };

@@ -12,6 +12,7 @@ const trainingState = {packet:null, latestPacket:null, current:null, selected:nu
 
 function trainingNumber(value, digits=3) {
   if(typeof value !== 'number' || !Number.isFinite(value))return 'N/A';
+  if(digits===0)return Math.round(value).toLocaleString('en-US');
   return value !== 0 && (Math.abs(value)<.001||Math.abs(value)>=10000) ? value.toExponential(1) : value.toFixed(digits);
 }
 
