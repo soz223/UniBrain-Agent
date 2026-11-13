@@ -162,6 +162,14 @@ function renderTraining() {
   byId('trainingLatest').disabled=trainingState.follow;
   renderTrainingMatrix(policy);renderTrainingWeights(frames,row);renderTrainingAgent(policy);
   const validation=packet?.validation||[];
+  const health=packet?.health,supervisor=health?.supervisor;
+  byId('trainingHealthPanel').hidden=!health;
+  byId('trainingHealthStatus').textContent=supervisor?.status==='needs_attention'?'⚠ Needs attention':supervisor?.status==='running'?'● Monitoring':supervisor?.status||'Recorded diagnostics';
+  const recovery=health?.last_recovery;
+  byId('trainingHealth').textContent=health?
+    'Phase: '+(health.phase||'initializing')+'. Verified recovery events: '+(health.recovery_count||0)+'. Worker restarts: '+(supervisor?.restarts||0)+' / '+(supervisor?.max_restarts??0)+'. '+
+    (recovery?.step?'Last numerical recovery at step '+recovery.step+': '+recovery.paths.join(', ')+'. Same-graph scaled diagnosis; optimizer gradients unchanged. ':'')+
+    'Persistent zero gradients, disconnected paths and nonfinite gradients stop training for diagnosis. Recovery is not evidence of convergence.':'';
   byId('trainingValidation').innerHTML=validation.length?table(['Epoch','Brain Dice','Tissue Dice','Atlas Dice','Val AUC','Train probe AUC'],validation.slice(-10).map(item=>[item.epoch,...['brain_dice','tissue_dice','atlas_dice','auc'].map(key=>trainingNumber(item.validation?.[key])),trainingNumber(item.training_probe?.auc)]))+(packet.training_probe_size?'<p>Train probe: '+packet.training_probe_size+' fixed training subjects. Validation uses the registered validation split.</p>':''):'<p>No completed epoch evaluation in this source.</p>';
   updateTrainingPhase();updateTrainingFreshness();
 }

@@ -1,5 +1,6 @@
 <section class="training-lab" id="trainingLab" aria-label="Gradient agent training">
   <div class="training-source"><label>Training run <select id="trainingRun" aria-label="Training run"><option value="current">Current workspace</option></select></label><span id="trainingFreshness" role="status">Waiting for recorded updates</span></div>
+  <details class="disclosure training-inspect" id="trainingHealthPanel" hidden><summary>Training health <span id="trainingHealthStatus"></span></summary><div id="trainingHealth"></div></details>
   <div class="training-caption"><span class="source-tag" id="trainingProfile">TASKFORCE · COOPERATIVE ACTOR CRITIC</span><span id="trainingMode" class="badge">Schematic</span></div>
   <div class="training-phases" aria-label="Training cycle">
     <button data-training-phase="observe" aria-pressed="true"><span>01</span> Observe</button><i>→</i>

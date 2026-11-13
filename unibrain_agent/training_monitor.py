@@ -106,6 +106,28 @@ def timestamp(value):
     return datetime.fromtimestamp(value, timezone.utc).isoformat()
 
 
+def health_record(folder):
+    def read(name):
+        try:
+            return json.loads((folder / name).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return {}
+    health, supervisor = read('health.json'), read('supervisor.json')
+    if not health and not supervisor:
+        return None
+    last = health.get('last_recovery', {})
+    allowed = {'ext_net', 'reg_net', 'feature_net', 'gnn_pred', 'classification_to_input',
+               'ext_net:total', 'reg_net:total', 'feature_net:total', 'gnn_pred:total'}
+    return {'phase': health.get('phase') if health.get('phase') in ('training', 'validation') else None,
+            **numeric_map(health, ('step', 'epoch', 'recovery_count')),
+            'last_recovery': {'step': number(last.get('step')), 'paths': [p for p in last.get('paths', []) if p in allowed],
+                              'optimizer_modified': False if last.get('optimizer_modified') is False else None},
+            'supervisor': {'status': supervisor.get('status') if supervisor.get('status') in
+                          ('starting', 'running', 'checkpointing', 'recovering', 'complete', 'budget_exhausted', 'stopped', 'needs_attention') else None,
+                          **numeric_map(supervisor, ('restarts', 'max_restarts', 'heartbeat_age_seconds')),
+                          'updated_at': supervisor.get('updated_at')}}
+
+
 def snapshot(folder, identifier, label=None):
     folder = Path(folder)
     mirror = folder / 'snapshot.json'
@@ -133,6 +155,7 @@ def snapshot(folder, identifier, label=None):
                   for row in report.get('history', [])[-1000:]]
     files = [path for path in (report_path, updates_path) if path.is_file()]
     return {'id': identifier, 'label': label or identifier, 'source': 'training_files',
+            'health': health_record(folder),
             'reported_status': report.get('status', 'no_records'),
             'stop_reason': report.get('stop_reason') if report.get('stop_reason') in
                            ('wall_time_budget', 'step_budget', 'termination_signal', 'validation_patience') else None,

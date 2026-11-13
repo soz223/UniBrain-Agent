@@ -43,6 +43,19 @@ def check_mirror_preserves_source_timestamp_and_relative_config(tmp_path):
 
 
 class TrainingMonitorTests(unittest.TestCase):
+    def test_health_exposes_recovery_without_private_details(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / 'health.json').write_text(json.dumps({'phase': 'training', 'step': 12, 'recovery_count': 1,
+                'last_recovery': {'step': 11, 'paths': ['feature_net:total', '/private'], 'optimizer_modified': False}}))
+            (path / 'supervisor.json').write_text(json.dumps({'status': 'running', 'restarts': 1, 'pid': 123,
+                'error': 'private token', 'max_restarts': 2}))
+            result = snapshot(path, 'run')['health']
+            self.assertEqual(result['recovery_count'], 1)
+            self.assertEqual(result['supervisor']['restarts'], 1)
+            self.assertNotIn('private', json.dumps(result))
+            self.assertNotIn('pid', json.dumps(result))
+
     def test_training_probe_and_time_budget_are_distinct_from_validation(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder)

@@ -19,6 +19,7 @@ METHODS.update(TARGETS)
 SETTINGS = ("original", "original_completed", "original_frozen_stages", "joint", "independent_official", "independent_pretrained", "independent_finetuned")
 LEGACY_REFERENCE_TRAINER = "4977739c34f4b8cbb7326052e23a9cc77199a40297db8e28bfe95bee2bd60904"
 PRE_UNDERFLOW_AUDIT_TRAINER = "b3e429b125c4a12f534e1722d550c001e761e22e7451272d13e25824b65d3425"
+CLASSIFICATION_AUDIT_TRAINER = "483efeef78a70a14ef8ff6daa4b628bf3f40ba20d2944ec19978087b92521b6c"
 
 
 def fingerprint(path):
@@ -47,7 +48,7 @@ def resume_identity_matches(previous, current, allow_gradient_audit_upgrade=Fals
     if allow_gradient_audit_upgrade:
         upgraded = copy.deepcopy(previous)
         hashes = upgraded.get("implementation_hashes", {})
-        if hashes.get("replacement_training.py") == PRE_UNDERFLOW_AUDIT_TRAINER:
+        if hashes.get("replacement_training.py") in (PRE_UNDERFLOW_AUDIT_TRAINER, CLASSIFICATION_AUDIT_TRAINER):
             hashes["replacement_training.py"] = current.get("implementation_hashes", {}).get("replacement_training.py")
             if upgraded == current:
                 return False
@@ -644,10 +645,12 @@ def classification_gradient_paths(model, loss, method, required, image=None):
                         "reason": "The tissue prediction head is supervised by tissue loss; diagnosis does not consume its logits" if auxiliary else None}
         offset += count
     loss_value = float(loss.detach())
+    input_gradient = gradients[-1] if image is not None and image.requires_grad else None
+    input_path = {**gradient_statistics([input_gradient]), "required": required and method != "nnunet"}
     zero_paths = [name for name, value in result.items() if value["required"] and value["finite"] and not value["nonzero"]
                   and value["tensor_count"] > 0 and value["observed_tensors"] == value["tensor_count"]]
     present = [gradient for gradient in gradients if gradient is not None]
-    if (zero_paths and 0 <= loss_value <= 1e-7 and present
+    if ((zero_paths or (input_path["required"] and input_gradient is not None and not input_path["nonzero"])) and 0 <= loss_value <= 1e-7 and present
             and all(bool(torch.isfinite(g).all()) and float(g.detach().abs().max()) <= 1e-12 for g in present)):
         scaled = torch.autograd.grad(loss * 1e20, inputs, retain_graph=True, allow_unused=True)
         offset = 0
@@ -658,8 +661,59 @@ def classification_gradient_paths(model, loss, method, required, image=None):
                                                     "scale": 1e20, "loss_value": loss_value,
                                                     "scope": "diagnostic_only; optimizer gradients unchanged"}
             offset += count
-    input_gradient = gradients[-1] if image is not None and image.requires_grad else None
-    return {"candidates": result, "input": {**gradient_statistics([input_gradient]), "required": required and method != "nnunet"}}
+        if image is not None and image.requires_grad and not input_path["nonzero"]:
+            input_path["underflow_probe"] = {**gradient_statistics([scaled[-1]]), "scale": 1e20,
+                                             "loss_value": loss_value, "scope": "diagnostic_only; optimizer gradients unchanged"}
+    return {"candidates": result, "input": input_path}
+
+
+def probe_total_underflow(model, total, classification_loss, record):
+    """Verify zero gradients in classification-only modules on the same graph."""
+    import torch
+    if classification_loss is None or not 0 <= float(classification_loss.detach()) <= 1e-7:
+        return
+    groups = {}
+    for name in ("feature_net", "gnn_pred"):
+        value = record["total_to_candidates"].get(name)
+        path = record["classification_to_candidates"].get(name, {})
+        if (value and value["finite"] and not value["nonzero"] and value["tensor_count"] > 0
+                and value["observed_tensors"] == value["tensor_count"]
+                and path.get("finite") and path.get("l1") is not None and path["l1"] <= 1e-12
+                and classification_path_valid(path)):
+            groups[name] = [p for p in getattr(model, name).parameters() if p.requires_grad]
+    if not groups:
+        return
+    parameters = [p for group in groups.values() for p in group]
+    gradients = torch.autograd.grad(total * 1e20, parameters, retain_graph=True, allow_unused=True)
+    offset = 0
+    for name, group in groups.items():
+        record["total_to_candidates"][name]["underflow_probe"] = {
+            **gradient_statistics(gradients[offset:offset + len(group)]), "scale": 1e20,
+            "loss_value": float(classification_loss.detach()), "scope": "diagnostic_only; optimizer gradients unchanged"}
+        offset += len(group)
+
+
+def track_gradient_health(record, state, step, limit=8):
+    """Bound automatic recovery and require native gradients to return."""
+    paths = {**record["classification_to_candidates"],
+             **{name + ":total": value for name, value in record["total_to_candidates"].items()}}
+    if record.get("classification_to_input"):
+        paths["classification_to_input"] = record["classification_to_input"]
+    streaks = state.setdefault("underflow_streaks", {})
+    recovered = []
+    for name, value in paths.items():
+        rescued = not value["nonzero"] and classification_path_valid(value)
+        streaks[name] = streaks.get(name, 0) + 1 if rescued else 0
+        if streaks[name] > limit:
+            raise ValueError("Persistent numerical underflow requires diagnosis: " + name)
+        if rescued:
+            recovered.append(name)
+    if recovered:
+        state["recovery_count"] = state.get("recovery_count", 0) + 1
+        state["last_recovery"] = {"step": step, "paths": recovered, "action": "scaled_same_graph_verification",
+                                  "optimizer_modified": False}
+    record["health"] = {"recovered_paths": recovered, "consecutive_limit": limit,
+                        "recovery_count": state.get("recovery_count", 0)}
 
 
 def classification_gradients(model, loss, method, required):
@@ -771,13 +825,13 @@ def check_gradient_paths(model, record, step, budget, warmup):
     failed = [name for name, value in candidates.items()
               if value["required"] and not classification_path_valid(value)]
     input_path = record["classification_to_input"]
-    if input_path and input_path["required"] and not (input_path["finite"] and input_path["nonzero"]):
+    if input_path and input_path["required"] and not classification_path_valid(input_path):
         failed.append("classification_to_input")
     if record["input_required"]:
         if not (record["total_to_input"]["finite"] and record["total_to_input"]["nonzero"]):
             failed.append("input")
         failed.extend(name + ":total" for name, value in record["total_to_candidates"].items()
-                      if not (value["finite"] and value["nonzero"]))
+                      if not classification_path_valid(value))
     if warmup["status"] in {"pending", "confirmed"}:
         expected = warmup["initialization"]
         observed = candidates.get("ext_net", {})
@@ -1084,12 +1138,18 @@ def _train(args, budget):
                     objective = observe_objective(model, objective_losses, objective_weights, total, progress["steps"] + 1)
                     objective = with_stage_layout(objective, selection={**DEFAULTS, **METHOD_STAGES.get(args.method, {})})
                     objective.update(method=args.method, profile="Full UniBrain · " + args.method)
-                    total.backward()
+                    del objective_losses
+                    regularization_term = None
+                    total.backward(retain_graph=gradient_record is not None)
                     if gradient_record is not None:
                         gradient_record["total_to_input"] = gradient_statistics([image.grad])
                         gradient_record["total_to_candidates"] = total_candidate_gradients(model, args.method)
                         report["gradient_verification"]["last_step"] = gradient_record
+                        probe_total_underflow(model, total, losses.get("classification"), gradient_record)
                         check_gradient_paths(model, gradient_record, progress["steps"], update_budget, warmup)
+                        health = progress.setdefault("gradient_health", {})
+                        track_gradient_health(gradient_record, health, progress["steps"] + 1)
+                        report["gradient_health"] = copy.deepcopy(health)
                     if any(not torch.isfinite(p.grad).all() for p in model.parameters() if p.grad is not None):
                         raise ValueError("Nonfinite parameter gradient")
                     probes = {}
@@ -1114,6 +1174,13 @@ def _train(args, budget):
                             raise ValueError('No sampled parameter update in selected candidate modules: ' + ', '.join(missing))
                     progress.update(phase=phase_index, epoch=epoch, position=position + 1, steps=progress["steps"] + 1,
                                     pretrain_steps=progress["pretrain_steps"] + int(standalone))
+                    if gradient_record is not None and gradient_record["health"]["recovered_paths"]:
+                        with (args.output / "gradient_recoveries.jsonl").open("a", encoding="utf-8") as stream:
+                            stream.write(json.dumps({"step": progress["steps"], **gradient_record["health"],
+                                                     "action": "scaled_same_graph_verification", "optimizer_modified": False}) + "\n")
+                    if progress["steps"] % 25 == 0 or (gradient_record and gradient_record["health"]["recovered_paths"]):
+                        save_json(args.output / "health.json", {"phase": "training", "step": progress["steps"],
+                                  "epoch": epoch + 1, **progress.get("gradient_health", {})})
                     event = {"phase": phase, "epoch": epoch + 1, "step": progress["steps"], "losses": {k: float(v.detach()) for k, v in losses.items()}, "total_loss": float(total.detach()),
                              "sampled_parameter_updates": observed, "objective": objective}
                     objective["gradient_verification"] = gradient_record
@@ -1131,6 +1198,8 @@ def _train(args, budget):
                     del output, losses, total, probes
                 progress.update(epoch=epoch + 1, position=0)
                 if not standalone:
+                    save_json(args.output / "health.json", {"phase": "validation", "step": progress["steps"],
+                              "epoch": epoch + 1, **progress.get("gradient_health", {})})
                     validation = evaluate(model, datasets["val"], templates, args.eval_limit)
                     loss = selection_value(validation["metrics"], args.selection_metric)
                     row = {"epoch": epoch + 1, "validation": validation["metrics"]}

@@ -22,6 +22,7 @@ def prompt_for(role):
         prompt = (PROJECT / "prompts/task_specialist.md").read_text(encoding="utf-8").format(task=role, focus=SPECIALISTS[role])
         if role in {'segmentation', 'registration'}:
             prompt += '\n' + (PROJECT / 'prompts/training_diagnosis.md').read_text(encoding='utf-8')
+        prompt += '\n' + (PROJECT / 'prompts/training_recovery.md').read_text(encoding='utf-8')
         return prompt
     if role not in {"research", "coordinator"}:
         raise ValueError("Unknown assistant role")

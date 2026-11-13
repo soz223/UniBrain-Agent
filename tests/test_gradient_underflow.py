@@ -6,6 +6,7 @@ import torch
 from unibrain_agent.replacement_training import (
     PRE_UNDERFLOW_AUDIT_TRAINER, classification_gradient_paths, classification_path_valid,
     resume_identity_matches,
+    gradient_statistics, probe_total_underflow, track_gradient_health,
 )
 
 
@@ -51,3 +52,39 @@ class GradientUnderflowTests(unittest.TestCase):
         current['seed'] = 19
         with self.assertRaises(ValueError):
             resume_identity_matches(previous, current, True)
+
+    def test_weighted_total_probe_preserves_actual_gradients(self):
+        model = torch.nn.Module()
+        model.feature_net = torch.nn.Linear(1, 1, bias=False)
+        model.candidate_modules = ('feature_net',)
+        image = torch.ones(1, 1, requires_grad=True)
+        logits = torch.stack((model.feature_net(image).sum(), image.sum() * 0 + 90)).reshape(1, 2)
+        loss = torch.nn.functional.cross_entropy(logits, torch.tensor([1]))
+        paths = classification_gradient_paths(model, loss, 'original', True, image)
+        total = loss * 1e-10
+        total.backward(retain_graph=True)
+        before = model.feature_net.weight.grad.clone()
+        record = {'classification_to_candidates': paths['candidates'],
+                  'classification_to_input': paths['input'],
+                  'total_to_candidates': {'feature_net': gradient_statistics([model.feature_net.weight.grad])}}
+        probe_total_underflow(model, total, loss, record)
+        self.assertFalse(record['total_to_candidates']['feature_net']['nonzero'])
+        self.assertTrue(classification_path_valid(record['total_to_candidates']['feature_net']))
+        torch.testing.assert_close(model.feature_net.weight.grad, before, atol=0, rtol=0)
+        health = {}
+        for step in range(8):
+            track_gradient_health(record, health, step)
+        with self.assertRaisesRegex(ValueError, 'Persistent numerical underflow'):
+            track_gradient_health(record, health, 9)
+
+    def test_total_detach_is_not_rescued(self):
+        model, image, loss = self.measure()
+        model.feature_net = model.ext_net
+        model.candidate_modules = ('feature_net',)
+        paths = classification_gradient_paths(model, loss, 'original', True, image)
+        total = model.feature_net.weight.sum() * 0 + image.sum()
+        total.backward(retain_graph=True)
+        record = {'classification_to_candidates': paths['candidates'],
+                  'total_to_candidates': {'feature_net': gradient_statistics([model.feature_net.weight.grad])}}
+        probe_total_underflow(model, total, loss, record)
+        self.assertFalse(classification_path_valid(record['total_to_candidates']['feature_net']))
