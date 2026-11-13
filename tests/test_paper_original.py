@@ -5,9 +5,21 @@ from torch.nn import functional as F
 
 from unibrain_agent.paper_original import perturb_graph
 from unibrain_agent.full_connectivity import transfer
+from unibrain_agent.replacement_training import parameter_probe
 
 
 class PaperOriginalTests(unittest.TestCase):
+    def test_parameter_probe_catches_sparse_updates_without_full_copy(self):
+        parameter = torch.nn.Parameter(torch.zeros(10000))
+        parameter.grad = torch.zeros_like(parameter)
+        parameter.grad[3] = 1
+        indices, before = parameter_probe(parameter, 8)
+        self.assertEqual(indices.tolist(), [3])
+        optimizer = torch.optim.SGD([parameter], lr=.1)
+        optimizer.step()
+        self.assertFalse(torch.equal(parameter.detach()[indices], before))
+        self.assertEqual(before.numel(), 1)
+
     def test_edge_augmentation_preserves_retained_weights_and_gradients(self):
         torch.manual_seed(17)
         graph = torch.linspace(-.8, .8, 100).reshape(1, 10, 10).requires_grad_()

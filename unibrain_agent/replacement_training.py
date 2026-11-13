@@ -588,6 +588,16 @@ def gradient_statistics(gradients):
             "finite": finite, "nonzero": count > 0, "l1": sum(float(value.abs().sum()) for value in present) if finite else None}
 
 
+def parameter_probe(parameter, limit=1024):
+    import torch
+    indices = torch.linspace(0, parameter.numel() - 1, min(limit, parameter.numel()), device=parameter.device).long()
+    gradient = parameter.grad.detach().reshape(-1)
+    indices = indices[gradient[indices] != 0]
+    if not len(indices):
+        indices = gradient.abs().argmax().reshape(1)
+    return indices, parameter.detach().reshape(-1)[indices].clone()
+
+
 def classification_gradient_paths(model, loss, method, required, image=None):
     import torch
     names = getattr(model, "candidate_modules", ()) or ((METHODS[method],) if METHODS[method] else ())
@@ -989,12 +999,14 @@ def train(args):
                     for name, parameter in model.named_parameters():
                         module = name.split(".")[0]
                         if module not in probes and parameter.grad is not None and torch.count_nonzero(parameter.grad):
-                            probes[module] = (parameter, parameter.detach().cpu().clone(), name)
+                            indices, before = parameter_probe(parameter)
+                            probes[module] = (parameter, indices, before, name)
                     optimizer.step()
                     if gradient_record is not None:
                         record_warmup_update(model, warmup, gradient_record)
-                    observed = {module: {"tensor": name, "changed": not torch.equal(parameter.detach().cpu(), before)}
-                                for module, (parameter, before, name) in probes.items()}
+                    observed = {module: {"tensor": name, "sampled_elements": len(indices),
+                                         "changed": not torch.equal(parameter.detach().reshape(-1)[indices], before)}
+                                for module, (parameter, indices, before, name) in probes.items()}
                     if not observed or not any(item["changed"] for item in observed.values()):
                         raise ValueError("No sampled trainable parameter changed after the optimizer step")
                     if args.method in TARGETS and args.trainable != 'host':
