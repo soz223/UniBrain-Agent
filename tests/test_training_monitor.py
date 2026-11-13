@@ -43,6 +43,20 @@ def check_mirror_preserves_source_timestamp_and_relative_config(tmp_path):
 
 
 class TrainingMonitorTests(unittest.TestCase):
+    def test_training_probe_and_time_budget_are_distinct_from_validation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)
+            (path / 'report.json').write_text(json.dumps({
+                'status': 'budget_exhausted', 'stop_reason': 'wall_time_budget',
+                'training_probe': {'size': 64, 'indices': [1, 2]},
+                'history': [{'epoch': 1, 'training_probe': {'auc': .8}, 'validation': {'auc': .5}}]}))
+            record = snapshot(path, 'run')
+        self.assertEqual(record['stop_reason'], 'wall_time_budget')
+        self.assertEqual(record['training_probe_size'], 64)
+        self.assertEqual(record['validation'][0]['training_probe']['auc'], .8)
+        self.assertEqual(record['validation'][0]['validation']['auc'], .5)
+        self.assertNotIn('indices', json.dumps(record))
+
     def test_core_profile_preserves_measurement_and_weight_semantics(self):
         from unibrain_agent.training_monitor import policy_record
         record = policy_record({'profile': 'paper_core', 'gradient_scope': 'all_trainable_parameters',

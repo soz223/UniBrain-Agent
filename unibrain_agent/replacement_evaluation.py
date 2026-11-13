@@ -23,7 +23,7 @@ IDENTITY_FIELDS = ("method", "setting", "initialization", "seed", "epochs", "pre
 IMPLEMENTATION_FILES = ("replacement_training.py", "full_model.py", "full_candidates.py", "full_connectivity.py",
                         "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py",
                         "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py",
-                        "full_replacement.py", "sources.py", "site_training.py", "taskforce_paper.py")
+                        "full_replacement.py", "sources.py", "site_training.py", "taskforce_paper.py", "training_control.py")
 
 
 def read_json(path):
@@ -71,6 +71,8 @@ def architecture_files(identity):
         files.add("full_replacement.py" if method == "synthstrip" else "candidate_integration.py")
     if composition:
         files.update(("full_composition.py", "full_replacement.py"))
+    if identity.get("template_normalization", "none") != "none":
+        files.add("training_control.py")
     return sorted(files)
 
 
@@ -124,12 +126,14 @@ def recorded_arguments(args, payload, report, report_path):
         raise ValueError("Paper profile differs between checkpoint and report")
     if identity.get("paper_registration_weight", .1) != declared.get("paper_registration_weight", .1):
         raise ValueError("Paper loss coefficient differs between checkpoint and report")
+    if identity.get("template_normalization", "none") != declared.get("template_normalization", "none"):
+        raise ValueError("Template normalization differs between checkpoint and report")
     if report.get("status") not in {"complete", "budget_exhausted"} or not isinstance(declared, dict):
         raise ValueError("A completed training report is required")
     for name in IDENTITY_FIELDS:
         if name not in identity or name not in declared or not same_value(identity[name], declared[name]):
             raise ValueError("Checkpoint and training configuration disagree: " + name)
-    for name in ("taskforce_profile", "taskforce_gradient_normalization"):
+    for name in ("taskforce_profile", "taskforce_gradient_normalization", "taskforce_action_bound", "template_normalization", "train_probe_size"):
         if name in identity and not same_value(identity[name], declared.get(name)):
             raise ValueError("Checkpoint and training configuration disagree: " + name)
     for name in ("method", "setting", "seed"):
@@ -367,7 +371,11 @@ def evaluate_checkpoint(args):
         model = reconstruct(restored, payload, audit)
         del payload
         model.cuda()
-        templates = [torch.from_numpy(np.load(restored.data / name, allow_pickle=False)).float().cuda().reshape(1, 1, 96, 96, 96) for name in TEMPLATES]
+        from .training_control import normalize_template
+        arrays = [np.load(restored.data / name, allow_pickle=False) for name in TEMPLATES]
+        arrays[0], scaling = normalize_template(arrays[0], getattr(restored, "template_normalization", "none"))
+        result["template_normalization"] = scaling
+        templates = [torch.from_numpy(array).float().cuda().reshape(1, 1, 96, 96, 96) for array in arrays]
         dataset = OriginalDataset(restored.data / f"adhd_{args.split}_sample.npy")
         result["evaluation"] = evaluate(model, dataset, templates, args.limit, args.output / "predictions" if args.save_predictions else None)
         for name, binding in audit["bindings"].items():

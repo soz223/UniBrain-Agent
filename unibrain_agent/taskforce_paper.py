@@ -1,6 +1,7 @@
 """TaskForce core equations and Appendix B agent configuration."""
 
 import copy
+import math
 from collections import deque
 
 import torch
@@ -34,14 +35,26 @@ def paper_network(inputs):
     return nn.Sequential(nn.Linear(inputs, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 1))
 
 
+class BoundedActor(nn.Sequential):
+    def __init__(self, inputs, bound):
+        super().__init__(*paper_network(inputs))
+        self.bound = bound
+
+    def forward(self, inputs):
+        return self.bound * torch.tanh(super().forward(inputs))
+
+
 class PaperTaskForce(GradientTeam):
-    def __init__(self, seed=17, batch_size=64, normalization='l2'):
+    def __init__(self, seed=17, batch_size=64, normalization='l2', action_bound=None):
         if normalization not in ('l2', 'none') or not 1 <= batch_size <= 100000:
             raise ValueError('Invalid TaskForce normalization or replay batch')
+        if action_bound is not None and (not math.isfinite(action_bound) or action_bound <= 0):
+            raise ValueError('Action bound must be finite and positive')
         super().__init__((1.,) * len(TASKS), seed, batch_size)
         with torch.random.fork_rng(devices=[]):
             torch.random.default_generator.manual_seed(seed)
-            self.actors = [paper_network(self.count + 1) for _ in TASKS]
+            self.actors = [BoundedActor(self.count + 1, action_bound) if action_bound is not None
+                           else paper_network(self.count + 1) for _ in TASKS]
             self.critics = [paper_network(self.count * (self.count + 2)) for _ in TASKS]
         for actor in self.actors:
             nn.init.zeros_(actor[-1].weight)
@@ -52,6 +65,7 @@ class PaperTaskForce(GradientTeam):
         self.critic_optimizers = [torch.optim.Adam(critic.parameters(), lr=5e-4) for critic in self.critics]
         self.replay = deque(maxlen=100000)
         self.normalization = normalization
+        self.action_bound = action_bound
         self.noise_state = torch.zeros(self.count)
         self.action_steps = 0
         self.model_steps = 0
@@ -80,6 +94,8 @@ class PaperTaskForce(GradientTeam):
                 self.noise_state += -.15 * self.noise_state + .2 * torch.randn(self.count, generator=self.generator)
                 logits += scale * self.noise_state
                 self.action_steps += 1
+            if self.action_bound is not None:
+                logits.clamp_(-self.action_bound, self.action_bound)
             self.action_logits = dict(zip(TASKS, logits.tolist()))
             self.noise_scale = scale
             return logits.detach()
@@ -122,6 +138,7 @@ class PaperTaskForce(GradientTeam):
                   'conflict_pairs': [[TASKS[i], TASKS[j]] for i in range(self.count) for j in range(i+1, self.count) if gram[i, j] < 0],
                   'reward': reward, 'reward_terms': copy.deepcopy(self.reward_terms), 'replay_size': len(self.replay),
                   'noise_type': 'ornstein_uhlenbeck', 'noise_scale': self.noise_scale,
+                  'action_bound': self.action_bound,
                   'policy_updates': self.updates, 'actor_optimizer_steps': self.count * self.updates,
                   'critic_optimizer_steps': self.count * self.updates, 'model_steps': self.model_steps,
                   'model_step_completed': False}
@@ -187,12 +204,14 @@ class PaperTaskForce(GradientTeam):
     def state_dict(self):
         state = super().state_dict()
         state.update(version=2, profile='paper_core', normalization=self.normalization,
+                     action_bound=self.action_bound,
                      noise_state=self.noise_state.clone(), action_steps=self.action_steps,
                      model_steps=self.model_steps, pending_model_step=self.pending_model_step)
         return state
 
     def load_state_dict(self, state):
-        if state.get('version') != 2 or state.get('profile') != 'paper_core' or state.get('normalization') != self.normalization:
+        if (state.get('version') != 2 or state.get('profile') != 'paper_core'
+                or state.get('normalization') != self.normalization or state.get('action_bound') != self.action_bound):
             raise ValueError('TaskForce core configuration differs from checkpoint')
         adapted = {**state, 'version': 1}
         super().load_state_dict(adapted)
@@ -202,10 +221,12 @@ class PaperTaskForce(GradientTeam):
         self.pending_model_step = state['pending_model_step']
 
 
-def make_team(base_weights, seed=17, batch_size=None, profile='paper', normalization='l2'):
+def make_team(base_weights, seed=17, batch_size=None, profile='paper', normalization='l2', action_bound=None):
     if profile == 'paper':
-        return PaperTaskForce(seed, 64 if batch_size is None else batch_size, normalization)
+        return PaperTaskForce(seed, 64 if batch_size is None else batch_size, normalization, action_bound)
     if profile == 'legacy':
+        if action_bound is not None:
+            raise ValueError('Bounded actions require the paper core profile')
         return GradientTeam(base_weights, seed, 4 if batch_size is None else batch_size)
     raise ValueError('Unknown TaskForce profile')
 

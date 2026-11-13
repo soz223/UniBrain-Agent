@@ -280,14 +280,23 @@ class ReplacementEvaluationTests(unittest.TestCase):
     def test_evaluation_writes_metrics_without_optimization(self):
         import numpy as np
         with tempfile.TemporaryDirectory() as temporary:
-            args, _, _, _ = self.fixture(Path(temporary))
+            args, payload, report, report_path = self.fixture(Path(temporary))
+            payload['identity']['template_normalization'] = 'minmax'
+            report['config']['template_normalization'] = 'minmax'
+            torch.save(payload, args.checkpoint)
+            args.checkpoint_sha256 = evaluation.fingerprint(args.checkpoint)
+            report_path.write_text(json.dumps(report))
             for name in evaluation.TEMPLATES:
                 np.save(args.data / name, np.zeros((96, 96, 96), dtype=np.float32))
+            image = np.linspace(0, 96, 96 ** 3, dtype=np.float32).reshape(96, 96, 96)
+            np.save(args.data / evaluation.TEMPLATES[0], image)
             tiny = torch.nn.Linear(2, 1)
             def evaluate(model, dataset, templates, limit, output):
                 self.assertFalse(model.training)
                 self.assertTrue(all(not p.requires_grad for p in model.parameters()))
                 self.assertEqual([tuple(t.shape) for t in templates], [(1, 1, 96, 96, 96)] * 3)
+                self.assertEqual(float(templates[0].max()), 1.)
+                self.assertEqual(float(templates[1].max()), 0.)
                 self.assertEqual(model(torch.ones(1, 2)).item(), 1.)
                 return {"sample_count": 2, "full_split_count": 2, "metrics": {"accuracy": .5}, "cases": []}
             with patch.dict(os.environ), \
@@ -307,6 +316,7 @@ class ReplacementEvaluationTests(unittest.TestCase):
                 result = evaluation.evaluate_checkpoint(args)
             self.assertEqual(result["status"], "complete")
             self.assertEqual(result["optimizer_updates"], 0)
+            self.assertEqual(result['template_normalization']['source_max'], 96.)
             self.assertTrue(result["full_split_evaluated"])
             saved = json.loads((args.output / "report.json").read_text())
             self.assertTrue(saved["strict_state_loaded"])

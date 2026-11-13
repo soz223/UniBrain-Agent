@@ -140,6 +140,15 @@ def preflight(args):
         raise ValueError("Explicit gradient probes require taskforce coordination")
     if args.coordination == "taskforce" and args.taskforce_profile == "paper" and args.probe_modules is not None:
         raise ValueError("The paper core profile observes every trainable parameter; use legacy for sampled probes")
+    from .training_control import TrainingBudget
+    TrainingBudget(args.wall_seconds)
+    if args.train_probe_size < 0:
+        raise ValueError("Training probe size must be nonnegative")
+    if args.taskforce_action_bound is not None:
+        if args.coordination != "taskforce" or args.taskforce_profile != "paper":
+            raise ValueError("Bounded actions require TaskForce paper core coordination")
+        if not math.isfinite(args.taskforce_action_bound) or args.taskforce_action_bound <= 0:
+            raise ValueError("Action bound must be finite and positive")
     if args.secondary_extraction:
         if args.setting != "joint" or args.trainable != "all":
             raise ValueError("Multi stage composition currently requires joint training of all modules")
@@ -281,6 +290,8 @@ def metrics_from_cases(cases):
               "auc": float(roc_auc_score(labels, scores)) if len(set(labels)) == 2 else None,
               "sensitivity": float(tp / (tp + fn)) if tp + fn else None,
               "specificity": float(tn / (tn + fp)) if tn + fp else None}
+    result.update(probability_mean=float(np.mean(scores)), probability_std=float(np.std(scores)),
+                  predicted_positive_fraction=float(np.mean(predictions)), label_positive_fraction=float(np.mean(labels)))
     for key in ("brain_dice", "tissue_dice", "atlas_dice", "registration_dice", "reference_loss"):
         result[key] = float(np.mean([row[key] for row in cases]))
     for key in ("extraction_loss", "registration_loss", "segmentation_loss", "classification_loss"):
@@ -777,6 +788,12 @@ def require_confirmed_warmup(warmup):
 
 
 def train(args):
+    from .training_control import TrainingBudget
+    with TrainingBudget(args.wall_seconds) as budget:
+        return _train(args, budget)
+
+
+def _train(args, budget):
     import numpy as np
     import torch
     from .data import OriginalDataset
@@ -784,6 +801,7 @@ def train(args):
     from .full_replacement_worker import available_gpu, selected_device
     from .taskforce import TASKS
     from .taskforce_paper import make_team, policy_parameters
+    from .training_control import normalize_template, training_probe_indices
 
     audit = preflight(args)
     if args.preflight:
@@ -801,8 +819,10 @@ def train(args):
     settings = {k: str(v.resolve()) if isinstance(v, Path) else v for k, v in vars(args).items()}
     identity = {k: settings[k] for k in ("method", "setting", "initialization", "seed", "epochs", "pretrain_epochs", "trainable", "cut_extraction", "loss_scale", "regularization", "dataset", "fold", "split_id", "weights_origin", "connect_paths", "cut_boundary", "repair_strategy", "undo_repair", "patience", "coordination", "coordination_batch_size", "probe_budget", "probe_modules", "verify_gradients", "checkpoint_mode")}
     identity["selection_metric"] = args.selection_metric
+    identity.update(template_normalization=args.template_normalization, train_probe_size=args.train_probe_size)
     if args.coordination == "taskforce":
         identity.update(taskforce_profile=args.taskforce_profile, taskforce_gradient_normalization=args.taskforce_gradient_normalization)
+        identity["taskforce_action_bound"] = args.taskforce_action_bound
     if getattr(args, "paper_original", False):
         identity["paper_original"] = True
         identity["paper_registration_weight"] = args.paper_registration_weight
@@ -815,7 +835,7 @@ def train(args):
     identity["composition"] = {"mode": args.composition_mode, **{key: fingerprint(getattr(args, key)) if getattr(args, key) else None
                                                                    for key in ("secondary_extraction", "previous_checkpoint", "previous_report", "extraction_weights")}}
     identity["implementation_hashes"] = {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
-                                          for name in ("replacement_training.py", "full_model.py", "full_candidates.py", "full_connectivity.py", "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py", "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py", "full_replacement.py", "sources.py", "site_training.py")}
+                                          for name in ("replacement_training.py", "full_model.py", "full_candidates.py", "full_connectivity.py", "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py", "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py", "full_replacement.py", "sources.py", "site_training.py", "training_control.py")}
     identity["source"] = audit["source"]
     if args.coordination == "taskforce" and args.taskforce_profile == "paper":
         identity["implementation_hashes"]["taskforce_paper.py"] = hashlib.sha256(Path(__file__).with_name("taskforce_paper.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
@@ -848,13 +868,18 @@ def train(args):
     from model import GCC
     from utils import train_aug
     datasets = {split: OriginalDataset(args.data / f"adhd_{split}_sample.npy") for split in ("train", "val", "test")}
-    templates = [torch.from_numpy(np.load(args.data / name)).float().cuda().reshape(1, 1, 96, 96, 96) for name in
-                 ("template_img_orig_96.npy", "template_img_gm_mask_orig_96.npy", "template_img_aal_mask_orig_96.npy")]
+    template_image, template_scaling = normalize_template(np.load(args.data / "template_img_orig_96.npy"), args.template_normalization)
+    template_arrays = [template_image] + [np.load(args.data / name) for name in
+                                       ("template_img_gm_mask_orig_96.npy", "template_img_aal_mask_orig_96.npy")]
+    templates = [torch.from_numpy(array).float().cuda().reshape(1, 1, 96, 96, 96) for array in template_arrays]
+    probe_indices = training_probe_indices(datasets["train"].array["label"], args.train_probe_size, args.seed)
+    training_probe = torch.utils.data.Subset(datasets["train"], probe_indices)
     phases = [("standalone", args.pretrain_epochs), ("pipeline", args.epochs)] if args.setting == "independent_finetuned" else [("pipeline", args.epochs)]
     base_weights = task_weights(config, args.method, args.loss_scale)
     team = make_team(tuple(base_weights[name] for name in TASKS), seed=args.seed,
                      batch_size=args.coordination_batch_size, profile=args.taskforce_profile,
-                     normalization=args.taskforce_gradient_normalization) if args.coordination == "taskforce" else None
+                     normalization=args.taskforce_gradient_normalization,
+                     action_bound=args.taskforce_action_bound) if args.coordination == "taskforce" else None
     progress = {"phase": 0, "epoch": 0, "position": 0, "steps": 0, "pretrain_steps": 0, "best_loss": float("inf"), "bad_epochs": 0,
                 "selection_metric": args.selection_metric, "best_epoch": None, "best_value": None,
                 "gradient_warmup": empty_gradient_warmup()}
@@ -879,6 +904,10 @@ def train(args):
         update_budget = min(update_budget, args.max_steps)
     report = {"status": "running", "method": args.method, "setting": args.setting, "seed": args.seed, "config": settings,
               "architecture": architecture, "audit": audit, "gpu": gpu, "history": [], "steps": progress["steps"], "pretrain_steps": progress["pretrain_steps"]}
+    report["execution_budget"] = budget.describe()
+    report["template_normalization"] = template_scaling
+    report["training_probe"] = {"size": len(probe_indices), "indices": probe_indices,
+                                "scope": "Fixed class-balanced training subset; diagnostic only, no checkpoint selection"}
     report["trainer_scope"] = "Matched full-model training loop; original main.py reproduction remains a separate baseline"
     report["selection"] = {"metric": args.selection_metric, "direction": "minimize", "scope": "validation_only",
                            "best_epoch": progress.get("best_epoch"), "best_value": progress.get("best_value"),
@@ -890,6 +919,7 @@ def train(args):
                               "critic_optimizer_steps": team.count * team.updates if team else 0,
                               "algorithm": "TaskForce core mechanisms adapted to UniBrain" if team else None,
                               "profile": args.taskforce_profile if team else None,
+                              "action_bound": args.taskforce_action_bound if team else None,
                               "activation": "Pipeline training only; validation and test do not update or query the policy",
                               "base_weights": dict(zip(TASKS, team.base)) if team else base_weights,
                               "original_coefficients": base_weights, "probe_names": [], "probe_elements": 0,
@@ -904,6 +934,7 @@ def train(args):
         previous_seconds = restore_report_state(resumed, report, args.output)
         report["gradient_verification"]["warmup"] = warmup
     started = time.monotonic()
+    save_json(args.output / "report.json", report)
     handles = []
     previous_weights = None
     try:
@@ -940,10 +971,15 @@ def train(args):
                 train_mode(model)
                 order = torch.randperm(len(datasets["train"]), generator=torch.Generator().manual_seed(args.seed + 10000 * phase_index + epoch)).tolist()
                 for position in range(progress["position"], len(order)):
+                    stop_reason = budget.stop_reason
                     if args.max_steps is not None and progress["steps"] >= args.max_steps:
-                        require_confirmed_warmup(warmup)
+                        stop_reason = "step_budget"
+                    if stop_reason:
+                        if stop_reason == "step_budget":
+                            require_confirmed_warmup(warmup)
                         checkpoint(args.output / "last.pt")
-                        report.update(status="budget_exhausted", **{k: progress[k] for k in ("steps", "pretrain_steps")})
+                        report.update(status="budget_exhausted", stop_reason=stop_reason,
+                                      **{k: progress[k] for k in ("steps", "pretrain_steps")})
                         return report
                     image, brain, _, atlas_target, label = sample_tensors(datasets["train"][order[position]])
                     if config["if_train_aug"] and not getattr(model, "learned_parcellation", False):
@@ -1053,7 +1089,10 @@ def train(args):
                 if not standalone:
                     validation = evaluate(model, datasets["val"], templates, args.eval_limit)
                     loss = selection_value(validation["metrics"], args.selection_metric)
-                    report["history"].append({"epoch": epoch + 1, "validation": validation["metrics"]})
+                    row = {"epoch": epoch + 1, "validation": validation["metrics"]}
+                    if probe_indices:
+                        row["training_probe"] = evaluate(model, training_probe, templates)["metrics"]
+                    report["history"].append(row)
                     if loss < progress["best_loss"]:
                         progress.update(best_loss=loss, best_value=loss, best_epoch=epoch + 1, selection_metric=args.selection_metric)
                         report["selection"].update(best_epoch=epoch + 1, best_value=loss)
@@ -1133,6 +1172,9 @@ def parser():
     result.add_argument("--epochs", type=int, default=20)
     result.add_argument("--pretrain-epochs", type=int, default=20)
     result.add_argument("--max-steps", type=int)
+    result.add_argument("--wall-seconds", type=float)
+    result.add_argument("--train-probe-size", type=int, default=0)
+    result.add_argument("--template-normalization", choices=("none", "minmax"), default="none")
     result.add_argument("--eval-limit", type=int)
     result.add_argument("--patience", type=int, default=0)
     result.add_argument("--seed", type=int, default=17)
@@ -1142,6 +1184,7 @@ def parser():
     result.add_argument("--coordination-batch-size", type=int, default=64)
     result.add_argument("--taskforce-profile", choices=("paper", "legacy"), default="paper")
     result.add_argument("--taskforce-gradient-normalization", choices=("l2", "none"), default="l2")
+    result.add_argument("--taskforce-action-bound", type=float)
     result.add_argument("--probe-budget", type=int, default=50000)
     result.add_argument("--probe-modules", nargs="+")
     result.add_argument("--verify-gradients", action="store_true")

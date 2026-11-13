@@ -162,7 +162,7 @@ function renderTraining() {
   byId('trainingLatest').disabled=trainingState.follow;
   renderTrainingMatrix(policy);renderTrainingWeights(frames,row);renderTrainingAgent(policy);
   const validation=packet?.validation||[];
-  byId('trainingValidation').innerHTML=validation.length?table(['Epoch','Brain Dice','Tissue Dice','Atlas Dice','AUC'],validation.slice(-10).map(item=>[item.epoch,...['brain_dice','tissue_dice','atlas_dice','auc'].map(key=>trainingNumber(item.validation?.[key]))])):'<p>No completed epoch evaluation in this source.</p>';
+  byId('trainingValidation').innerHTML=validation.length?table(['Epoch','Brain Dice','Tissue Dice','Atlas Dice','Val AUC','Train probe AUC'],validation.slice(-10).map(item=>[item.epoch,...['brain_dice','tissue_dice','atlas_dice','auc'].map(key=>trainingNumber(item.validation?.[key])),trainingNumber(item.training_probe?.auc)]))+(packet.training_probe_size?'<p>Train probe: '+packet.training_probe_size+' fixed training subjects. Validation uses the registered validation split.</p>':''):'<p>No completed epoch evaluation in this source.</p>';
   updateTrainingPhase();updateTrainingFreshness();
 }
 
@@ -172,7 +172,8 @@ function updateTrainingFreshness(message) {
   if(message){byId('trainingFreshness').textContent=message;return;}
   const observed=Date.parse(packet?.observed_at),age=Number.isFinite(observed)?Math.max(0,Math.round((Date.now()-observed)/1000)):null;
   const status=packet?.reported_status,finished=['complete','budget_exhausted','failed'].includes(status);
-  const label=status==='budget_exhausted'?'planned step limit reached':status||'unknown';
+  const budgetLabel=packet?.stop_reason==='wall_time_budget'?'time budget reached · checkpoint saved':packet?.stop_reason==='termination_signal'?'paused · checkpoint saved':'planned step limit reached';
+  const label=status==='budget_exhausted'?budgetLabel:status||'unknown';
   byId('trainingFreshness').textContent=age!==null?'Last file update '+(age<120?age+'s':Math.round(age/60)+'m')+' ago · '+label+(age>120&&!finished?' · may be validating or offline':''):trainingFrames(packet).length?'Workspace telemetry · recorded updates':'Connect a backend or run a training cycle to receive measurements.';
 }
 

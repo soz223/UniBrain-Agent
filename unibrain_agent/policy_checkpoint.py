@@ -73,6 +73,8 @@ def inspect_policy(checkpoint_path, report_path):
         for key in ("taskforce_profile", "taskforce_gradient_normalization"):
             if config.get(key) != identity.get(key):
                 raise ValueError("Checkpoint and report identities disagree: " + key)
+        if config.get("taskforce_action_bound") != identity.get("taskforce_action_bound"):
+            raise ValueError("Checkpoint and report action bounds differ")
         if identity.get("implementation_hashes", {}).get("taskforce_paper.py") != source_digest("taskforce_paper.py"):
             raise ValueError("Paper coordinator implementation differs from the checkpoint source")
     policy = checkpoint.get("coordination")
@@ -87,7 +89,8 @@ def inspect_policy(checkpoint_path, report_path):
     if set(declared_weights) != set(TASKS):
         raise ValueError("All four base task weights must be declared")
     base = tuple(declared_weights[name] for name in TASKS)
-    options = dict(seed=identity["seed"], batch_size=identity["coordination_batch_size"], profile=profile, normalization=normalization)
+    options = dict(seed=identity["seed"], batch_size=identity["coordination_batch_size"], profile=profile,
+                   normalization=normalization, action_bound=identity.get("taskforce_action_bound"))
     initial = make_team(base, **options)
     trained = make_team(base, **options)
     trained.load_state_dict(policy)

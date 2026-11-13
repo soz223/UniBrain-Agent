@@ -36,7 +36,7 @@ def policy_record(value):
         result[key] = matrix(value.get(key))
     result.update({key: number(value.get(key)) for key in
                    ('reward', 'policy_updates', 'actor_optimizer_steps', 'critic_optimizer_steps', 'replay_size',
-                    'model_steps', 'noise_scale', 'gradient_parameter_tensors', 'gradient_parameter_elements')})
+                    'model_steps', 'noise_scale', 'gradient_parameter_tensors', 'gradient_parameter_elements', 'action_bound')})
     result['reward_terms'] = numeric_map(value.get('reward_terms'),
                                        ('training_loss_improvement', 'gradient_norm_penalty', 'gradient_penalty_weight'))
     choices = {'profile': ('paper_core',), 'gradient_scope': ('all_trainable_parameters', 'recorded_probe_parameters'),
@@ -126,12 +126,17 @@ def snapshot(folder, identifier, label=None):
     if config.get('paper_original'):
         for row in history:
             row['objective'] = paper_layout(row['objective'])
-    validation = [{**numeric_map(row, ('epoch',)), 'validation': numeric_map(row.get('validation'),
-                  ('accuracy', 'balanced_accuracy', 'auc', 'brain_dice', 'tissue_dice', 'atlas_dice', 'registration_dice', 'classification_loss'))}
+    metric_keys = ('accuracy', 'balanced_accuracy', 'auc', 'brain_dice', 'tissue_dice', 'atlas_dice', 'registration_dice',
+                   'classification_loss', 'probability_std', 'predicted_positive_fraction')
+    validation = [{**numeric_map(row, ('epoch',)), 'validation': numeric_map(row.get('validation'), metric_keys),
+                   'training_probe': numeric_map(row.get('training_probe'), metric_keys)}
                   for row in report.get('history', [])[-1000:]]
     files = [path for path in (report_path, updates_path) if path.is_file()]
     return {'id': identifier, 'label': label or identifier, 'source': 'training_files',
             'reported_status': report.get('status', 'no_records'),
+            'stop_reason': report.get('stop_reason') if report.get('stop_reason') in
+                           ('wall_time_budget', 'step_budget', 'termination_signal', 'validation_patience') else None,
+            'training_probe_size': number(report.get('training_probe', {}).get('size')),
             'dataset': config.get('dataset') if config.get('dataset') in ('abide', 'adhd', 'hcp') else None,
             'fold': number(config.get('fold')), 'epochs': number(config.get('epochs')),
             'paper_original': config.get('paper_original') is True,

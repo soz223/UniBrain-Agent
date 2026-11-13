@@ -125,6 +125,30 @@ class PaperTaskForceTests(unittest.TestCase):
         self.assertEqual(sum(p.numel() for p in parameters), 1010)
         self.assertEqual(names, ['weight', 'bias'])
 
+    def test_bounded_policy_prevents_task_starvation_and_resumes_exactly(self):
+        team = PaperTaskForce(seed=4, batch_size=2, action_bound=1.)
+        with torch.no_grad():
+            for i, actor in enumerate(team.actors):
+                actor[-1].bias.fill_(100 if i == 0 else -100)
+        logits = team.action(torch.ones(4, 5))
+        self.assertTrue((logits.abs() <= 1).all())
+        self.assertGreaterEqual(float(logits.softmax(0).min()), 1 / (1 + 3 * torch.exp(torch.tensor(2.)).item()) - 1e-7)
+        team = PaperTaskForce(seed=4, batch_size=2, action_bound=1.)
+        x = torch.nn.Parameter(torch.tensor([.5, -.7]))
+        optimizer = torch.optim.SGD([x], lr=.02)
+        initial = copy.deepcopy(team.state_dict())
+        for step in range(4):
+            advance(team, x, optimizer, step)
+        for before, actor in zip(initial['actors'], team.actors):
+            self.assertTrue(any(not torch.equal(before[key], value) for key, value in actor.state_dict().items()))
+        state = copy.deepcopy(team.state_dict())
+        restored = PaperTaskForce(seed=9, batch_size=2, action_bound=1.)
+        restored.load_state_dict(state)
+        y = torch.nn.Parameter(x.detach().clone())
+        self.assertEqual(advance(team, x, optimizer, 4), advance(restored, y, torch.optim.SGD([y], lr=.02), 4))
+        with self.assertRaisesRegex(ValueError, 'configuration differs'):
+            PaperTaskForce(batch_size=2).load_state_dict(state)
+
 
 if __name__ == '__main__':
     unittest.main()
