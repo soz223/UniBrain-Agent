@@ -20,6 +20,7 @@ SETTINGS = ("original", "original_completed", "original_frozen_stages", "joint",
 LEGACY_REFERENCE_TRAINER = "4977739c34f4b8cbb7326052e23a9cc77199a40297db8e28bfe95bee2bd60904"
 PRE_UNDERFLOW_AUDIT_TRAINER = "b3e429b125c4a12f534e1722d550c001e761e22e7451272d13e25824b65d3425"
 CLASSIFICATION_AUDIT_TRAINER = "483efeef78a70a14ef8ff6daa4b628bf3f40ba20d2944ec19978087b92521b6c"
+TOTAL_AUDIT_TRAINER = "cf3c691313dfc45824bba2f937e793c9004e9c8a691dab41341f63a681064ab0"
 
 
 def fingerprint(path):
@@ -48,7 +49,7 @@ def resume_identity_matches(previous, current, allow_gradient_audit_upgrade=Fals
     if allow_gradient_audit_upgrade:
         upgraded = copy.deepcopy(previous)
         hashes = upgraded.get("implementation_hashes", {})
-        if hashes.get("replacement_training.py") in (PRE_UNDERFLOW_AUDIT_TRAINER, CLASSIFICATION_AUDIT_TRAINER):
+        if hashes.get("replacement_training.py") in (PRE_UNDERFLOW_AUDIT_TRAINER, CLASSIFICATION_AUDIT_TRAINER, TOTAL_AUDIT_TRAINER):
             hashes["replacement_training.py"] = current.get("implementation_hashes", {}).get("replacement_training.py")
             if upgraded == current:
                 return False
@@ -628,7 +629,42 @@ def parameter_probe(parameter, limit=1024):
     return indices, parameter.detach().reshape(-1)[indices].clone()
 
 
-def classification_gradient_paths(model, loss, method, required, image=None):
+def normalized_ce_probe(loss, logits, label, inputs):
+    """Measure the exact CE gradient direction when its magnitude underflows."""
+    import torch
+    if logits is None or label is None or logits.ndim != 2 or logits.shape[0] != 1 or logits.shape[1] < 2:
+        return None
+    if not logits.requires_grad or not torch.isfinite(logits).all() or not 0 <= float(loss.detach()) <= 1e-7:
+        return None
+    node = loss.grad_fn
+    if node is None or not type(node).__name__.startswith("NllLossBackward"):
+        return None
+    logsoftmax = node.next_functions[0][0]
+    if (not type(logsoftmax).__name__.startswith("LogSoftmaxBackward")
+            or logsoftmax.next_functions[0][0] is not torch.autograd.graph.get_gradient_edge(logits).node):
+        return None
+    target = int(label.reshape(-1)[0])
+    if not 0 <= target < logits.shape[1] or int(logits.detach().argmax(1)[0]) != target:
+        return None
+    values = logits.detach().double()[0]
+    mask = torch.arange(len(values), device=values.device) != target
+    log_ratio = torch.logsumexp(values[mask], 0) - values[target]
+    log_probability = -torch.nn.functional.softplus(-log_ratio)
+    if float(log_probability) > math.log(1e-12):
+        return None
+    native = torch.autograd.grad(loss, logits, retain_graph=True, allow_unused=True)[0]
+    if native is None or not torch.isfinite(native).all() or float(native.abs().max()) > 1e-12:
+        return None
+    seed = torch.zeros_like(logits)
+    seed[0, mask] = torch.softmax(values[mask], 0).to(logits.dtype)
+    seed[0, target] = -1
+    gradients = torch.autograd.grad(logits, inputs, grad_outputs=seed, retain_graph=True, allow_unused=True)
+    return gradients, {"method": "normalized_ce_vjp", "kind": "classification", "loss_value": float(loss.detach()),
+                       "log_error_probability": float(log_probability), "direct_ce_graph": True,
+                       "scope": "diagnostic_only; optimizer gradients unchanged"}
+
+
+def classification_gradient_paths(model, loss, method, required, image=None, logits=None, label=None):
     import torch
     names = getattr(model, "candidate_modules", ()) or ((METHODS[method],) if METHODS[method] else ())
     groups = {name: [parameter for parameter in getattr(model, name).parameters() if parameter.requires_grad] for name in names}
@@ -664,6 +700,18 @@ def classification_gradient_paths(model, loss, method, required, image=None):
         if image is not None and image.requires_grad and not input_path["nonzero"]:
             input_path["underflow_probe"] = {**gradient_statistics([scaled[-1]]), "scale": 1e20,
                                              "loss_value": loss_value, "scope": "diagnostic_only; optimizer gradients unchanged"}
+    unresolved = any(value["required"] and not classification_path_valid(value) for value in result.values())
+    unresolved = unresolved or (input_path["required"] and not classification_path_valid(input_path))
+    direction = normalized_ce_probe(loss, logits, label, inputs) if unresolved else None
+    if direction is not None:
+        gradients_scaled, evidence = direction
+        offset = 0
+        for name, group in groups.items():
+            if not classification_path_valid(result[name]):
+                result[name]["direction_probe"] = {**gradient_statistics(gradients_scaled[offset:offset + len(group)]), **evidence}
+            offset += len(group)
+        if image is not None and image.requires_grad and not classification_path_valid(input_path):
+            input_path["direction_probe"] = {**gradient_statistics([gradients_scaled[-1]]), **evidence}
     return {"candidates": result, "input": input_path}
 
 
@@ -691,6 +739,14 @@ def probe_total_underflow(model, total, classification_loss, record):
             **gradient_statistics(gradients[offset:offset + len(group)]), "scale": 1e20,
             "loss_value": float(classification_loss.detach()), "scope": "diagnostic_only; optimizer gradients unchanged"}
         offset += len(group)
+    if getattr(model, "paper_original", False):
+        coefficient = torch.autograd.grad(total, classification_loss, retain_graph=True, allow_unused=True)[0]
+        if coefficient is not None and torch.isfinite(coefficient) and float(coefficient) > 0:
+            for name in groups:
+                direction = record["classification_to_candidates"][name].get("direction_probe")
+                if direction and not classification_path_valid(record["total_to_candidates"][name]):
+                    record["total_to_candidates"][name]["direction_probe"] = {
+                        **direction, "kind": "weighted_total", "objective_coefficient": float(coefficient)}
 
 
 def track_gradient_health(record, state, step, limit=8):
@@ -813,9 +869,18 @@ def classification_path_valid(value):
         return True
     probe = value.get("underflow_probe", {})
     count = value["tensor_count"]
-    return (count > 0 and value["observed_tensors"] == count and probe.get("tensor_count") == count
+    scaled_valid = (count > 0 and value["observed_tensors"] == count and probe.get("tensor_count") == count
             and probe.get("observed_tensors") == count and probe.get("finite") is True and probe.get("nonzero") is True
             and probe.get("scale") == 1e20 and 0 <= probe.get("loss_value", -1) <= 1e-7)
+    direction = value.get("direction_probe", {})
+    direction_valid = (count > 0 and value["observed_tensors"] == count and direction.get("tensor_count") == count
+                       and direction.get("observed_tensors") == count and direction.get("finite") is True
+                       and direction.get("nonzero") is True and direction.get("method") == "normalized_ce_vjp"
+                       and direction.get("direct_ce_graph") is True and 0 <= direction.get("loss_value", -1) <= 1e-7
+                       and direction.get("log_error_probability", 0) <= math.log(1e-12)
+                       and (direction.get("kind") == "classification" or (direction.get("kind") == "weighted_total"
+                            and 0 < direction.get("objective_coefficient", 0) < math.inf)))
+    return scaled_valid or direction_valid
 
 
 def check_gradient_paths(model, record, step, budget, warmup):
@@ -1119,7 +1184,8 @@ def _train(args, budget):
                         required = (not standalone and (args.setting == "joint" or getattr(args, "paper_original", False)) and args.trainable in ("all", "new")
                                     and (args.connect_paths or args.method in TARGETS or getattr(args, "paper_original", False)) and not args.cut_extraction
                                     and args.cut_boundary == "none" and args.undo_repair == "none")
-                        paths = classification_gradient_paths(model, losses["classification"], args.method, required, image) if "classification" in losses else None
+                        paths = classification_gradient_paths(model, losses["classification"], args.method, required, image,
+                                                              output[-1], label) if "classification" in losses else None
                         gradient_record = {"protocol_version": 3, "classification_to_candidates": paths["candidates"] if paths else {},
                                            "classification_to_input": paths["input"] if paths else None, "input_required": required}
                     from .objective import observe_objective, with_stage_layout, METHOD_STAGES

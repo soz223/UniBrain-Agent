@@ -17,6 +17,10 @@ class SupervisorTests(unittest.TestCase):
                 self.assertIsNone(retry_reason(-9, {'status': 'failed', 'error': error}, checkpoint))
             self.assertEqual(retry_reason(-9, {'status': 'running'}, checkpoint), 'killed_worker_checkpoint_rollback')
             self.assertIsNone(retry_reason(-15, {}, checkpoint))
+            self.assertEqual(retry_reason(0, {'status': 'budget_exhausted', 'stop_reason': 'termination_signal'},
+                                          checkpoint, True), 'stalled_worker_checkpointed')
+            self.assertIsNone(retry_reason(0, {'status': 'budget_exhausted', 'stop_reason': 'termination_signal'},
+                                          checkpoint, False))
             checkpoint.unlink()
             self.assertIsNone(retry_reason(-9, {}, checkpoint))
 
@@ -49,3 +53,22 @@ assert "--resume" in sys.argv
             self.assertEqual(result['status'], 'complete')
             self.assertEqual(result['restarts'], 1)
             self.assertFalse((folder / 'supervisor.lock').exists())
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX kill return code')
+    def test_repeated_crashes_stop_at_retry_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            script = folder / 'worker.py'
+            script.write_text('''import json, os, signal
+from pathlib import Path
+p = Path(__file__).parent
+(p / "last.pt").write_text("fake checkpoint")
+(p / "report.json").write_text(json.dumps({"status": "running"}))
+os.kill(os.getpid(), signal.SIGKILL)
+''')
+            result = supervise({'output': directory, 'cwd': directory, 'wall_seconds': 30, 'max_restarts': 1,
+                                'command': [sys.executable, str(script), '--verify-gradients', '--output', directory]})
+            self.assertEqual(result['status'], 'needs_attention')
+            self.assertEqual(result['restarts'], 1)
+            events = [json.loads(line) for line in (folder / 'supervisor_events.jsonl').read_text().splitlines()]
+            self.assertEqual(sum(row['action'] == 'launch' for row in events), 2)

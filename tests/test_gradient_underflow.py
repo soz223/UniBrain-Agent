@@ -88,3 +88,46 @@ class GradientUnderflowTests(unittest.TestCase):
                   'total_to_candidates': {'feature_net': gradient_statistics([model.feature_net.weight.grad])}}
         probe_total_underflow(model, total, loss, record)
         self.assertFalse(classification_path_valid(record['total_to_candidates']['feature_net']))
+
+    def test_saturated_ce_keeps_exact_direction_without_optimizer_changes(self):
+        for margin in (160., 1000.):
+            model = torch.nn.Module()
+            model.feature_net = torch.nn.Linear(1, 1, bias=False)
+            model.paper_original = True
+            model.candidate_modules = ('feature_net',)
+            image = torch.ones(1, 1, requires_grad=True)
+            logits = torch.stack((model.feature_net(image).sum(), image.sum() * 0 + margin)).reshape(1, 2)
+            label = torch.tensor([1])
+            loss = torch.nn.functional.cross_entropy(logits, label)
+            paths = classification_gradient_paths(model, loss, 'original', True, image, logits, label)
+            value = paths['candidates']['feature_net']
+            self.assertFalse(value['nonzero'])
+            self.assertFalse(value['underflow_probe']['nonzero'])
+            self.assertTrue(classification_path_valid(value))
+            self.assertTrue(classification_path_valid(paths['input']))
+            total = loss * .1
+            total.backward(retain_graph=True)
+            record = {'classification_to_candidates': paths['candidates'],
+                      'total_to_candidates': {'feature_net': gradient_statistics([model.feature_net.weight.grad])}}
+            probe_total_underflow(model, total, loss, record)
+            self.assertTrue(classification_path_valid(record['total_to_candidates']['feature_net']))
+            self.assertEqual(int(model.feature_net.weight.grad.count_nonzero()), 0)
+
+    def test_direction_probe_rejects_cut_ce_and_zero_objective_weight(self):
+        model = torch.nn.Module()
+        model.feature_net = torch.nn.Linear(1, 1, bias=False)
+        model.paper_original = True
+        model.candidate_modules = ('feature_net',)
+        image = torch.ones(1, 1, requires_grad=True)
+        logits = torch.stack((model.feature_net(image).sum(), image.sum() * 0 + 160)).reshape(1, 2)
+        label = torch.tensor([1])
+        loss = torch.nn.functional.cross_entropy(logits, label)
+        cut = classification_gradient_paths(model, loss * 0, 'original', True, image, logits, label)
+        self.assertFalse(classification_path_valid(cut['candidates']['feature_net']))
+        paths = classification_gradient_paths(model, loss, 'original', True, image, logits, label)
+        total = loss * 0
+        total.backward(retain_graph=True)
+        record = {'classification_to_candidates': paths['candidates'],
+                  'total_to_candidates': {'feature_net': gradient_statistics([model.feature_net.weight.grad])}}
+        probe_total_underflow(model, total, loss, record)
+        self.assertFalse(classification_path_valid(record['total_to_candidates']['feature_net']))

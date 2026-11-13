@@ -9,6 +9,17 @@ to the classification-only ROI feature and graph classifier modules. Missing,
 nonfinite, structurally zero, and persistently underflowing paths still fail.
 The ninth consecutive recovered event in a path stops the worker for diagnosis.
 
+For a saturated single-subject cross entropy, multiplying the loss cannot recover
+a softmax probability that has already rounded to zero. A second diagnostic
+verifies the direct NLL/log-softmax graph and the correct target, then evaluates
+the exact CE gradient direction normalized by the error probability. Its seed is
+minus one for the target and the conditional softmax over all other classes.
+This is a positive rescaling of the analytic CE derivative, not an injected
+optimizer gradient. The error probability must be at most 1e-12. Total-objective
+acceptance additionally verifies a finite positive derivative with respect to the
+classification loss and is restricted to the original paper model's
+classification-only modules. A zero objective coefficient or cut loss still fails.
+
 `gradient_recoveries.jsonl` preserves numerical recovery events, including replayed
 attempts. `health.json` reports the current phase, committed step and counters.
 Counters and streaks are stored in the resumable checkpoint's progress state.

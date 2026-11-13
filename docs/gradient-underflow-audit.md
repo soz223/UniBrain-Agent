@@ -7,3 +7,11 @@ The audit now distinguishes a disconnected path from numerical underflow. For a 
 The original gradient measurements remain in the report. Scaled measurements are marked diagnostic only. The probe does not accumulate parameter gradients or change the model objective, TaskForce decisions or optimizer update. Updates log affected modules, and the report counts underflow events.
 
 `--resume-gradient-audit-upgrade` permits an explicit migration from the recorded pre-fix trainer hash. Every other checkpoint identity field must match, including model code, data hashes, optimizer protocol and coordinator. Preserve the old checkpoint and failed attempt before continuation. The migration is reported separately and does not change the original control run.
+
+A later attempt stopped after update 34,867: the classification-only feature
+module had native classification gradient L1 approximately 2.85e-38, but its
+weighted total gradient was zero. The audit now also probes the weighted total
+objective for classification-only modules and covers the input classification
+path. Persistent anomalies remain bounded. See [training recovery](training-recovery.md)
+for monitoring, checkpoint recovery, and the distinction between diagnostic
+gradients and actual optimizer gradients.

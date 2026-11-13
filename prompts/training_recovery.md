@@ -13,6 +13,14 @@ and classifier modules. Eight consecutive recoveries in one path require human
 diagnosis. Detached paths, absent tensors, nonfinite gradients, and structural
 zeros remain failures. Do not disable checks or invent replacement gradients.
 
+If softmax itself underflows, inspect the normalized CE direction probe. It must
+verify a direct NLL/log-softmax connection to the actual logits, a correct target,
+an error probability at most 1e-12, and finite nonzero VJPs for every expected
+tensor. The weighted total additionally requires a positive measured coefficient
+and the original paper model's classification-only module contract. This probe
+does not change optimizer gradients. A cut loss or zero coefficient is not repairable
+by this rule.
+
 The supervisor may restart an unexpectedly killed owned worker from its existing
 checkpoint, or resume a stalled worker that saved a checkpoint after termination.
 Keep the same data, split, model, loss, optimizer, policy state and random state.
