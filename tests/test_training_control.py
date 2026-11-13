@@ -8,6 +8,15 @@ from unibrain_agent.training_control import TrainingBudget, normalize_template, 
 
 
 class TrainingControlTests(unittest.TestCase):
+    def test_unlimited_training_still_checkpoints_on_signals(self):
+        before = signal.getsignal(signal.SIGTERM)
+        with TrainingBudget(None) as budget:
+            self.assertIsNone(budget.describe()['deadline'])
+            self.assertIsNone(budget.stop_reason)
+            budget.request_stop(signal.SIGTERM, None)
+            self.assertEqual(budget.stop_reason, 'termination_signal')
+        self.assertEqual(signal.getsignal(signal.SIGTERM), before)
+
     def test_deadline_requests_a_boundary_stop_and_restores_signal_handlers(self):
         before = signal.getsignal(signal.SIGTERM)
         with patch('unibrain_agent.training_control.time.monotonic', return_value=10):

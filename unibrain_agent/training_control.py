@@ -37,7 +37,7 @@ class TrainingBudget:
                 "stop_boundary": "Completed optimizer update or epoch evaluation; save resumable checkpoint"}
 
     def __enter__(self):
-        if self.seconds is not None and threading.current_thread() is threading.main_thread():
+        if threading.current_thread() is threading.main_thread():
             for number in (signal.SIGTERM, signal.SIGINT):
                 self.handlers[number] = signal.getsignal(number)
                 signal.signal(number, self.request_stop)

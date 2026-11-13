@@ -5,10 +5,24 @@ import sys
 import tempfile
 import unittest
 
-from unibrain_agent.training_supervisor import retry_reason, supervise
+from unibrain_agent.training_supervisor import retry_reason, supervise, worker_command, diagnose
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_unlimited_manifest_removes_old_wall_limit(self):
+        original = ['python', 'train.py', '--wall-seconds', '30', '--epochs', '1000']
+        self.assertEqual(worker_command(original, None), ['python', 'train.py', '--epochs', '1000'])
+        self.assertEqual(worker_command(original, 60)[3], '60')
+        self.assertEqual(original[3], '30')
+
+    def test_diagnosis_preserves_missing_metrics_and_flags_generalization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = diagnose(Path(directory), {'history': [{'epoch': 5, 'validation': {'auc': .5},
+                               'training_probe': {'auc': .9}}]}, {'auc': .781, 'registration_mi': .641})
+            self.assertIn('training_validation_gap', result['warnings'])
+            self.assertFalse(result['targets']['auc']['met'])
+            self.assertIsNone(result['targets']['registration_mi']['met'])
+            self.assertFalse(result['automatic_hyperparameter_changes'])
     def test_gradient_failures_never_retry_blindly(self):
         with tempfile.TemporaryDirectory() as directory:
             checkpoint = Path(directory) / 'last.pt'

@@ -21,6 +21,8 @@ LEGACY_REFERENCE_TRAINER = "4977739c34f4b8cbb7326052e23a9cc77199a40297db8e28bfe9
 PRE_UNDERFLOW_AUDIT_TRAINER = "b3e429b125c4a12f534e1722d550c001e761e22e7451272d13e25824b65d3425"
 CLASSIFICATION_AUDIT_TRAINER = "483efeef78a70a14ef8ff6daa4b628bf3f40ba20d2944ec19978087b92521b6c"
 TOTAL_AUDIT_TRAINER = "cf3c691313dfc45824bba2f937e793c9004e9c8a691dab41341f63a681064ab0"
+SATURATION_AUDIT_TRAINER = "209c1e88d5aadabf55a61a36e132d2c862e8dc84244979a62b6f474f00463cd4"
+BOUNDED_TRAINING_CONTROL = "84ee53065fc03eb0bc6cb34e8ca02913b3b02b07eb811da1ea1b5ccf313d6d71"
 
 
 def fingerprint(path):
@@ -49,8 +51,10 @@ def resume_identity_matches(previous, current, allow_gradient_audit_upgrade=Fals
     if allow_gradient_audit_upgrade:
         upgraded = copy.deepcopy(previous)
         hashes = upgraded.get("implementation_hashes", {})
-        if hashes.get("replacement_training.py") in (PRE_UNDERFLOW_AUDIT_TRAINER, CLASSIFICATION_AUDIT_TRAINER, TOTAL_AUDIT_TRAINER):
+        if hashes.get("replacement_training.py") in (PRE_UNDERFLOW_AUDIT_TRAINER, CLASSIFICATION_AUDIT_TRAINER, TOTAL_AUDIT_TRAINER, SATURATION_AUDIT_TRAINER):
             hashes["replacement_training.py"] = current.get("implementation_hashes", {}).get("replacement_training.py")
+            if hashes.get("training_control.py") == BOUNDED_TRAINING_CONTROL:
+                hashes["training_control.py"] = current.get("implementation_hashes", {}).get("training_control.py")
             if upgraded == current:
                 return False
     migrated = copy.deepcopy(previous)
@@ -304,7 +308,10 @@ def metrics_from_cases(cases):
               "specificity": float(tn / (tn + fp)) if tn + fp else None}
     result.update(probability_mean=float(np.mean(scores)), probability_std=float(np.std(scores)),
                   predicted_positive_fraction=float(np.mean(predictions)), label_positive_fraction=float(np.mean(labels)))
-    for key in ("brain_dice", "tissue_dice", "atlas_dice", "registration_dice", "reference_loss"):
+    for key in ("brain_dice", "tissue_dice", "atlas_dice", "registration_dice", "reference_loss",
+                "brain_jaccard", "tissue_jaccard", "atlas_jaccard", "registration_mi", "registration_cc"):
+        if not all(key in row for row in cases):
+            continue
         result[key] = float(np.mean([row[key] for row in cases]))
     for key in ("extraction_loss", "registration_loss", "segmentation_loss", "classification_loss"):
         if all(key in row for row in cases):
@@ -354,7 +361,7 @@ def evaluate(model, dataset, templates, limit=None, output_dir=None):
     import torch
     from torch.nn import functional as F
     from model import GCC
-    from utils import compute_label_dice_v2, f1_loss
+    from utils import compute_label_dice_v2, f1_loss, jaccard_loss, compute_label_jaccard_v2, mutual_information, normalized_cross_correlation
     model.eval()
     cases = []
     with torch.no_grad():
@@ -377,6 +384,11 @@ def evaluate(model, dataset, templates, limit=None, output_dir=None):
                     "atlas_dice": float(compute_label_dice_v2(output[8], atlas, "aal")),
                     "registration_dice": float(compute_label_dice_v2(templates[1], registered, "gm"))}
             case.update({name + "_loss": float(loss) for name, loss in losses.items()})
+            case.update(brain_jaccard=float(jaccard_loss(mask, brain)),
+                        tissue_jaccard=float(compute_label_jaccard_v2(tissue_logits.argmax(1), tissue, "gm")),
+                        atlas_jaccard=float(compute_label_jaccard_v2(output[8], atlas, "aal")),
+                        registration_mi=float(mutual_information(output[2][-1], templates[0])),
+                        registration_cc=float(normalized_cross_correlation(output[2][-1], templates[0])))
             case["registration_loss"] = float(registration_loss)
             if getattr(model, "paper_original", False):
                 target_labels = output[6].argmax(1)
@@ -1066,7 +1078,7 @@ def _train(args, budget):
     if args.resume_gradient_audit_upgrade:
         report["gradient_audit_upgrade"] = {"previous_trainer": resumed["identity"]["implementation_hashes"]["replacement_training.py"] if resumed else None,
                                             "current_trainer": identity["implementation_hashes"]["replacement_training.py"],
-                                            "scope": "Diagnostic underflow detection only; model, losses and optimizer unchanged"}
+                                            "scope": "Gradient diagnostics, upstream evaluation metrics and graceful stopping; model, losses and optimizer unchanged"}
     report["template_normalization"] = template_scaling
     report["training_probe"] = {"size": len(probe_indices), "indices": probe_indices,
                                 "scope": "Fixed class-balanced training subset; diagnostic only, no checkpoint selection"}

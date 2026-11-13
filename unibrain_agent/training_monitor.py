@@ -113,17 +113,25 @@ def health_record(folder):
         except (OSError, ValueError):
             return {}
     health, supervisor = read('health.json'), read('supervisor.json')
+    diagnosis = read('training_diagnosis.json')
     if not health and not supervisor:
         return None
     last = health.get('last_recovery', {})
     allowed = {'ext_net', 'reg_net', 'feature_net', 'gnn_pred', 'classification_to_input',
                'ext_net:total', 'reg_net:total', 'feature_net:total', 'gnn_pred:total'}
     return {'phase': health.get('phase') if health.get('phase') in ('training', 'validation') else None,
+            'diagnosis': {'epoch': number(diagnosis.get('epoch')),
+                          'warnings': [value for value in diagnosis.get('warnings', []) if value in
+                                       ('training_validation_gap', 'five_validation_epochs_near_chance')],
+                          'targets': {name: {**numeric_map(value, ('target', 'observed')), 'met': value.get('met')}
+                                      for name, value in diagnosis.get('targets', {}).items() if name in
+                                      ('brain_dice', 'brain_jaccard', 'tissue_dice', 'tissue_jaccard', 'atlas_dice',
+                                       'atlas_jaccard', 'registration_mi', 'registration_cc', 'accuracy', 'auc')}},
             **numeric_map(health, ('step', 'epoch', 'recovery_count')),
             'last_recovery': {'step': number(last.get('step')), 'paths': [p for p in last.get('paths', []) if p in allowed],
                               'optimizer_modified': False if last.get('optimizer_modified') is False else None},
             'supervisor': {'status': supervisor.get('status') if supervisor.get('status') in
-                          ('starting', 'running', 'checkpointing', 'recovering', 'complete', 'budget_exhausted', 'stopped', 'needs_attention') else None,
+                          ('starting', 'running', 'waiting_for_gpu', 'checkpointing', 'recovering', 'complete', 'budget_exhausted', 'stopped', 'needs_attention') else None,
                           **numeric_map(supervisor, ('restarts', 'max_restarts', 'heartbeat_age_seconds')),
                           'updated_at': supervisor.get('updated_at')}}
 
@@ -149,6 +157,7 @@ def snapshot(folder, identifier, label=None):
         for row in history:
             row['objective'] = paper_layout(row['objective'])
     metric_keys = ('accuracy', 'balanced_accuracy', 'auc', 'brain_dice', 'tissue_dice', 'atlas_dice', 'registration_dice',
+                   'brain_jaccard', 'tissue_jaccard', 'atlas_jaccard', 'registration_mi', 'registration_cc',
                    'classification_loss', 'probability_std', 'predicted_positive_fraction')
     validation = [{**numeric_map(row, ('epoch',)), 'validation': numeric_map(row.get('validation'), metric_keys),
                    'training_probe': numeric_map(row.get('training_probe'), metric_keys)}

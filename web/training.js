@@ -169,8 +169,11 @@ function renderTraining() {
   byId('trainingHealth').textContent=health?
     'Phase: '+(health.phase||'initializing')+'. Verified recovery events: '+(health.recovery_count||0)+'. Worker restarts: '+(supervisor?.restarts||0)+' / '+(supervisor?.max_restarts??0)+'. '+
     (recovery?.step?'Last numerical recovery at step '+recovery.step+': '+recovery.paths.join(', ')+'. Same-graph scaled diagnosis; optimizer gradients unchanged. ':'')+
-    'Persistent zero gradients, disconnected paths and nonfinite gradients stop training for diagnosis. Recovery is not evidence of convergence.':'';
-  byId('trainingValidation').innerHTML=validation.length?table(['Epoch','Brain Dice','Tissue Dice','Atlas Dice','Val AUC','Train probe AUC'],validation.slice(-10).map(item=>[item.epoch,...['brain_dice','tissue_dice','atlas_dice','auc'].map(key=>trainingNumber(item.validation?.[key])),trainingNumber(item.training_probe?.auc)]))+(packet.training_probe_size?'<p>Train probe: '+packet.training_probe_size+' fixed training subjects. Validation uses the registered validation split.</p>':''):'<p>No completed epoch evaluation in this source.</p>';
+    'Persistent zero gradients, disconnected paths and nonfinite gradients stop training for diagnosis. Recovery is not evidence of convergence. '+
+    (health.diagnosis?.warnings?.length?'Review: '+health.diagnosis.warnings.map(value=>value.replaceAll('_',' ')).join('; ')+'. ':''):'';
+  byId('trainingValidation').innerHTML=validation.length?table(['Epoch','Extraction D / J','Registration MI / CC','Tissue D / J','Translation D / J','Val ACC / AUC','Train probe AUC'],validation.slice(-10).map(item=>[item.epoch,...[['brain_dice','brain_jaccard'],['registration_mi','registration_cc'],['tissue_dice','tissue_jaccard'],['atlas_dice','atlas_jaccard'],['accuracy','auc']].map(pair=>pair.map(key=>trainingNumber(item.validation?.[key])).join(' / ')),trainingNumber(item.training_probe?.auc)]))+(packet.training_probe_size?'<p>D: Dice. J: Jaccard. Metrics use the pinned upstream implementation. Train probe: '+packet.training_probe_size+' fixed training subjects. Validation uses the registered validation split; these are not five-fold test means.</p>':''):'<p>No completed epoch evaluation in this source.</p>';
+  const targets=health?.diagnosis?.targets;
+  if(targets&&Object.keys(targets).length)byId('trainingValidation').innerHTML+=table(['Reference target','Latest validation','Target','Status'],Object.entries(targets).map(([name,value])=>[name,trainingNumber(value.observed),trainingNumber(value.target),value.met===true?'Reached':value.met===false?'Below target':'Not measured']));
   updateTrainingPhase();updateTrainingFreshness();
 }
 

@@ -1,0 +1,18 @@
+{
+  "source": "User supplied UniBrain ABIDE five-fold test means",
+  "scope": "Validation reference targets; not independently verified paper results",
+  "targets": {
+    "brain_dice": 0.97,
+    "brain_jaccard": 0.942,
+    "registration_mi": 0.641,
+    "registration_cc": 0.965,
+    "tissue_dice": 0.515,
+    "tissue_jaccard": 0.367,
+    "atlas_dice": 0.692,
+    "atlas_jaccard": 0.540,
+    "accuracy": 0.688,
+    "auc": 0.781
+  },
+  "evaluation": "Pinned upstream metric implementations; subject references include automatically generated labels",
+  "selection": "Preserve existing classification-loss checkpoint selection; no test-driven tuning"
+}
