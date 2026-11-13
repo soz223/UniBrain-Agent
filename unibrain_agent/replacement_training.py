@@ -91,6 +91,9 @@ def preflight(args):
     from .site_training import validate_site_options
 
     validate_site_options(args)
+    paper_weight = getattr(args, "paper_registration_weight", .1)
+    if not math.isfinite(paper_weight) or paper_weight <= 0 or (paper_weight != .1 and not getattr(args, "paper_original", False)):
+        raise ValueError("A positive finite paper registration weight requires the paper profile")
 
     if getattr(args, "paper_original", False) and (args.method != "original" or args.setting != "original"
             or args.coordination != "none" or args.connect_paths or args.host_checkpoint or args.regularization
@@ -340,7 +343,7 @@ def evaluate(model, dataset, templates, limit=None, output_dir=None):
             losses = original_losses(output, brain, label)
             tissue_logits = output[5][0] if isinstance(output[5], list) else output[5]
             registration_loss = GCC()(output[2][-1], templates[0])
-            reference = losses["extraction"] + losses["segmentation"] + losses["classification"] + .1 * registration_loss
+            reference = losses["extraction"] + losses["segmentation"] + losses["classification"] + getattr(model, "paper_registration_weight", .1) * registration_loss
             case = {"id": str(row[0]), "label": int(label.item()), "prediction": int(output[-1].argmax(1).item()),
                     "probability": float(output[-1].softmax(1)[0, 1]), "reference_loss": float(reference),
                     "brain_dice": float(f1_loss(mask, brain)), "tissue_dice": float(compute_label_dice_v2(tissue_logits.argmax(1), tissue, "gm")),
@@ -795,6 +798,7 @@ def train(args):
     identity["selection_metric"] = args.selection_metric
     if getattr(args, "paper_original", False):
         identity["paper_original"] = True
+        identity["paper_registration_weight"] = args.paper_registration_weight
         identity["paper_implementation"] = hashlib.sha256(Path(__file__).with_name("paper_original.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     identity.update(data_hashes=audit["data_hashes"], adapter_hash=fingerprint(args.adapter) if args.adapter else None,
                     weights_hash=fingerprint(args.weights) if args.weights else None, plans_hash=fingerprint(args.plans) if args.plans else None,
@@ -809,7 +813,7 @@ def train(args):
     host_checkpoint = host_checkpoint_spec(args)
     if getattr(args, "paper_original", False):
         from .paper_original import build_paper_model
-        model, config, architecture = build_paper_model(args.source)
+        model, config, architecture = build_paper_model(args.source, args.paper_registration_weight)
     elif args.secondary_extraction:
         from .full_composition import build_composed_model
         model, config, architecture = build_composed_model(args.source, args.method, adapter=args.secondary_extraction,
@@ -1138,4 +1142,5 @@ def parser():
     result.add_argument("--save-predictions", action="store_true")
     result.add_argument("--preflight", action="store_true")
     result.add_argument("--paper-original", action="store_true")
+    result.add_argument("--paper-registration-weight", type=float, default=.1)
     return result

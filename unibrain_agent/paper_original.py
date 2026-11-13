@@ -66,7 +66,7 @@ class PaperUniBrain(nn.Module):
         return extracted, masks, warped, affines, inverses, tissue, target, None, labels, graph, logits
 
 
-def build_paper_model(source):
+def build_paper_model(source, registration_weight=.1):
     from scripts.evaluate_upstream import original_config
     source = Path(source).resolve()
     verify_original(source)
@@ -75,10 +75,11 @@ def build_paper_model(source):
         raise RuntimeError("Use an isolated worker for the pinned source")
     sys.path.insert(0, str(source))
     config = original_config(source)
-    config.update(feature_dim=256, learning_rate=1e-5, weight_decay=1e-6)
+    config.update(feature_dim=256, learning_rate=1e-5, weight_decay=1e-6, lambda_reg=registration_weight)
     model = PaperUniBrain()
+    model.paper_registration_weight = registration_weight
     return model, config, {"profile": "original_paper", "parameters": sum(p.numel() for p in model.parameters()),
                           "reference": "UniBrain KDD 2024, equations 1 to 11 and Appendix A.4",
-                          "loss_weights": {"extraction": 1., "registration": .1, "segmentation": 1., "classification": 1.},
+                          "loss_weights": {"extraction": 1., "registration": registration_weight, "segmentation": 1., "classification": 1.},
                           "implementation_choices": ["128-unit MLP before the binary output", "Unit weights for randomly added edges",
                                                      "Border padding for trilinear categorical transfer", "Upstream 1-CC differs from negative CC by a constant"]}
