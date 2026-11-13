@@ -92,6 +92,11 @@ def preflight(args):
 
     validate_site_options(args)
 
+    if getattr(args, "paper_original", False) and (args.method != "original" or args.setting != "original"
+            or args.coordination != "none" or args.connect_paths or args.host_checkpoint or args.regularization
+            or args.loss_scale != 1):
+        raise ValueError("Paper original requires original modules, fixed losses and no intervention")
+
     if args.method in TARGETS and args.setting != "joint":
         raise ValueError("Extended candidates currently support joint training only")
     if args.method in TARGETS and args.initialization != "random":
@@ -276,6 +281,9 @@ def metrics_from_cases(cases):
             result[key] = float(np.mean([row[key] for row in cases]))
         elif any(key in row for row in cases):
             raise ValueError("Incomplete validation component measurements: " + key)
+    for key in cases[0]:
+        if key.startswith("diagnostic_"):
+            result[key] = float(np.mean([row[key] for row in cases]))
     return result
 
 
@@ -340,6 +348,21 @@ def evaluate(model, dataset, templates, limit=None, output_dir=None):
                     "registration_dice": float(compute_label_dice_v2(templates[1], registered, "gm"))}
             case.update({name + "_loss": float(loss) for name, loss in losses.items()})
             case["registration_loss"] = float(registration_loss)
+            if getattr(model, "paper_original", False):
+                target_labels = output[6].argmax(1)
+                foreground = tissue[:, 0] > 0
+                subject_ce = F.cross_entropy(tissue_logits, tissue[:, 0].long(), reduction="none")
+                outside = (model.last_inverse_grid.abs() > 1).any(-1)
+                case.update(diagnostic_target_subject_dice=float(compute_label_dice_v2(target_labels, tissue, "gm")),
+                            diagnostic_target_foreground_fraction=float((target_labels > 0).float().mean()),
+                            diagnostic_subject_foreground_ce=float(subject_ce[foreground].mean()),
+                            diagnostic_foreground_outside_fraction=float(outside[foreground].float().mean()),
+                            diagnostic_affine_determinant=float(torch.det(output[3][-1][:, :, :3]).mean()))
+                for label_index in range(1, 4):
+                    prediction = tissue_logits.argmax(1) == label_index
+                    reference_mask = tissue[:, 0] == label_index
+                    intersection = (prediction & reference_mask).sum()
+                    case[f"diagnostic_tissue_{label_index}_dice"] = float((2 * intersection + 1e-5) / (prediction.sum() + reference_mask.sum() + 1e-5))
             if any(not torch.isfinite(torch.tensor(v)) for k, v in case.items() if k != "id"):
                 raise ValueError("Nonfinite evaluation metrics")
             if output_dir is not None:
@@ -759,6 +782,9 @@ def train(args):
     settings = {k: str(v.resolve()) if isinstance(v, Path) else v for k, v in vars(args).items()}
     identity = {k: settings[k] for k in ("method", "setting", "initialization", "seed", "epochs", "pretrain_epochs", "trainable", "cut_extraction", "loss_scale", "regularization", "dataset", "fold", "split_id", "weights_origin", "connect_paths", "cut_boundary", "repair_strategy", "undo_repair", "patience", "coordination", "coordination_batch_size", "probe_budget", "probe_modules", "verify_gradients", "checkpoint_mode")}
     identity["selection_metric"] = args.selection_metric
+    if getattr(args, "paper_original", False):
+        identity["paper_original"] = True
+        identity["paper_implementation"] = hashlib.sha256(Path(__file__).with_name("paper_original.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     identity.update(data_hashes=audit["data_hashes"], adapter_hash=fingerprint(args.adapter) if args.adapter else None,
                     weights_hash=fingerprint(args.weights) if args.weights else None, plans_hash=fingerprint(args.plans) if args.plans else None,
                     host_hash=fingerprint(args.host_checkpoint) if args.host_checkpoint else None,
@@ -770,7 +796,10 @@ def train(args):
                                           for name in ("replacement_training.py", "full_model.py", "full_candidates.py", "full_connectivity.py", "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py", "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py", "full_replacement.py", "sources.py", "site_training.py")}
     identity["source"] = audit["source"]
     host_checkpoint = host_checkpoint_spec(args)
-    if args.secondary_extraction:
+    if getattr(args, "paper_original", False):
+        from .paper_original import build_paper_model
+        model, config, architecture = build_paper_model(args.source)
+    elif args.secondary_extraction:
         from .full_composition import build_composed_model
         model, config, architecture = build_composed_model(args.source, args.method, adapter=args.secondary_extraction,
                                                           mode=args.composition_mode, registration_weights=args.weights,
@@ -926,8 +955,8 @@ def train(args):
                         raise ValueError("Joint objective is nonfinite or disconnected")
                     gradient_record = None
                     if args.verify_gradients:
-                        required = (not standalone and args.setting == "joint" and args.trainable in ("all", "new")
-                                    and (args.connect_paths or args.method in TARGETS) and not args.cut_extraction
+                        required = (not standalone and (args.setting == "joint" or getattr(args, "paper_original", False)) and args.trainable in ("all", "new")
+                                    and (args.connect_paths or args.method in TARGETS or getattr(args, "paper_original", False)) and not args.cut_extraction
                                     and args.cut_boundary == "none" and args.undo_repair == "none")
                         paths = classification_gradient_paths(model, losses["classification"], args.method, required, image) if "classification" in losses else None
                         gradient_record = {"protocol_version": 3, "classification_to_candidates": paths["candidates"] if paths else {},
@@ -1095,4 +1124,5 @@ def parser():
     result.add_argument("--evaluate-test", action="store_true")
     result.add_argument("--save-predictions", action="store_true")
     result.add_argument("--preflight", action="store_true")
+    result.add_argument("--paper-original", action="store_true")
     return result

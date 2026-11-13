@@ -65,7 +65,7 @@ def architecture_files(identity):
             files.add("full_anatomy_candidates.py")
         else:
             files.add("full_graph_candidates.py")
-    if identity["connect_paths"] or identity["setting"] == "original_completed":
+    if identity["connect_paths"] or identity["setting"] == "original_completed" or identity.get("paper_original"):
         files.add("full_connectivity.py")
     if identity["adapter_hash"] is not None:
         files.add("full_replacement.py" if method == "synthstrip" else "candidate_integration.py")
@@ -75,6 +75,8 @@ def architecture_files(identity):
 
 
 def code_audit(identity):
+    if identity.get("paper_original") and identity.get("paper_implementation") != implementation_hash("paper_original.py"):
+        raise ValueError("Paper original implementation differs from training")
     recorded = identity.get("implementation_hashes")
     if not isinstance(recorded, dict) or not recorded:
         raise ValueError("Checkpoint lacks recorded implementation hashes")
@@ -118,6 +120,8 @@ def load_payload(path, sha256):
 
 def recorded_arguments(args, payload, report, report_path):
     identity, declared = payload["identity"], report.get("config", {})
+    if bool(identity.get("paper_original")) != bool(declared.get("paper_original")):
+        raise ValueError("Paper profile differs between checkpoint and report")
     if report.get("status") not in {"complete", "budget_exhausted"} or not isinstance(declared, dict):
         raise ValueError("A completed training report is required")
     for name in IDENTITY_FIELDS:
@@ -301,6 +305,9 @@ def reconstruct(restored, payload, audit):
         audit["reconstruction"] = {"recorded_composition_mode": restored.composition_mode,
                                     "structural_constructor_mode": "simultaneous",
                                     "reason": "Both modes have identical topology; all trained parameters come from this final checkpoint"}
+    elif getattr(restored, "paper_original", False):
+        from .paper_original import build_paper_model
+        model, _, _ = build_paper_model(restored.source)
     elif restored.method in ("original", "synthstrip"):
         model, _, _ = build_full_model(restored.source, restored.adapter if restored.method == "synthstrip" else None)
     elif restored.method in TARGETS:
