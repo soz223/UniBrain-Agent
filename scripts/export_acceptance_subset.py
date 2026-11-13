@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -29,7 +30,7 @@ def identifier(value):
     return value.decode("utf-8") if isinstance(value, bytes) else str(value)
 
 
-def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=False):
+def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=False, existing=None):
     cohort, output = Path(cohort).resolve(), Path(output).resolve()
     if dataset not in {"abide", "adhd"}:
         raise ValueError("Declare the source dataset explicitly")
@@ -84,7 +85,7 @@ def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=Fals
         first_affine = image.affine
         template_arrays[target] = array
         template_records[target] = {"source_sha256": sha(path), "affine": image.affine.tolist()}
-    if full:
+    if full and existing is None:
         parent = output.parent
         while not parent.exists():
             parent = parent.parent
@@ -105,20 +106,37 @@ def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=Fals
             if sha(copied) != index_hash or not np.array_equal(np.load(copied, allow_pickle=False), indices[split]):
                 raise ValueError("Original fold indices changed during export")
             target = output / f"adhd_{split}_sample.npy"
-            result = np.lib.format.open_memmap(target, mode="w+", dtype=master.dtype, shape=(len(chosen),))
-            try:
+            if existing is not None:
+                source_array = Path(existing).resolve() / target.name
+                source_stat = source_array.stat()
+                result = np.load(source_array, mmap_mode="r", allow_pickle=False)
+                if result.dtype != master.dtype or result.shape != (len(chosen),):
+                    raise ValueError("Existing fold layout does not match the master")
                 for position, index in enumerate(chosen):
-                    if any(not np.isfinite(master[index][field]).all() for field in VOLUMES):
-                        raise ValueError("A selected master row contains nonfinite imaging data")
-                    result[position] = master[index]
-            finally:
-                result.flush()
+                    if (any(not np.array_equal(result[position][field], master[index][field]) for field in master.dtype.names)
+                            or any(not np.isfinite(result[position][field]).all() for field in VOLUMES)):
+                        raise ValueError("Existing fold differs from the original master row")
                 del result
+                os.link(source_array, target)
+            else:
+                result = np.lib.format.open_memmap(target, mode="w+", dtype=master.dtype, shape=(len(chosen),))
+                try:
+                    for position, index in enumerate(chosen):
+                        if any(not np.isfinite(master[index][field]).all() for field in VOLUMES):
+                            raise ValueError("A selected master row contains nonfinite imaging data")
+                        result[position] = master[index]
+                finally:
+                    result.flush()
+                    del result
             report["splits"][split] = {"count": len(chosen), "original_count": len(indices[split]),
                                        "master_indices": chosen, "ids": [ids[index] for index in chosen],
                                        "class_counts": {str(label): int(np.count_nonzero(master["label"][chosen] == label)) for label in (0, 1)},
                                        "sha256": sha(target), "original_indices_sha256": index_hash,
                                        "original_indices_file": copied.relative_to(output).as_posix()}
+            if existing is not None:
+                after = source_array.stat()
+                if (source_stat.st_size, source_stat.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                    raise ValueError("Existing fold changed during verification")
         for target, array in template_arrays.items():
             np.save(output / target, array)
             report["templates"][target] = {**template_records[target], "sha256": sha(output / target)}
