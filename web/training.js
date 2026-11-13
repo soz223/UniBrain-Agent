@@ -171,7 +171,9 @@ function updateTrainingFreshness(message) {
   if(trainingState.error){byId('trainingFreshness').textContent=trainingState.error;return;}
   if(message){byId('trainingFreshness').textContent=message;return;}
   const observed=Date.parse(packet?.observed_at),age=Number.isFinite(observed)?Math.max(0,Math.round((Date.now()-observed)/1000)):null;
-  byId('trainingFreshness').textContent=age!==null?'Last file update '+(age<120?age+'s':Math.round(age/60)+'m')+' ago · reported '+(packet.reported_status||'unknown')+(age>120?' · may be validating or offline':''):trainingFrames(packet).length?'Workspace telemetry · recorded updates':'Connect a backend or run a training cycle to receive measurements.';
+  const status=packet?.reported_status,finished=['complete','budget_exhausted','failed'].includes(status);
+  const label=status==='budget_exhausted'?'planned step limit reached':status||'unknown';
+  byId('trainingFreshness').textContent=age!==null?'Last file update '+(age<120?age+'s':Math.round(age/60)+'m')+' ago · '+label+(age>120&&!finished?' · may be validating or offline':''):trainingFrames(packet).length?'Workspace telemetry · recorded updates':'Connect a backend or run a training cycle to receive measurements.';
 }
 
 function updateTrainingPhase() {
