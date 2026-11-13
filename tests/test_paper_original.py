@@ -9,6 +9,13 @@ from unibrain_agent.replacement_training import parameter_probe
 
 
 class PaperOriginalTests(unittest.TestCase):
+    def test_large_parameter_probe_uses_exact_integer_indices(self):
+        parameter = torch.nn.Parameter(torch.zeros(20000000))
+        parameter.grad = torch.ones_like(parameter)
+        indices, before = parameter_probe(parameter, 16)
+        self.assertEqual(int(indices[-1]), parameter.numel() - 1)
+        self.assertEqual(before.numel(), 16)
+
     def test_parameter_probe_catches_sparse_updates_without_full_copy(self):
         parameter = torch.nn.Parameter(torch.zeros(10000))
         parameter.grad = torch.zeros_like(parameter)

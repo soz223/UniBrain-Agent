@@ -590,7 +590,8 @@ def gradient_statistics(gradients):
 
 def parameter_probe(parameter, limit=1024):
     import torch
-    indices = torch.linspace(0, parameter.numel() - 1, min(limit, parameter.numel()), device=parameter.device).long()
+    count = min(limit, parameter.numel())
+    indices = torch.arange(count, dtype=torch.long, device=parameter.device) * (parameter.numel() - 1) // max(count - 1, 1)
     gradient = parameter.grad.detach().reshape(-1)
     indices = indices[gradient[indices] != 0]
     if not len(indices):
