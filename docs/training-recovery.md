@@ -91,3 +91,33 @@ direction. Detached paths, zero coefficients, persistent underflow and nonfinite
 gradients remain rejected. Linux subprocess tests verified successful checkpoint
 restart and termination at the retry limit. Code CI passed on Linux Python 3.10,
 Linux Python 3.12 and Windows Python 3.12 for implementation commit `c93dbc5`.
+
+## Continuous replication runs
+
+Set `wall_seconds` to null in the supervisor manifest to remove the wall-clock
+deadline, including any old `--wall-seconds` argument in the worker command.
+Signal handling still saves a resumable checkpoint. The trainer's configured
+epoch horizon remains in effect; the continued ABIDE runs retain 1000 epochs and
+patience zero. Changing an epoch horizon or an optimization setting requires an
+explicit, recorded continuation protocol rather than bypassing checkpoint checks.
+
+Each completed validation epoch produces `training_diagnosis.json`. It records
+the supplied reference targets, missing measurements, training/validation gaps,
+and five-epoch near-chance warnings. These screening thresholds are diagnostic
+heuristics. They do not automatically change losses, labels or model parameters.
+The test split remains untouched. Targets in `catalog/abide_reproduction_targets.json`
+are user-supplied five-fold test means, not measurements from the current run.
+
+The evaluator now also calls the pinned upstream Jaccard, mutual-information and
+cross-correlation functions. Extraction uses the existing soft mask, tissue
+metrics average the three foreground labels, and atlas metrics average AAL116.
+MI uses the upstream 2000-bin histogram and natural logarithm. Translation is
+reported as `atlas_dice` and `atlas_jaccard`. Existing history retains its original
+fields; absent historical metrics are not reconstructed from aggregate Dice.
+
+After a new gradient failure, the supervisor writes diagnostic evidence and
+replays the verified checkpoint once. An identical failure is escalated instead
+of replayed forever. Transient restart allowances reset after 100 new committed
+updates, and occupied GPUs are waited for. This is bounded recovery and active
+diagnosis, not unrestricted code rewriting or a guarantee of reaching a target
+AUC. Failed attempts and scientific checkpoints remain preserved.

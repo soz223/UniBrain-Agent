@@ -55,6 +55,7 @@ class SupervisorTests(unittest.TestCase):
             script.write_text('''import json, os, signal, sys
 from pathlib import Path
 p = Path(__file__).parent
+assert "--wall-seconds" not in sys.argv
 if not (p / "last.pt").exists():
     (p / "last.pt").write_text("valid fake checkpoint")
     (p / "report.json").write_text(json.dumps({"status": "running"}))
@@ -62,8 +63,8 @@ if not (p / "last.pt").exists():
 assert "--resume" in sys.argv
 (p / "report.json").write_text(json.dumps({"status": "complete"}))
 ''')
-            result = supervise({'output': directory, 'cwd': directory, 'wall_seconds': 30,
-                                'command': [sys.executable, str(script), '--verify-gradients', '--output', directory]})
+            result = supervise({'output': directory, 'cwd': directory, 'wall_seconds': None,
+                                'command': [sys.executable, str(script), '--wall-seconds', '30', '--verify-gradients', '--output', directory]})
             self.assertEqual(result['status'], 'complete')
             self.assertEqual(result['restarts'], 1)
             self.assertFalse((folder / 'supervisor.lock').exists())
@@ -86,3 +87,22 @@ os.kill(os.getpid(), signal.SIGKILL)
             self.assertEqual(result['restarts'], 1)
             events = [json.loads(line) for line in (folder / 'supervisor_events.jsonl').read_text().splitlines()]
             self.assertEqual(sum(row['action'] == 'launch' for row in events), 2)
+
+    def test_gradient_fault_is_replayed_once_and_diagnosed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            script = folder / 'worker.py'
+            script.write_text('''import json
+from pathlib import Path
+p = Path(__file__).parent
+(p / "last.pt").write_text("fake checkpoint")
+(p / "report.json").write_text(json.dumps({"status": "failed", "steps": 150,
+    "error": "Required gradient paths failed: feature_net:total"}))
+raise SystemExit(1)
+''')
+            result = supervise({'output': directory, 'cwd': directory, 'wall_seconds': None,
+                                'command': [sys.executable, str(script), '--verify-gradients', '--output', directory]})
+            self.assertEqual(result['status'], 'needs_attention')
+            self.assertEqual(result['restarts'], 1)
+            diagnosis = json.loads((folder / 'training_diagnosis.json').read_text())
+            self.assertEqual(diagnosis['kind'], 'gradient_path_failure')
