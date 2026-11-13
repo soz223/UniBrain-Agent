@@ -1,0 +1,137 @@
+{
+  "protocol": 1,
+  "training_commit": "680c01f",
+  "verifier_commit": "9fc639b",
+  "profile": "paper_core",
+  "model": "Complete paper-aligned UniBrain, original module configuration",
+  "input_shape": [
+    96,
+    96,
+    96
+  ],
+  "replay_batch": {
+    "acceptance": 1,
+    "paper_default": 64
+  },
+  "datasets": {
+    "abide": {
+      "status": "passed",
+      "fold": 1,
+      "model_parameters": 271483811,
+      "model_updates": 2,
+      "gradient_scope": "all_trainable_parameters",
+      "observed_gradient_elements": 271483811,
+      "policy_updates": 1,
+      "actor_optimizer_steps": 4,
+      "critic_optimizer_steps": 4,
+      "each_actor_changed": true,
+      "each_critic_changed": true,
+      "observed_module_updates": [
+        {
+          "ext_net": true,
+          "reg_net": true,
+          "seg_net": true,
+          "feature_net": true,
+          "gnn_pred": true
+        },
+        {
+          "ext_net": true,
+          "reg_net": true,
+          "seg_net": true,
+          "feature_net": true,
+          "gnn_pred": true
+        }
+      ],
+      "gradient_checks": {
+        "verified_steps": 2,
+        "warmup": "confirmed",
+        "diagnosis_reaches_original_upstream_modules": true
+      },
+      "objective_reconstruction_max_error": 6.9165361216150245e-09,
+      "action_check": {
+        "initial_shares": {
+          "extraction": 0.25,
+          "registration": 0.25,
+          "segmentation": 0.25,
+          "classification": 0.25
+        },
+        "trained_shares": {
+          "extraction": 0.2493261843919754,
+          "registration": 0.2506122887134552,
+          "segmentation": 0.24951985478401184,
+          "classification": 0.25054171681404114
+        },
+        "share_delta_max": 0.0006738156080245972,
+        "exploration": false,
+        "scope": "Same recorded observation; different deterministic policy weights after learning"
+      },
+      "checkpoint_sha256": "966d96f931f608579a30f19da48a8355cb9f763b77be892d9169935b2c7cfd5d",
+      "report_sha256": "5a17980b9062a255ac56645a670606a762b82928db92d5219901d2e564f86ce1",
+      "coordinator_source_sha256": "4b4cbafbd4279bff3c3165057c60269b89af858037a59e3cd16e5d543ba9c115",
+      "core_source_sha256": "5c7b6e6690ba1a583cb2a687cf4a89f81105d3ca83a6f0bbf2f31ab0d7c52566"
+    },
+    "adhd": {
+      "status": "passed",
+      "fold": 1,
+      "model_parameters": 271483811,
+      "model_updates": 2,
+      "gradient_scope": "all_trainable_parameters",
+      "observed_gradient_elements": 271483811,
+      "policy_updates": 1,
+      "actor_optimizer_steps": 4,
+      "critic_optimizer_steps": 4,
+      "each_actor_changed": true,
+      "each_critic_changed": true,
+      "observed_module_updates": [
+        {
+          "ext_net": true,
+          "reg_net": true,
+          "seg_net": true,
+          "feature_net": true,
+          "gnn_pred": true
+        },
+        {
+          "ext_net": true,
+          "reg_net": true,
+          "seg_net": true,
+          "feature_net": true,
+          "gnn_pred": true
+        }
+      ],
+      "gradient_checks": {
+        "verified_steps": 2,
+        "warmup": "confirmed",
+        "diagnosis_reaches_original_upstream_modules": true
+      },
+      "objective_reconstruction_max_error": 1.4638865369898113e-08,
+      "action_check": {
+        "initial_shares": {
+          "extraction": 0.25,
+          "registration": 0.25,
+          "segmentation": 0.25,
+          "classification": 0.25
+        },
+        "trained_shares": {
+          "extraction": 0.24927964806556702,
+          "registration": 0.25056910514831543,
+          "segmentation": 0.25058630108833313,
+          "classification": 0.2495650351047516
+        },
+        "share_delta_max": 0.0007203519344329834,
+        "exploration": false,
+        "scope": "Same recorded observation; different deterministic policy weights after learning"
+      },
+      "checkpoint_sha256": "4b9f49d41c01237fddbe4cb0df6ae11535e50fad88a91885be3800566749db2c",
+      "report_sha256": "2f669ffaa2f7b06a2273bb1adb0bb3783ce1710ccd1baa3c6585fa4b1024c5ec",
+      "coordinator_source_sha256": "4b4cbafbd4279bff3c3165057c60269b89af858037a59e3cd16e5d543ba9c115",
+      "core_source_sha256": "5c7b6e6690ba1a583cb2a687cf4a89f81105d3ca83a6f0bbf2f31ab0d7c52566"
+    }
+  },
+  "scope": "Executable core mechanisms and functional policy learning; no convergence or performance claim",
+  "cpu_checks": {
+    "run": 370,
+    "passed": 368,
+    "skipped": 2,
+    "verifier_recheck_passed": 6
+  }
+}

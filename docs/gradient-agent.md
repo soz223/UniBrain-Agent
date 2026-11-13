@@ -20,3 +20,5 @@ On 2026-11-12, the legacy ABIDE and ADHD acceptance subsets completed eight full
 Training records are written to `updates.jsonl`; epoch validation and policy summaries are in `report.json`. `last.pt` includes the model, model optimizer, all coordinator networks and optimizers, replay, progress and RNG states. `scripts/check_policy_checkpoint.py` verifies actual coordinator parameter changes rather than trusting counters alone.
 
 The legacy ABIDE acceptance checkpoint was subsequently resumed from update 8 to update 10. Independent inspection verified six policy updates after restoration. CPU regression tests now check exact next-decision and update equivalence for both profiles. Full-cohort training remains a separate convergence test.
+
+The core profile subsequently passed two full-model updates on each dataset, followed by independent parameter and functional action checks. All four actors and critics learned, and the learned policies changed task shares with exploration disabled. Its [separate acceptance record](../catalog/taskforce_core_acceptance_20261112.json) prevents attribution of legacy results to the new controller.
