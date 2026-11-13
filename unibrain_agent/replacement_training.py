@@ -18,6 +18,7 @@ METHODS.update(TARGETS)
 
 SETTINGS = ("original", "original_completed", "original_frozen_stages", "joint", "independent_official", "independent_pretrained", "independent_finetuned")
 LEGACY_REFERENCE_TRAINER = "4977739c34f4b8cbb7326052e23a9cc77199a40297db8e28bfe95bee2bd60904"
+PRE_UNDERFLOW_AUDIT_TRAINER = "b3e429b125c4a12f534e1722d550c001e761e22e7451272d13e25824b65d3425"
 
 
 def fingerprint(path):
@@ -40,9 +41,16 @@ def host_checkpoint_spec(args):
             if args.host_checkpoint else None)
 
 
-def resume_identity_matches(previous, current):
+def resume_identity_matches(previous, current, allow_gradient_audit_upgrade=False):
     if previous == current:
         return False
+    if allow_gradient_audit_upgrade:
+        upgraded = copy.deepcopy(previous)
+        hashes = upgraded.get("implementation_hashes", {})
+        if hashes.get("replacement_training.py") == PRE_UNDERFLOW_AUDIT_TRAINER:
+            hashes["replacement_training.py"] = current.get("implementation_hashes", {}).get("replacement_training.py")
+            if upgraded == current:
+                return False
     migrated = copy.deepcopy(previous)
     hashes = migrated.get("implementation_hashes", {})
     if ("selection_metric" not in previous and current.get("selection_metric") == "reference_loss"
@@ -142,6 +150,8 @@ def preflight(args):
         raise ValueError("The paper core profile observes every trainable parameter; use legacy for sampled probes")
     from .training_control import TrainingBudget
     TrainingBudget(args.wall_seconds)
+    if args.resume_gradient_audit_upgrade and (not args.resume or not args.verify_gradients):
+        raise ValueError("Gradient audit upgrade requires a resumable checkpoint and gradient verification")
     if args.train_probe_size < 0:
         raise ValueError("Training probe size must be nonnegative")
     if args.taskforce_action_bound is not None:
@@ -633,6 +643,21 @@ def classification_gradient_paths(model, loss, method, required, image=None):
                         "expected_absent": auxiliary,
                         "reason": "The tissue prediction head is supervised by tissue loss; diagnosis does not consume its logits" if auxiliary else None}
         offset += count
+    loss_value = float(loss.detach())
+    zero_paths = [name for name, value in result.items() if value["required"] and value["finite"] and not value["nonzero"]
+                  and value["tensor_count"] > 0 and value["observed_tensors"] == value["tensor_count"]]
+    present = [gradient for gradient in gradients if gradient is not None]
+    if (zero_paths and 0 <= loss_value <= 1e-7 and present
+            and all(bool(torch.isfinite(g).all()) and float(g.detach().abs().max()) <= 1e-12 for g in present)):
+        scaled = torch.autograd.grad(loss * 1e20, inputs, retain_graph=True, allow_unused=True)
+        offset = 0
+        for name in names:
+            count = len(groups[name])
+            if name in zero_paths:
+                result[name]["underflow_probe"] = {**gradient_statistics(scaled[offset:offset + count]),
+                                                    "scale": 1e20, "loss_value": loss_value,
+                                                    "scope": "diagnostic_only; optimizer gradients unchanged"}
+            offset += count
     input_gradient = gradients[-1] if image is not None and image.requires_grad else None
     return {"candidates": result, "input": {**gradient_statistics([input_gradient]), "required": required and method != "nnunet"}}
 
@@ -727,10 +752,24 @@ def affine_initialization_evidence(model):
     return None
 
 
+def classification_path_valid(value):
+    if not value["finite"]:
+        return False
+    if value["nonzero"]:
+        return True
+    probe = value.get("underflow_probe", {})
+    count = value["tensor_count"]
+    return (count > 0 and value["observed_tensors"] == count and probe.get("tensor_count") == count
+            and probe.get("observed_tensors") == count and probe.get("finite") is True and probe.get("nonzero") is True
+            and probe.get("scale") == 1e20 and 0 <= probe.get("loss_value", -1) <= 1e-7)
+
+
 def check_gradient_paths(model, record, step, budget, warmup):
     candidates = record["classification_to_candidates"]
+    record["numerical_underflow_modules"] = [name for name, value in candidates.items()
+                                              if not value["nonzero"] and classification_path_valid(value)]
     failed = [name for name, value in candidates.items()
-              if value["required"] and not (value["finite"] and value["nonzero"])]
+              if value["required"] and not classification_path_valid(value)]
     input_path = record["classification_to_input"]
     if input_path and input_path["required"] and not (input_path["finite"] and input_path["nonzero"]):
         failed.append("classification_to_input")
@@ -888,7 +927,7 @@ def _train(args, budget):
     if resumed:
         if resumed.get("checkpoint_kind") != "resume":
             raise ValueError("This is an evaluation checkpoint; resume requires the complete last.pt state")
-        migrated_selection = resume_identity_matches(resumed["identity"], identity)
+        migrated_selection = resume_identity_matches(resumed["identity"], identity, args.resume_gradient_audit_upgrade)
         model.load_state_dict(resumed["model"], strict=True)
         if team is not None:
             if resumed.get("coordination") is None:
@@ -905,6 +944,10 @@ def _train(args, budget):
     report = {"status": "running", "method": args.method, "setting": args.setting, "seed": args.seed, "config": settings,
               "architecture": architecture, "audit": audit, "gpu": gpu, "history": [], "steps": progress["steps"], "pretrain_steps": progress["pretrain_steps"]}
     report["execution_budget"] = budget.describe()
+    if args.resume_gradient_audit_upgrade:
+        report["gradient_audit_upgrade"] = {"previous_trainer": resumed["identity"]["implementation_hashes"]["replacement_training.py"] if resumed else None,
+                                            "current_trainer": identity["implementation_hashes"]["replacement_training.py"],
+                                            "scope": "Diagnostic underflow detection only; model, losses and optimizer unchanged"}
     report["template_normalization"] = template_scaling
     report["training_probe"] = {"size": len(probe_indices), "indices": probe_indices,
                                 "scope": "Fixed class-balanced training subset; diagnostic only, no checkpoint selection"}
@@ -1080,6 +1123,7 @@ def _train(args, budget):
                     if gradient_record is not None:
                         event["gradient_verification"] = gradient_record
                         report["gradient_verification"]["verified_steps"] += 1
+                        report["gradient_verification"]["underflow_events"] = report["gradient_verification"].get("underflow_events", 0) + bool(gradient_record.get("numerical_underflow_modules"))
                         paths = gradient_record["classification_to_candidates"].values()
                         report["gradient_verification"]["diagnosis_reaches_all_candidates"] = all(value["finite"] and value["nonzero"] for value in paths) if gradient_record["classification_to_candidates"] else None
                     with (args.output / "updates.jsonl").open("a", encoding="utf-8") as stream:
@@ -1173,6 +1217,7 @@ def parser():
     result.add_argument("--pretrain-epochs", type=int, default=20)
     result.add_argument("--max-steps", type=int)
     result.add_argument("--wall-seconds", type=float)
+    result.add_argument("--resume-gradient-audit-upgrade", action="store_true")
     result.add_argument("--train-probe-size", type=int, default=0)
     result.add_argument("--template-normalization", choices=("none", "minmax"), default="none")
     result.add_argument("--eval-limit", type=int)
