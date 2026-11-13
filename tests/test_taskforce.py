@@ -12,6 +12,17 @@ from unibrain_agent.catalog import DEFAULTS
 
 
 class GradientTeamTests(unittest.TestCase):
+    def test_conflict_record_comes_from_task_gradients(self):
+        parameter = torch.nn.Parameter(torch.tensor([.5]))
+        losses = {name: (parameter - (1 if index % 2 else -1)).square().sum() for index, name in enumerate(TASKS)}
+        team = GradientTeam()
+        _, record = team.combine(losses, [parameter])
+        self.assertIn(["extraction", "registration"], record["conflict_pairs"])
+        self.assertAlmostEqual(record["cosine_similarity"][0][1], -1, places=5)
+        self.assertEqual(record["base_weights"]["registration"], .1)
+        _, record = team.combine(losses, [parameter])
+        self.assertFalse(record["reward_terms"]["validation_used"])
+
     def test_prepared_original_code_pins_policy_choice(self):
         with tempfile.TemporaryDirectory() as folder, patch("unibrain_agent.builds.BUILDS", Path(folder)):
             record = create_build(DEFAULTS, "rules", coordination="taskforce")

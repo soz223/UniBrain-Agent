@@ -96,9 +96,11 @@ def preflight(args):
         raise ValueError("A positive finite paper registration weight requires the paper profile")
 
     if getattr(args, "paper_original", False) and (args.method != "original" or args.setting != "original"
-            or args.coordination != "none" or args.connect_paths or args.host_checkpoint or args.regularization
+            or args.connect_paths or args.host_checkpoint or args.regularization
             or args.loss_scale != 1):
         raise ValueError("Paper original requires original modules, fixed losses and no intervention")
+    if getattr(args, "paper_original", False) and args.coordination == "taskforce" and paper_weight != .1:
+        raise ValueError("Paper gradient coordination uses the original base coefficients")
 
     if args.method in TARGETS and args.setting != "joint":
         raise ValueError("Extended candidates currently support joint training only")

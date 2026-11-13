@@ -61,6 +61,7 @@ class GradientTeam:
         self.previous = None
         self.updates = 0
         self.last_record = None
+        self.reward_terms = None
 
     def observe(self, losses, parameters):
         parameters = tuple(parameters)
@@ -92,12 +93,15 @@ class GradientTeam:
 
     def learn(self, observation, gram, values):
         reward = None
+        self.reward_terms = None
         if self.previous is not None:
             old_observation, old_action, old_gram, old_values = self.previous
             improvement = (torch.log1p(old_values) - torch.log1p(values)).sum()
             mixed_norm = old_action @ old_gram @ old_action
             penalty = mixed_norm / old_gram.diag().sum().clamp_min(1e-12)
             reward = float((improvement - 0.01 * penalty).clamp(-10, 10))
+            self.reward_terms = {"training_loss_improvement": float(improvement), "gradient_norm_penalty": float(penalty),
+                                 "gradient_penalty_weight": .01, "validation_used": False}
             self.replay.append((old_observation, old_action, reward, observation))
             if len(self.replay) >= self.batch_size:
                 self.update()
@@ -106,7 +110,8 @@ class GradientTeam:
         return action, reward
 
     def update(self):
-        batch = list(self.replay)[-self.batch_size:]
+        indices = torch.randperm(len(self.replay), generator=self.generator)[:self.batch_size].tolist()
+        batch = [self.replay[index] for index in indices]
         states = torch.stack([row[0] for row in batch])
         actions = torch.stack([row[1] for row in batch])
         rewards = torch.tensor([row[2] for row in batch]).unsqueeze(1)
@@ -138,8 +143,16 @@ class GradientTeam:
         observation, gram, values = self.observe(losses, parameters)
         action, reward = self.learn(observation, gram, values)
         weights = {name: self.count * float(action[i]) * self.base[i] for i, name in enumerate(TASKS)}
+        if any(not torch.isfinite(torch.tensor(value)) or value <= 0 for value in weights.values()):
+            raise ValueError("The gradient policy produced invalid task coefficients")
         total = sum(weights[name] * losses[name] for name in TASKS)
+        norms = gram.diag().clamp_min(0).sqrt()
+        cosine = (gram / (norms[:, None] * norms[None, :]).clamp_min(1e-12)).clamp(-1, 1)
         record = {"weights": weights, "task_losses": dict(zip(TASKS, values.tolist())),
+                  "base_weights": dict(zip(TASKS, self.base)), "actions": dict(zip(TASKS, action.tolist())),
+                  "gradient_norms": dict(zip(TASKS, norms.tolist())), "cosine_similarity": cosine.tolist(),
+                  "conflict_pairs": [[TASKS[i], TASKS[j]] for i in range(self.count) for j in range(i + 1, self.count) if gram[i, j] < 0],
+                  "reward_terms": copy.deepcopy(self.reward_terms), "gradient_scope": "recorded_probe_parameters",
                   "gram": gram.tolist(), "reward": reward, "policy_updates": self.updates,
                   "actor_optimizer_steps": self.count * self.updates, "critic_optimizer_steps": self.count * self.updates,
                   "replay_size": len(self.replay)}
