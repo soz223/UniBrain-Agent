@@ -117,9 +117,20 @@ def inspect_policy(checkpoint_path, report_path):
                          for task, before, after in zip(TASKS, getattr(initial, group), getattr(trained, group))}
     if any(value["changed_tensors"] == 0 for group in ("actors", "critics") for value in deltas[group].values()):
         raise ValueError("Positive counters do not establish learning: at least one actor or critic is unchanged")
+    action_check = None
+    if profile == "paper":
+        observation = torch.tensor([policy["last_record"]["observations"][task] for task in TASKS])
+        with torch.no_grad():
+            before = torch.cat([actor(observation[i]) for i, actor in enumerate(initial.actors)]).softmax(0)
+            after = torch.cat([actor(observation[i]) for i, actor in enumerate(trained.actors)]).softmax(0)
+        action_check = {"initial_shares": dict(zip(TASKS, before.tolist())), "trained_shares": dict(zip(TASKS, after.tolist())),
+                        "share_delta_max": float((after - before).abs().max()), "exploration": False,
+                        "scope": "Same recorded observation; different deterministic policy weights after learning"}
+        if not torch.isfinite(after).all() or action_check["share_delta_max"] == 0:
+            raise ValueError("Policy parameters changed but no functional weighting change was observed")
     return {"status": "passed", "device": "cpu", "gpu_used": False, "torch_version": str(torch.__version__), "seed": identity["seed"],
             "tasks": list(TASKS), "profile": profile, "batch_size": initial.batch_size, "base_weights": declared_weights,
-            "training_steps": steps, **counts, "deltas": deltas,
+            "training_steps": steps, **counts, "deltas": deltas, "action_check": action_check,
             "checkpoint_sha256": digest(checkpoint_path), "report_sha256": digest(report_path),
             "coordinator_source_sha256": implementation_hash,
             "scope": "Each actor and critic changed from its seeded initialization; this does not establish policy effectiveness"}

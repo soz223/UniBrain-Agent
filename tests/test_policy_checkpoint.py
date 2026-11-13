@@ -48,6 +48,8 @@ class PolicyCheckpointTests(unittest.TestCase):
             result = inspect_policy(checkpoint, report)
             self.assertEqual(result['profile'], 'paper')
             self.assertEqual(result['policy_updates'], 3)
+            self.assertGreater(result['action_check']['share_delta_max'], 0)
+            self.assertFalse(result['action_check']['exploration'])
             state['coordination']['pending_model_step'] = True
             torch.save(state, checkpoint)
             with self.assertRaisesRegex(ValueError, 'completed model updates'):
