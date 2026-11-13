@@ -37,6 +37,9 @@ def show(root):
         print(f"  Status: {status} | Epoch: {update.get('epoch', '?')} | Step: {update.get('step', report.get('steps', 0))}")
         if update:
             print('  Latest losses: ' + json.dumps(update.get('losses', {})))
+            policy = update.get('gradient_policy')
+            if policy:
+                print('  Gradient agents: ' + json.dumps({key: policy.get(key) for key in ('policy_updates', 'weights', 'conflict_pairs')}))
         history = report.get('history', [])
         if history:
             print('  Latest validation: ' + json.dumps(history[-1]))
