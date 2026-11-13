@@ -7,7 +7,8 @@ from pathlib import Path
 
 import torch
 
-from .taskforce import GradientTeam, TASKS
+from .taskforce import TASKS
+from .taskforce_paper import make_team
 
 
 def digest(path):
@@ -18,8 +19,8 @@ def digest(path):
     return value.hexdigest()
 
 
-def source_digest():
-    return hashlib.sha256(Path(__file__).with_name("taskforce.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+def source_digest(name="taskforce.py"):
+    return hashlib.sha256(Path(__file__).with_name(name).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def finite_state(value):
@@ -66,6 +67,14 @@ def inspect_policy(checkpoint_path, report_path):
     implementation_hash = source_digest()
     if identity.get("implementation_hashes", {}).get("taskforce.py") != implementation_hash:
         raise ValueError("Coordinator implementation differs from the checkpoint source")
+    profile = identity.get("taskforce_profile", "legacy")
+    normalization = identity.get("taskforce_gradient_normalization", "l2")
+    if profile == "paper":
+        for key in ("taskforce_profile", "taskforce_gradient_normalization"):
+            if config.get(key) != identity.get(key):
+                raise ValueError("Checkpoint and report identities disagree: " + key)
+        if identity.get("implementation_hashes", {}).get("taskforce_paper.py") != source_digest("taskforce_paper.py"):
+            raise ValueError("Paper coordinator implementation differs from the checkpoint source")
     policy = checkpoint.get("coordination")
     summary = report.get("coordination", {})
     if not isinstance(policy, dict) or summary.get("mode") != "taskforce":
@@ -78,8 +87,9 @@ def inspect_policy(checkpoint_path, report_path):
     if set(declared_weights) != set(TASKS):
         raise ValueError("All four base task weights must be declared")
     base = tuple(declared_weights[name] for name in TASKS)
-    initial = GradientTeam(base, seed=identity["seed"], batch_size=identity["coordination_batch_size"])
-    trained = GradientTeam(base, seed=identity["seed"], batch_size=identity["coordination_batch_size"])
+    options = dict(seed=identity["seed"], batch_size=identity["coordination_batch_size"], profile=profile, normalization=normalization)
+    initial = make_team(base, **options)
+    trained = make_team(base, **options)
     trained.load_state_dict(policy)
     progress = checkpoint.get("progress", {})
     steps, updates = progress.get("steps"), policy.get("policy_updates")
@@ -89,6 +99,9 @@ def inspect_policy(checkpoint_path, report_path):
         raise ValueError("Positive policy updates must match the completed training steps")
     if summary.get("last_decision") != policy.get("last_record") or not policy.get("last_record"):
         raise ValueError("The last policy decision differs between report and checkpoint")
+    if profile == "paper" and (policy.get("pending_model_step") or policy.get("model_steps") != steps - progress.get("pretrain_steps", 0)
+                                or not policy["last_record"].get("model_step_completed")):
+        raise ValueError("Policy learning must follow completed model updates")
     counts = {"policy_updates": updates, "actor_optimizer_steps": len(TASKS) * updates,
               "critic_optimizer_steps": len(TASKS) * updates}
     if any(summary.get(key) != value or policy["last_record"].get(key) != value for key, value in counts.items()):
@@ -105,7 +118,7 @@ def inspect_policy(checkpoint_path, report_path):
     if any(value["changed_tensors"] == 0 for group in ("actors", "critics") for value in deltas[group].values()):
         raise ValueError("Positive counters do not establish learning: at least one actor or critic is unchanged")
     return {"status": "passed", "device": "cpu", "gpu_used": False, "torch_version": str(torch.__version__), "seed": identity["seed"],
-            "tasks": list(TASKS), "batch_size": initial.batch_size, "base_weights": declared_weights,
+            "tasks": list(TASKS), "profile": profile, "batch_size": initial.batch_size, "base_weights": declared_weights,
             "training_steps": steps, **counts, "deltas": deltas,
             "checkpoint_sha256": digest(checkpoint_path), "report_sha256": digest(report_path),
             "coordinator_source_sha256": implementation_hash,

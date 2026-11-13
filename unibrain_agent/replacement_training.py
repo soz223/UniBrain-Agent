@@ -138,6 +138,8 @@ def preflight(args):
         raise ValueError("Coordinator replay and probe budgets must be positive")
     if args.probe_modules is not None and args.coordination == "none":
         raise ValueError("Explicit gradient probes require taskforce coordination")
+    if args.coordination == "taskforce" and args.taskforce_profile == "paper" and args.probe_modules is not None:
+        raise ValueError("The paper core profile observes every trainable parameter; use legacy for sampled probes")
     if args.secondary_extraction:
         if args.setting != "joint" or args.trainable != "all":
             raise ValueError("Multi stage composition currently requires joint training of all modules")
@@ -780,7 +782,8 @@ def train(args):
     from .data import OriginalDataset
     from .full_model import build_full_model
     from .full_replacement_worker import available_gpu, selected_device
-    from .taskforce import GradientTeam, TASKS, select_probes
+    from .taskforce import TASKS
+    from .taskforce_paper import make_team, policy_parameters
 
     audit = preflight(args)
     if args.preflight:
@@ -798,6 +801,8 @@ def train(args):
     settings = {k: str(v.resolve()) if isinstance(v, Path) else v for k, v in vars(args).items()}
     identity = {k: settings[k] for k in ("method", "setting", "initialization", "seed", "epochs", "pretrain_epochs", "trainable", "cut_extraction", "loss_scale", "regularization", "dataset", "fold", "split_id", "weights_origin", "connect_paths", "cut_boundary", "repair_strategy", "undo_repair", "patience", "coordination", "coordination_batch_size", "probe_budget", "probe_modules", "verify_gradients", "checkpoint_mode")}
     identity["selection_metric"] = args.selection_metric
+    if args.coordination == "taskforce":
+        identity.update(taskforce_profile=args.taskforce_profile, taskforce_gradient_normalization=args.taskforce_gradient_normalization)
     if getattr(args, "paper_original", False):
         identity["paper_original"] = True
         identity["paper_registration_weight"] = args.paper_registration_weight
@@ -812,6 +817,8 @@ def train(args):
     identity["implementation_hashes"] = {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
                                           for name in ("replacement_training.py", "full_model.py", "full_candidates.py", "full_connectivity.py", "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py", "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py", "full_replacement.py", "sources.py", "site_training.py")}
     identity["source"] = audit["source"]
+    if args.coordination == "taskforce" and args.taskforce_profile == "paper":
+        identity["implementation_hashes"]["taskforce_paper.py"] = hashlib.sha256(Path(__file__).with_name("taskforce_paper.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     host_checkpoint = host_checkpoint_spec(args)
     if getattr(args, "paper_original", False):
         from .paper_original import build_paper_model
@@ -845,8 +852,9 @@ def train(args):
                  ("template_img_orig_96.npy", "template_img_gm_mask_orig_96.npy", "template_img_aal_mask_orig_96.npy")]
     phases = [("standalone", args.pretrain_epochs), ("pipeline", args.epochs)] if args.setting == "independent_finetuned" else [("pipeline", args.epochs)]
     base_weights = task_weights(config, args.method, args.loss_scale)
-    team = GradientTeam(tuple(base_weights[name] for name in TASKS), seed=args.seed,
-                        batch_size=args.coordination_batch_size) if args.coordination == "taskforce" else None
+    team = make_team(tuple(base_weights[name] for name in TASKS), seed=args.seed,
+                     batch_size=args.coordination_batch_size, profile=args.taskforce_profile,
+                     normalization=args.taskforce_gradient_normalization) if args.coordination == "taskforce" else None
     progress = {"phase": 0, "epoch": 0, "position": 0, "steps": 0, "pretrain_steps": 0, "best_loss": float("inf"), "bad_epochs": 0,
                 "selection_metric": args.selection_metric, "best_epoch": None, "best_value": None,
                 "gradient_warmup": empty_gradient_warmup()}
@@ -880,9 +888,11 @@ def train(args):
     report["coordination"] = {"mode": args.coordination, "policy_updates": team.updates if team else 0,
                               "actor_optimizer_steps": team.count * team.updates if team else 0,
                               "critic_optimizer_steps": team.count * team.updates if team else 0,
-                              "algorithm": "TaskForce inspired task actors and centralized critics; not an exact paper reproduction" if team else None,
+                              "algorithm": "TaskForce core mechanisms adapted to UniBrain" if team else None,
+                              "profile": args.taskforce_profile if team else None,
                               "activation": "Pipeline training only; validation and test do not update or query the policy",
-                              "base_weights": base_weights, "probe_names": [], "probe_elements": 0,
+                              "base_weights": dict(zip(TASKS, team.base)) if team else base_weights,
+                              "original_coefficients": base_weights, "probe_names": [], "probe_elements": 0,
                               "fixed_extra_weights": {"parcellation": args.loss_scale if getattr(model, "learned_parcellation", False) else 0.,
                                                       "regularization": args.regularization}}
     report["gradient_verification"] = {"enabled": args.verify_gradients, "protocol_version": 3, "verified_steps": 0, "last_step": None,
@@ -903,8 +913,9 @@ def train(args):
             configure_trainable(model, args.method, args.setting, args.trainable, standalone)
             gradient_probes = []
             if team is not None and not standalone:
-                gradient_probes, names = select_probes(model, args.probe_budget, args.probe_modules)
-                report["coordination"].update(probe_names=names, probe_elements=sum(parameter.numel() for parameter in gradient_probes))
+                gradient_probes, names = policy_parameters(model, args.taskforce_profile, args.probe_budget, args.probe_modules)
+                report["coordination"].update(probe_names=names, probe_elements=sum(parameter.numel() for parameter in gradient_probes),
+                                              gradient_scope="all_trainable_parameters" if args.taskforce_profile == "paper" else "sampled_parameters")
             for handle in handles:
                 handle.remove()
             handles = [] if standalone else configure_boundaries(model, args.method, args.setting, args.cut_extraction)
@@ -1009,6 +1020,8 @@ def train(args):
                             indices, before = parameter_probe(parameter)
                             probes[module] = (parameter, indices, before, name)
                     optimizer.step()
+                    if policy_record is not None and hasattr(team, "after_model_step"):
+                        policy_record = team.after_model_step()
                     if gradient_record is not None:
                         record_warmup_update(model, warmup, gradient_record)
                     observed = {module: {"tensor": name, "sampled_elements": len(indices),
@@ -1126,7 +1139,9 @@ def parser():
     result.add_argument("--gpu", type=int, default=0)
     result.add_argument("--threads", type=int, default=2)
     result.add_argument("--coordination", choices=("none", "taskforce"), default="none")
-    result.add_argument("--coordination-batch-size", type=int, default=4)
+    result.add_argument("--coordination-batch-size", type=int, default=64)
+    result.add_argument("--taskforce-profile", choices=("paper", "legacy"), default="paper")
+    result.add_argument("--taskforce-gradient-normalization", choices=("l2", "none"), default="l2")
     result.add_argument("--probe-budget", type=int, default=50000)
     result.add_argument("--probe-modules", nargs="+")
     result.add_argument("--verify-gradients", action="store_true")

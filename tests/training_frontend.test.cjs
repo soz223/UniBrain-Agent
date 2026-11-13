@@ -25,6 +25,14 @@ test('history keeps a bounded moving window without reindexing step numbers',()=
   assert.equal(rows.length,128);assert.equal(rows[0].step,172);
 });
 
+test('core and legacy records retain their actual coefficient and replay semantics',()=>{
+  const core=context.trainingPolicyDescription({profile:'paper_core',gradient_normalization:'l2'});
+  assert.match(core.formula,/‖∇L/);assert.match(core.scope,/Every trainable/);assert.equal(core.action,'a');
+  const legacy=context.trainingPolicyDescription({weights:{extraction:1}});
+  assert.match(legacy.formula,/base coefficient/);assert.match(legacy.label,/LEGACY/);assert.equal(legacy.action,'w');
+  assert.match(context.trainingPolicyDescription(null).scope,/await/);
+});
+
 function assistantPage(hash) {
   const nodes=new Map(),listeners={};let resolveBackend;
   const node=id=>{if(!nodes.has(id))nodes.set(id,{id,hidden:false,innerHTML:'',dataset:{},classList:{toggle(){}},addEventListener(){},scrollIntoView(){},setAttribute(){}});return nodes.get(id);};

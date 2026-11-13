@@ -4,11 +4,22 @@ const trainingTasks = ['extraction','registration','segmentation','classificatio
 const trainingColors = ['#a6d8c7','#9dbfe5','#dfc08d','#c7b0e8'];
 const trainingPhases = {
   observe:'Each actor receives its own training loss and one row of the gradient Gram matrix. Shared parameters reveal how tasks interact.',
-  act:'Four actor logits become policy shares through one softmax. These shares scale the UniBrain base coefficients for this update.',
+  act:'Four actor logits become policy shares through one softmax. The recorded profile determines the coefficients applied to the model losses.',
   backward:'The weighted task losses backpropagate into connected UniBrain modules. Arrows show computational paths, not gradient vectors in physical space.',
   learn:'On the next training sample, loss improvement and the previous mixed gradient produce a shared reward. Replay trains four actors and four centralized critics.'
 };
 const trainingState = {packet:null, latestPacket:null, current:null, selected:null, task:'classification', phase:'observe', follow:true, playing:false, timer:null, poll:null, source:'current', generation:0, error:null};
+
+function trainingPolicyDescription(policy) {
+  if(!policy)return {label:'TASKFORCE · COOPERATIVE ACTOR CRITIC',formula:'The backend records the applied coefficient rule.',
+    scope:'Gradient measurements await a recorded update.',method:'Select a recorded update to inspect its coordinator profile.',action:'a'};
+  if(policy.profile==='paper_core')return {label:'TASKFORCE CORE · FULL GRADIENTS',
+    formula:policy.gradient_normalization==='none'?'w = softmax(a) · Applied λ = w.':'w = softmax(a) · Applied λⱼ = wⱼ / ‖∇Lⱼ‖₂. Zero norms use scale 1.',
+    scope:'Every trainable parameter is included. '+(policy.gradient_normalization==='none'?'Raw gradient Gram matrix.':'L2 normalized gradient Gram matrix.'),
+    method:'TaskForce core profile: local actors, centralized critics, raw action replay, shared loss and gradient reward, OU exploration, and policy learning after the model update. Normalization choices are recorded in the run.',action:'a'};
+  return {label:'TASKFORCE INSPIRED · LEGACY PROFILE',formula:'w = softmax(a) · Applied λ = T × w × base coefficient.',
+    scope:'Sampled, base-weighted parameter gradients.',method:'Legacy profile: sampled parameter gradients, UniBrain base coefficients, normalized action replay and policy learning before the next model update. This run was not upgraded to the core profile.',action:'w'};
+}
 
 function trainingNumber(value, digits=3) {
   if(typeof value !== 'number' || !Number.isFinite(value))return 'N/A';
@@ -89,7 +100,7 @@ function renderTrainingMatrix(policy) {
     });
   });
   byId('trainingMatrix').innerHTML=html+'</div>';
-  byId('trainingMatrixNote').textContent='Sampled, base-weighted parameter gradients. Green: aligned. Coral: opposing. N/A: unavailable or zero norm. A near-zero cosine can reflect disjoint parameters.';
+  byId('trainingMatrixNote').textContent=trainingPolicyDescription(policy).scope+' Green: aligned. Coral: opposing. N/A: unavailable or zero norm. A near-zero cosine can reflect disjoint parameters.';
 }
 
 function renderTrainingWeights(frames, selected) {
@@ -116,14 +127,14 @@ function renderTrainingAgent(policy) {
   byId('trainingAgentDetail').innerHTML='<div class="agent-inside"><div><h3>Local observation o'+(i+1)+'</h3><p>Gram row '+(i+1)+' + own loss. The actor receives a normalized Gram row and log(1 + loss).</p><div class="observation-vector">'+(observation||[null,null,null,null,null]).map(value=>'<span>'+trainingNumber(value)+'</span>').join('')+'</div><p>'+(observation?'Recorded actor input.':'Normalized input was not logged in this run. Raw Gram row is shown below.')+'</p><div class="observation-vector">'+(gram||[null,null,null,null]).map(value=>'<span>'+trainingNumber(value)+'</span>').join('')+'</div></div><div><h3>Actor '+(i+1)+' ↔ centralized critic '+(i+1)+'</h3><p>Actor output a: '+trainingNumber(policy?.action_logits?.[task])+'<br>Policy share w: '+trainingNumber(policy?.actions?.[task])+'<br>Applied coefficient λ: '+trainingNumber(policy?.weights?.[task])+'</p><p>Critic input: all four observations + joint action.<br>Critic TD loss: '+trainingNumber(policy?.critic_td_losses?.[task])+'<br>Policy updates: '+trainingNumber(policy?.policy_updates,0)+'</p></div></div><p class="disclosure-note">Each critic receives the same shared reward. Target networks are softly updated after replay learning. N/A indicates a field absent from this record.</p>';
 }
 
-function trainingCritics() {
+function trainingCritics(policy) {
   let svg='<svg viewBox="0 0 900 170" role="img" aria-label="Joint replay feeds four centralized critics, each training its own actor"><defs><marker id="criticArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10Z" fill="#a995c1"/></marker></defs>';
   for(let i=0;i<4;i++){
     const x=112+i*225;
     svg+='<path class="critic-path" d="M'+x+' 0 V22 H450 V40"/><path class="critic-path" marker-end="url(#criticArrow)" d="M450 74 V92 H'+x+' V112"/>';
     svg+='<path class="critic-path critic-feedback" marker-end="url(#criticArrow)" d="M'+(x+68)+' 132 C'+(x+112)+' 132 '+(x+108)+' 25 '+(x+65)+' 5"/><rect x="'+(x-68)+'" y="112" width="136" height="42" rx="9" fill="#26232d" stroke="#645773"/><text class="critic-title" x="'+x+'" y="130" text-anchor="middle">Critic '+(i+1)+' · Q'+(i+1)+'</text><text x="'+x+'" y="145" text-anchor="middle">All observations + actions</text>';
   }
-  svg+='<rect x="273" y="40" width="354" height="34" rx="9" fill="#272c2c" stroke="#50635b"/><text x="450" y="61" text-anchor="middle">Shared replay (o, w, R, o′) · next training sample</text><text x="450" y="168" text-anchor="middle">Each critic trains its corresponding actor · dotted return = policy update</text></svg>';
+  svg+='<rect x="273" y="40" width="354" height="34" rx="9" fill="#272c2c" stroke="#50635b"/><text x="450" y="61" text-anchor="middle">Shared replay (O, '+trainingPolicyDescription(policy).action+', R, O′) · next training sample</text><text x="450" y="168" text-anchor="middle">Each critic trains its corresponding actor · dotted return = policy update</text></svg>';
   return svg;
 }
 
@@ -132,6 +143,10 @@ function renderTraining() {
   const packet=trainingState.packet,frames=trainingFrames(packet),row=trainingSelected(frames,trainingState.selected,trainingState.follow);
   trainingState.selected=row?.step??null;
   const policy=row?.gradient_policy,objective=row?.objective||(!frames.length?appConfig.objective:null);
+  const description=trainingPolicyDescription(policy);
+  byId('trainingProfile').textContent=description.label;
+  byId('trainingWeightRule').textContent=description.formula;
+  byId('trainingMethodScope').textContent=description.method;
   byId('trainingMode').textContent=policy?'Recorded policy decision':row?'Model update · no policy record':'Schematic · no recorded updates';
   byId('trainingGraph').innerHTML=trainingDiagram(objective,trainingState.task);
   byId('trainingActors').innerHTML=trainingTasks.map((task,i)=>{
@@ -139,7 +154,7 @@ function renderTraining() {
     return '<button class="training-actor" data-training-task="'+task+'" aria-pressed="'+(task===trainingState.task)+'" style="--task-color:'+trainingColors[i]+'"><span class="actor-label">ACTOR '+(i+1)+'</span><strong>'+titleCase(task)+'</strong><span class="actor-io">Gram row + L → a → w</span><span class="actor-values"><span>L '+trainingNumber(loss)+'</span><span>w '+trainingNumber(share)+'</span></span><span class="actor-bar"><i style="width:'+(Number.isFinite(share)?Math.max(0,Math.min(100,share*100)):0)+'%"></i></span></button>';
   }).join('');
   byId('trainingActors').querySelectorAll('button').forEach(button=>button.onclick=()=>{trainingState.task=button.dataset.trainingTask;renderTraining();});
-  byId('trainingCritics').innerHTML=trainingCritics();
+  byId('trainingCritics').innerHTML=trainingCritics(policy);
   const reward=policy?.reward_terms;
   byId('trainingCooperation').innerHTML='<article><span class="source-tag">JOINT ACTION</span><strong>G = Σ λⱼ ∇Lⱼ</strong><small>4 actors → softmax → 1 model update<br>Training loss: '+trainingNumber(row?.total_loss??row?.weighted_loss)+'</small></article><article><span class="source-tag">SHARED REWARD · PREVIOUS TRANSITION</span><strong>R '+trainingNumber(policy?.reward)+'</strong><small>Loss improvement: '+trainingNumber(reward?.training_loss_improvement)+'<br>Gradient penalty: '+trainingNumber(reward?.gradient_norm_penalty)+'</small></article><article><span class="source-tag">REPLAY → 4 CENTRALIZED CRITICS</span><strong>'+trainingNumber(policy?.policy_updates,0)+' policy updates</strong><small>Replay: '+trainingNumber(policy?.replay_size,0)+' transitions<br>Actor / critic steps: '+trainingNumber(policy?.actor_optimizer_steps,0)+' / '+trainingNumber(policy?.critic_optimizer_steps,0)+'</small></article>';
   byId('trainingStep').disabled=!frames.length;byId('trainingStep').max=Math.max(0,frames.length-1);byId('trainingStep').value=Math.max(0,frames.indexOf(row));

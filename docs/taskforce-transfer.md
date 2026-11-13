@@ -4,9 +4,11 @@ TaskForce is a cooperative reinforcement learning controller for multitask optim
 
 ## Source audit
 
-The CVPR 2026 paper, Figure 1, Sections 4.1 and 4.2, equations 5 through 13 and Algorithm 1 define the mechanism used here. The paper has been read from the supplied PDF. On November 12, 2026, checks of the CVF page, first author's publication page, lab publication page and public GitHub repository search did not identify a verified official TaskForce code repository. No unrelated repository was substituted. The current controller is our implementation of the mechanism.
+The CVPR 2026 paper, Figure 1, Sections 4.1 and 4.2, equations 5 through 13 and Algorithm 1 define the mechanism used here. The supplied paper and official supplement have been read. Appendix A identifies five core components; Appendix B provides the policy configuration. On November 12, 2026, checks of the CVF page, first author's publication page, lab publication page and public GitHub repository search did not identify a verified official TaskForce code repository. The controller is our implementation of the published method.
 
 Sources: [CVF paper](https://openaccess.thecvf.com/content/CVPR2026/html/Choi_TaskForce_Cooperative_Multi-agent_Reinforcement_Learning_for_Multi-task_Optimization_CVPR_2026_paper.html), [first author](https://wonhyeok-choi.github.io/), [author GitHub](https://github.com/wonhyeok-choi), [lab publications](https://sunghoonim.github.io/publications.html).
+
+Official [supplement](https://openaccess.thecvf.com/content/CVPR2026/supplemental/Choi_TaskForce_Cooperative_Multi-agent_CVPR_2026_supplemental.pdf). The complete component audit and implementation choices are in [TaskForce core audit](taskforce-core-audit.md).
 
 ## Mechanism
 
@@ -19,11 +21,13 @@ Sources: [CVF paper](https://openaccess.thecvf.com/content/CVPR2026/html/Choi_Ta
 | Learn policies | Off policy replay; one centralized critic per actor; target networks | Four critics see all observations and actions; replay, optimizers, targets and RNG state are checkpointed |
 | Inference | Use the optimized model | The trained UniBrain checkpoint operates without querying the gradient policy |
 
-The current controller uses parameter probes rather than every model gradient. It normalizes each Gram row by the mean diagonal, applies log1p to losses, clips observations and normalizes the gradient reward term. Effective coefficients are `T * softmax(logits) * base_weight`, retaining UniBrain's base coefficients. The critics receive normalized shares `w` rather than raw logits `a`. Replay learning runs when the next observation completes the preceding transition, before selecting the next action; Algorithm 1 places policy learning after the model update. These adaptation choices differ from the paper's stated formulation. The interface labels this implementation as TaskForce inspired.
+New runs default to `--taskforce-profile paper`. The controller observes gradients over every trainable model parameter, produces softmax task shares, stores raw action logits in replay, and learns after the model optimizer step. L2 normalization gives an applied loss coefficient `w / gradient_norm`, so backward equals the convex combination of normalized task gradients. Original module definitions and task losses remain unchanged. UniBrain's original coefficients are recorded separately and are not multiplied into the policy shares.
+
+The earlier `legacy` profile remains available for explicit historical comparisons. It samples parameter tensors, scales shares by `T * base_weight`, stores normalized shares in replay, and learns before the next action. Active legacy runs retain their immutable code and checkpoints. Loss, gradient and reward normalization are also present in the original TaskForce supplement; normalization itself is not a distinction introduced by UniBrain Agent.
 
 ## Training workspace
 
-The view distinguishes forward computation, observed autograd paths and policy learning. Autograd paths indicate connectivity; the probe Gram matrix indicates gradient relationships on sampled parameters. Neither proves full model conflict removal or convergence. Arrow motion illustrates message or computation flow and does not encode the direction of a gradient in anatomical space.
+The view distinguishes forward computation, observed autograd paths and policy learning. Each record determines its profile label, gradient scope, replay action and coefficient formula. Legacy records retain their sampled-gradient interpretation. Neither a Gram matrix nor an autograd path proves conflict removal or convergence. Arrow motion illustrates computation flow and does not encode the direction of a gradient in anatomical space.
 
 The controller records task losses, Gram and cosine matrices, policy shares, applied coefficients, shared reward components, replay size and optimizer update counters. New runs also record normalized actor inputs, exploratory logits and critic TD losses. Existing records retain N/A for fields they never logged. A replay slider selects actual recorded updates. Policy shares and effective coefficients have separate chart modes.
 

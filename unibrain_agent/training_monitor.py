@@ -30,14 +30,23 @@ def policy_record(value):
     if not isinstance(value, dict):
         return None
     result = {key: numeric_map(value.get(key, {})) for key in
-              ('weights', 'task_losses', 'base_weights', 'actions', 'gradient_norms', 'action_logits', 'actor_objectives', 'critic_td_losses')}
-    for key in ('gram', 'cosine_similarity'):
+              ('weights', 'task_losses', 'base_weights', 'actions', 'gradient_norms', 'raw_gradient_norms', 'gradient_scales',
+               'action_logits', 'actor_objectives', 'critic_td_losses')}
+    for key in ('gram', 'raw_gram', 'cosine_similarity'):
         result[key] = matrix(value.get(key))
     result.update({key: number(value.get(key)) for key in
-                   ('reward', 'policy_updates', 'actor_optimizer_steps', 'critic_optimizer_steps', 'replay_size')})
+                   ('reward', 'policy_updates', 'actor_optimizer_steps', 'critic_optimizer_steps', 'replay_size',
+                    'model_steps', 'noise_scale', 'gradient_parameter_tensors', 'gradient_parameter_elements')})
     result['reward_terms'] = numeric_map(value.get('reward_terms'),
                                        ('training_loss_improvement', 'gradient_norm_penalty', 'gradient_penalty_weight'))
-    result['gradient_scope'] = 'recorded_probe_parameters'
+    choices = {'profile': ('paper_core',), 'gradient_scope': ('all_trainable_parameters', 'recorded_probe_parameters'),
+               'gradient_normalization': ('l2', 'none'), 'critic_action_space': ('raw_logits',),
+               'update_order': ('model_then_policy',), 'noise_type': ('ornstein_uhlenbeck',),
+               'weight_rule': ('softmax_div_gradient_scale',)}
+    for key, allowed in choices.items():
+        result[key] = value.get(key) if value.get(key) in allowed else None
+    result['gradient_scope'] = result['gradient_scope'] or 'recorded_probe_parameters'
+    result['model_step_completed'] = value.get('model_step_completed') is True
     result['validation_used'] = False if (value.get('reward_terms') or {}).get('validation_used') is False else None
     observations = value.get('observations')
     if isinstance(observations, dict):

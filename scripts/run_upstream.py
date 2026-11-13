@@ -93,6 +93,8 @@ def main():
     parser.add_argument("--telemetry", action="store_true")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--gradient-policy", action="store_true")
+    parser.add_argument("--taskforce-profile", choices=("paper", "legacy"), default="paper")
+    parser.add_argument("--coordination-batch-size", type=int, default=64)
     args = parser.parse_args()
     source = args.source.resolve()
     if args.epochs < 2:
@@ -210,6 +212,8 @@ def main():
                   for name, parameter in model.named_parameters() if parameter.grad is not None}
         norms = [float(parameter.grad.norm()) for parameter in model.parameters() if parameter.grad is not None]
         result = original_step(optimizer, *values, **options)
+        if policy_step is not None and hasattr(team, "after_model_step"):
+            policy_step.update(team.after_model_step())
         changed = [name for name, parameter in model.named_parameters() if name in before and
                    not torch.equal(before[name], parameter.detach().flatten()[::max(1, parameter.numel() // 32)][:32])]
         update = {"step": record["update_count"] + 1, "seconds": round(time.perf_counter() - started, 3),
@@ -246,10 +250,12 @@ def main():
         model = bound.arguments["model_name"]
         model_parameter_ids = {id(parameter) for parameter in model.parameters()}
         if args.gradient_policy:
-            from unibrain_agent.taskforce import GradientTeam, select_probes
-            team = GradientTeam((bound.arguments["lambda_ext"], bound.arguments["lambda_reg"],
-                                 bound.arguments["lambda_seg"], bound.arguments["lambda_cls"]))
-            policy_parameters, probe_names = select_probes(model)
+            from unibrain_agent.taskforce_paper import make_team, policy_parameters as select_parameters
+            team = make_team((bound.arguments["lambda_ext"], bound.arguments["lambda_reg"],
+                              bound.arguments["lambda_seg"], bound.arguments["lambda_cls"]),
+                             profile=args.taskforce_profile, batch_size=args.coordination_batch_size)
+            policy_parameters, probe_names = select_parameters(model, args.taskforce_profile)
+            record["taskforce_profile"] = args.taskforce_profile
             record["gradient_probes"] = {"parameter_tensors": len(policy_parameters),
                                          "parameter_values": sum(parameter.numel() for parameter in policy_parameters),
                                          "modules": sorted({name.split(".")[0] for name in probe_names})}

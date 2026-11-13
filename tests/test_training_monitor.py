@@ -43,6 +43,18 @@ def check_mirror_preserves_source_timestamp_and_relative_config(tmp_path):
 
 
 class TrainingMonitorTests(unittest.TestCase):
+    def test_core_profile_preserves_measurement_and_weight_semantics(self):
+        from unibrain_agent.training_monitor import policy_record
+        record = policy_record({'profile': 'paper_core', 'gradient_scope': 'all_trainable_parameters',
+                                'gradient_normalization': 'l2', 'critic_action_space': 'raw_logits',
+                                'weight_rule': 'softmax_div_gradient_scale', 'model_step_completed': True,
+                                'gradient_parameter_elements': 300000000, 'gradient_scales': {'extraction': 5.},
+                                'private': 'credential'})
+        self.assertEqual(record['gradient_scope'], 'all_trainable_parameters')
+        self.assertEqual(record['gradient_scales']['extraction'], 5.)
+        self.assertTrue(record['model_step_completed'])
+        self.assertNotIn('credential', json.dumps(record))
+
     def test_paper_profile_has_correct_atlas_and_segmentation_routes(self):
         from unibrain_agent.training_monitor import paper_layout
         result = paper_layout({'stages':[{'id':'parcellation','method':'Nearest atlas transfer'}]})

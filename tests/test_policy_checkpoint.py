@@ -8,12 +8,13 @@ import torch
 
 from unibrain_agent.policy_checkpoint import inspect_policy, source_digest
 from unibrain_agent.taskforce import GradientTeam, TASKS
+from unibrain_agent.taskforce_paper import PaperTaskForce
 
 
 class PolicyCheckpointTests(unittest.TestCase):
-    def fixture(self, root):
+    def fixture(self, root, paper=False):
         seed, batch = 19, 2
-        team = GradientTeam(seed=seed, batch_size=batch)
+        team = (PaperTaskForce if paper else GradientTeam)(seed=seed, batch_size=batch)
         parameter = torch.nn.Parameter(torch.tensor([.2, .3, .4, .5]))
         optimizer = torch.optim.SGD([parameter], lr=.01)
         for step in range(5):
@@ -22,10 +23,16 @@ class PolicyCheckpointTests(unittest.TestCase):
             loss, _ = team.combine(losses, [parameter])
             loss.backward()
             optimizer.step()
+            if paper:
+                team.after_model_step()
         config = {"seed": seed, "coordination_batch_size": batch, "coordination": "taskforce",
                   "method": "synthstrip", "setting": "joint", "dataset": "fixture", "fold": 1}
+        if paper:
+            config.update(taskforce_profile="paper", taskforce_gradient_normalization="l2")
         state = {"checkpoint_kind": "resume", "coordination": team.state_dict(), "progress": {"steps": 5, "pretrain_steps": 0},
                  "identity": {**config, "implementation_hashes": {"taskforce.py": source_digest()}}}
+        if paper:
+            state["identity"]["implementation_hashes"]["taskforce_paper.py"] = source_digest("taskforce_paper.py")
         report = {"status": "complete", "config": config, "seed": seed, "method": "synthstrip", "setting": "joint", "steps": 5,
                   "coordination": {"mode": "taskforce", "base_weights": dict(zip(TASKS, team.base)), "policy_updates": team.updates,
                                    "actor_optimizer_steps": 4 * team.updates, "critic_optimizer_steps": 4 * team.updates,
@@ -34,6 +41,17 @@ class PolicyCheckpointTests(unittest.TestCase):
         torch.save(state, checkpoint)
         report_path.write_text(json.dumps(report), encoding="utf-8")
         return checkpoint, report_path, state, report
+
+    def test_core_checkpoint_proves_model_then_policy_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint, report, state, _ = self.fixture(Path(directory), paper=True)
+            result = inspect_policy(checkpoint, report)
+            self.assertEqual(result['profile'], 'paper')
+            self.assertEqual(result['policy_updates'], 3)
+            state['coordination']['pending_model_step'] = True
+            torch.save(state, checkpoint)
+            with self.assertRaisesRegex(ValueError, 'completed model updates'):
+                inspect_policy(checkpoint, report)
 
     def test_real_policy_updates_change_each_actor_and_critic(self):
         with tempfile.TemporaryDirectory() as directory:
