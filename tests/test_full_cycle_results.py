@@ -47,6 +47,16 @@ class FullCycleResultTests(unittest.TestCase):
             args, splits, audit, record = self.fixture(Path(directory))
             validate_full_training(record, args, splits, audit)
 
+    def test_legacy_diagnostics_are_optional_but_reported_values_are_checked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args, splits, audit, record = self.fixture(Path(directory))
+            for name in ('probability_mean', 'probability_std', 'predicted_positive_fraction', 'label_positive_fraction'):
+                record['test']['metrics'].pop(name)
+            validate_full_training(record, args, splits, audit)
+            record['test']['metrics']['probability_std'] = .99
+            with self.assertRaisesRegex(ValueError, 'aggregate metric'):
+                validate_full_training(record, args, splits, audit)
+
     def test_other_subject_ids_and_wrong_labels_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             args, splits, audit, record = self.fixture(Path(directory))

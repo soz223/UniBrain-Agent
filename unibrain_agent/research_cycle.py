@@ -153,6 +153,8 @@ def validate_full_training(report, args, split_sizes, data_audit):
                     raise ValueError("Test classification losses must be nonnegative")
         recomputed = metrics_from_cases(cases)
         for name, value in recomputed.items():
+            if name in ("probability_mean", "probability_std", "predicted_positive_fraction", "label_positive_fraction") and name not in result["metrics"]:
+                continue
             observed = result["metrics"].get(name)
             if value is None:
                 valid = observed is None
