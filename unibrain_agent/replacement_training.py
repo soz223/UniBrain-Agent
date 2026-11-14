@@ -1201,7 +1201,7 @@ def _train(args, budget):
                         losses = original_losses(output, brain, label)
                         losses["registration"] = GCC()(output[2][-1], templates[0])
                         if stability:
-                            check_training_loss(losses["classification"])
+                            check_training_loss(losses["classification"], progress.setdefault("classification_health", {}))
                         new_loss = {"synthstrip": "extraction", "voxelmorph": "registration", "lapirn": "registration", "nnunet": "segmentation"}.get(args.method)
                         weights = dict(base_weights)
                         if getattr(model, "learned_parcellation", False):

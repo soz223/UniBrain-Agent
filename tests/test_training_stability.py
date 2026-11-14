@@ -62,7 +62,12 @@ assert s["optimizer"]["param_groups"][0]["lr"] == 5e-7
 
     def test_collapse_and_underflow_trigger_diagnosis(self):
         with self.assertRaisesRegex(ValueError, "Stability guard"):
-            check_training_loss(torch.tensor(132.3))
+            check_training_loss(torch.tensor(132.3), {"loss_window": [132.3] * 15})
+        state = {}
+        check_training_loss(torch.tensor(132.3), state)
+        for _ in range(31):
+            check_training_loss(torch.tensor(.5), state)
+        self.assertLess(sum(state["loss_window"]) / 32, 5)
         self.assertFalse(stable_probe({"classification_loss": .69, "predicted_positive_fraction": 0.}))
         self.assertTrue(stable_probe({"classification_loss": 1., "predicted_positive_fraction": .5}))
         with tempfile.TemporaryDirectory() as root:

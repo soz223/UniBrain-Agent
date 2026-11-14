@@ -141,8 +141,9 @@ The previously failed run remains a separate artifact.
 The initial rollback checkpoint must pass a fixed training-only probe. A new
 `stable.pt` is saved after each epoch only when training-probe classification loss
 is below five and predicted-positive fraction is between .05 and .95. These are
-collapse screening thresholds, not evidence of convergence. A sample loss above
-30 is rejected before its optimizer update. These thresholds may require further
+collapse screening thresholds, not evidence of convergence. A rolling training loss above
+20 over at least 16 samples is rejected before the next optimizer update. The
+window retains at most 32 samples, allowing individual difficult subjects. These thresholds may require further
 validation on other datasets.
 
 With `stability_recovery: true`, the supervisor recognizes persistent underflow

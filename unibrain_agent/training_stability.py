@@ -32,9 +32,14 @@ def upgrade_identity(previous, current):
         raise ValueError("Stability migration cannot change data, model or unrelated configuration")
 
 
-def check_training_loss(loss):
+def check_training_loss(loss, state):
     value = float(loss.detach())
-    if not math.isfinite(value) or value > 30:
+    if not math.isfinite(value):
+        raise ValueError("Stability guard: nonfinite training classification loss")
+    window = state.setdefault("loss_window", [])
+    window.append(value)
+    del window[:-32]
+    if len(window) >= 16 and sum(window) / len(window) > 20:
         raise ValueError("Stability guard: excessive training classification loss")
 
 
@@ -59,6 +64,7 @@ def recover(source, destination, attempt):
     for group, rate in zip(state["optimizer"]["param_groups"], rates):
         group["lr"] = rate
     state["progress"]["gradient_health"] = {}
+    state["progress"]["classification_health"] = {}
     state["progress"]["stability_recovery"] = {"attempt": attempt, "learning_rates": rates}
     state["coordination"].update(replay=[], previous=None, pending_model_step=False)
     temp = destination.with_suffix(".tmp")
