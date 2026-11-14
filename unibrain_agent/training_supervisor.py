@@ -200,7 +200,9 @@ def supervise(spec):
                                              str(folder / "stable.pt"), str(destination), str(attempt)],
                                             cwd=spec["cwd"], capture_output=True, text=True, timeout=300)
                     if repair.returncode == 0:
-                        state.update(stability_recoveries=attempt, resume_path=str(destination), consecutive_restarts=0)
+                        from .training_stability import install_recovery
+                        install_recovery(destination, folder, attempt)
+                        state.update(stability_recoveries=attempt, resume_path=str(folder / "last.pt"), consecutive_restarts=0)
                         reason = "training_checkpoint_rollback_with_reduced_learning_rate"
                         event("stability_recovery_prepared", attempt=attempt, details=repair.stdout.strip())
                     else:

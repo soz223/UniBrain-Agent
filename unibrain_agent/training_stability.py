@@ -3,6 +3,9 @@
 import argparse
 import copy
 import math
+import os
+import shutil
+import uuid
 from pathlib import Path
 
 
@@ -12,6 +15,25 @@ PREVIOUS_TRAINERS = {
 }
 PREVIOUS_POLICY = "9b6cd71300eb294cd15ceaf58fdbb3294610c26da28db71b7671ead264d1f781"
 PREVIOUS_CONTROL = "84ee53065fc03eb0bc6cb34e8ca02913b3b02b07eb811da1ea1b5ccf313d6d71"
+
+
+def retained_copy(source, destination):
+    temporary = destination.with_name(destination.name + "." + uuid.uuid4().hex + ".tmp")
+    try:
+        os.link(source, temporary)
+    except OSError:
+        shutil.copy2(source, temporary)
+    temporary.replace(destination)
+
+
+def install_recovery(checkpoint, folder, attempt):
+    for name in ("last.pt", "best.pt"):
+        path = folder / name
+        if path.exists():
+            retained_copy(path, folder / ("before_recovery_" + str(attempt) + "_" + name))
+    retained_copy(checkpoint, folder / "last.pt")
+    if (folder / "stable_best.pt").exists():
+        retained_copy(folder / "stable_best.pt", folder / "best.pt")
 
 
 def upgrade_identity(previous, current):

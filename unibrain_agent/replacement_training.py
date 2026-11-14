@@ -973,7 +973,7 @@ def _train(args, budget):
     from .taskforce_paper import make_team, policy_parameters
     from .training_control import normalize_template, training_probe_indices
 
-    from .training_stability import check_training_loss, stable_probe, upgrade_identity
+    from .training_stability import check_training_loss, stable_probe, upgrade_identity, retained_copy
 
     if args.resume_stability_upgrade and (not args.resume or args.taskforce_gradient_normalization != "bounded_l2" or args.coordination != "taskforce" or args.taskforce_action_bound is None or not args.verify_gradients):
         raise ValueError("Stability migration requires a verified bounded TaskForce continuation")
@@ -1162,6 +1162,8 @@ def _train(args, budget):
                 if state["checkpoint_kind"] == "resume":
                     state["report_state"] = capture_report_state(report, args.output, progress, previous_seconds + time.monotonic() - started)
                 result = write_checkpoint(path, state, previous_weights)
+                if path.name == "stable.pt" and (args.output / "best.pt").exists():
+                    retained_copy(args.output / "best.pt", args.output / "stable_best.pt")
                 report["checkpoint_policy"]["hardlinked_saves"] += int(result == "hardlink")
                 if args.checkpoint_mode == "weights":
                     previous_weights = {"path": path, "progress": dict(progress), "identity": identity}
@@ -1323,7 +1325,6 @@ def _train(args, budget):
                     if stability and row.get("training_probe"):
                         if not stable_probe(row["training_probe"]):
                             raise ValueError("Stability guard: training probe classification collapse")
-                        checkpoint(args.output / "stable.pt")
                     if loss < progress["best_loss"]:
                         progress.update(best_loss=loss, best_value=loss, best_epoch=epoch + 1, selection_metric=args.selection_metric)
                         report["selection"].update(best_epoch=epoch + 1, best_value=loss)
@@ -1332,6 +1333,8 @@ def _train(args, budget):
                         checkpoint(args.output / "best.pt")
                     else:
                         progress["bad_epochs"] += 1
+                if stability and not standalone:
+                    checkpoint(args.output / "stable.pt")
                 stopped = not standalone and args.patience and progress["bad_epochs"] >= args.patience
                 if stopped:
                     progress.update(phase=len(phases), epoch=0, position=0)
