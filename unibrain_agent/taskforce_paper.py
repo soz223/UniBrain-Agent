@@ -46,7 +46,7 @@ class BoundedActor(nn.Sequential):
 
 class PaperTaskForce(GradientTeam):
     def __init__(self, seed=17, batch_size=64, normalization='l2', action_bound=None):
-        if normalization not in ('l2', 'none') or not 1 <= batch_size <= 100000:
+        if normalization not in ('l2', 'bounded_l2', 'none') or not 1 <= batch_size <= 100000:
             raise ValueError('Invalid TaskForce normalization or replay batch')
         if action_bound is not None and (not math.isfinite(action_bound) or action_bound <= 0):
             raise ValueError('Action bound must be finite and positive')
@@ -77,6 +77,8 @@ class PaperTaskForce(GradientTeam):
         self.raw_gram = full_gradient_gram(losses, parameters)
         norms = self.raw_gram.diag().clamp_min(0).sqrt()
         self.scales = torch.where(norms > 1e-12, norms, torch.ones_like(norms)) if self.normalization == 'l2' else torch.ones_like(norms)
+        if self.normalization == 'bounded_l2':
+            self.scales = norms.clamp_min(1.)
         gram = self.raw_gram / (self.scales[:, None] * self.scales[None, :])
         values = torch.tensor([float(losses[task].detach()) for task in TASKS])
         if not torch.isfinite(values).all() or (values < 0).any():
@@ -182,6 +184,8 @@ class PaperTaskForce(GradientTeam):
             error = (self.critics[i](torch.cat((flat, actions), dim=1)) - target).square().mean()
             self.critic_optimizers[i].zero_grad()
             error.backward()
+            if self.normalization == 'bounded_l2':
+                torch.nn.utils.clip_grad_norm_(self.critics[i].parameters(), 1., error_if_nonfinite=True)
             self.critic_optimizers[i].step()
             candidate = joint_actions.clone()
             candidate[:, i:i+1] = self.actors[i](states[:, i])
@@ -189,6 +193,8 @@ class PaperTaskForce(GradientTeam):
             objective = -self.critics[i](torch.cat((flat, candidate), dim=1)).mean()
             self.actor_optimizers[i].zero_grad()
             objective.backward()
+            if self.normalization == 'bounded_l2':
+                torch.nn.utils.clip_grad_norm_(self.actors[i].parameters(), 1., error_if_nonfinite=True)
             self.actor_optimizers[i].step()
             self.critics[i].requires_grad_(True)
             self.learning_stats['critic_td_losses'][task] = float(error.detach())

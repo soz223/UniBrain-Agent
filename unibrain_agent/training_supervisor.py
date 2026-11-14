@@ -71,7 +71,8 @@ def diagnose(folder, report, targets, code=None, stalled=False):
     if len(history) >= 5 and all(row.get("validation", {}).get("auc", 1) <= .55 for row in history[-5:]):
         warnings.append("five_validation_epochs_near_chance")
     error = str(report.get("error", ""))
-    kind = ("gradient_path_failure" if "gradient" in error.lower() else "out_of_memory" if "out of memory" in error.lower()
+    kind = ("training_instability" if any(term in error.lower() for term in ("stability guard", "numerical underflow", "nonfinite taskforce"))
+            else "gradient_path_failure" if "gradient" in error.lower() else "out_of_memory" if "out of memory" in error.lower()
             else "worker_stall" if stalled else "worker_killed" if code == -9 else "worker_error" if error else "validation_review")
     result = {"updated_at": datetime.now(timezone.utc).isoformat(), "kind": kind, "step": report.get("steps"),
               "epoch": latest.get("epoch"), "warnings": warnings, "gradient_evidence": faults,
@@ -146,7 +147,7 @@ def supervise(spec):
             launch = worker_command(command, remaining)
             attempt_step = read_json(folder / "report.json").get("steps", 0)
             if state["restarts"]:
-                launch = option(launch, "--resume", folder / "last.pt")
+                launch = option(launch, "--resume", state.get("resume_path", folder / "last.pt"))
             with (folder / "supervised_worker.log").open("ab", buffering=0) as log:
                 child = subprocess.Popen(launch, cwd=spec["cwd"], env={**os.environ, **spec.get("environment", {})},
                                          stdout=log, stderr=subprocess.STDOUT)
@@ -190,6 +191,20 @@ def supervise(spec):
                 if report.get("steps", 0) >= attempt_step + 100:
                     state["consecutive_restarts"] = 0
                 failure_key = [report.get("steps"), report.get("error")]
+                if (diagnosis["kind"] == "training_instability" and spec.get("stability_recovery")
+                        and (folder / "stable.pt").is_file() and state.get("stability_recoveries", 0) < 3):
+                    attempt = state.get("stability_recoveries", 0) + 1
+                    destination = folder / ("recovery_" + str(attempt) + ".pt")
+                    event("stability_recovery_requested", attempt=attempt, error=report.get("error"))
+                    repair = subprocess.run([command[0], "-m", "unibrain_agent.training_stability",
+                                             str(folder / "stable.pt"), str(destination), str(attempt)],
+                                            cwd=spec["cwd"], capture_output=True, text=True, timeout=300)
+                    if repair.returncode == 0:
+                        state.update(stability_recoveries=attempt, resume_path=str(destination), consecutive_restarts=0)
+                        reason = "training_checkpoint_rollback_with_reduced_learning_rate"
+                        event("stability_recovery_prepared", attempt=attempt, details=repair.stdout.strip())
+                    else:
+                        event("stability_recovery_rejected", error=repair.stderr[-2000:])
                 if (reason is None and diagnosis["kind"] == "gradient_path_failure"
                         and diagnosis["checkpoint_available"] and state["consecutive_restarts"] == 0
                         and state.get("last_gradient_failure") != failure_key):

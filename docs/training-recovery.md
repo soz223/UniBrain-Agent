@@ -121,3 +121,36 @@ of replayed forever. Transient restart allowances reset after 100 new committed
 updates, and occupied GPUs are waited for. This is bounded recovery and active
 diagnosis, not unrestricted code rewriting or a guarantee of reaching a target
 AUC. Failed attempts and scientific checkpoints remain preserved.
+
+
+## Stabilized TaskForce continuation
+
+`--taskforce-gradient-normalization bounded_l2` is an explicit adaptation, not
+an unchanged TaskForce reproduction. It uses `max(gradient_norm, 1)` as each
+normalization scale, preventing tiny native gradients from receiving arbitrarily
+large coefficients. All tasks still have learned, positive softmax shares. Model,
+actor and critic gradient norms are clipped at one. Structural gradient checks
+and the persistent-underflow diagnostic remain enabled.
+
+`--resume-stability-upgrade` accepts only pinned prior trainers and the known
+coordinator implementation. Model weights, Adam moments, source and data identity
+are preserved. It reduces the model learning rate by ten, clears stale policy
+replay transitions and records the migration. It does not reset learned actors.
+The previously failed run remains a separate artifact.
+
+The initial rollback checkpoint must pass a fixed training-only probe. A new
+`stable.pt` is saved after each epoch only when training-probe classification loss
+is below five and predicted-positive fraction is between .05 and .95. These are
+collapse screening thresholds, not evidence of convergence. A sample loss above
+30 is rejected before its optimizer update. These thresholds may require further
+validation on other datasets.
+
+With `stability_recovery: true`, the supervisor recognizes persistent underflow
+and stability-guard failures, restores `stable.pt` and reduces the learning rate.
+Recovery attempts and artifacts are recorded separately. Three recoveries and a
+learning-rate floor of 1e-7 prevent an endless replay loop. Unknown structural
+failures remain visible. No test metrics or labels drive these decisions.
+
+Acceptance requires full-model updates and completed validation on an available
+GPU. CPU fault-injection tests verify the recovery mechanism only; they cannot
+establish full-model stability or target AUC.

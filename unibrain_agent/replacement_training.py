@@ -973,6 +973,12 @@ def _train(args, budget):
     from .taskforce_paper import make_team, policy_parameters
     from .training_control import normalize_template, training_probe_indices
 
+    from .training_stability import check_training_loss, stable_probe, upgrade_identity
+
+    if args.resume_stability_upgrade and (not args.resume or args.taskforce_gradient_normalization != "bounded_l2" or args.coordination != "taskforce" or args.taskforce_action_bound is None or not args.verify_gradients):
+        raise ValueError("Stability migration requires a verified bounded TaskForce continuation")
+    if args.taskforce_gradient_normalization == "bounded_l2" and (args.coordination != "taskforce" or args.taskforce_profile != "paper" or args.taskforce_action_bound is None or not args.verify_gradients or args.train_probe_size < 2):
+        raise ValueError("Stabilized coordination requires bounded actions, gradient checks and a training probe")
     audit = preflight(args)
     if args.preflight:
         return audit
@@ -1009,6 +1015,9 @@ def _train(args, budget):
     identity["source"] = audit["source"]
     if args.coordination == "taskforce" and args.taskforce_profile == "paper":
         identity["implementation_hashes"]["taskforce_paper.py"] = hashlib.sha256(Path(__file__).with_name("taskforce_paper.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    stability = args.coordination == "taskforce" and args.taskforce_gradient_normalization == "bounded_l2"
+    if stability:
+        identity["implementation_hashes"]["training_stability.py"] = hashlib.sha256(Path(__file__).with_name("training_stability.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     host_checkpoint = host_checkpoint_spec(args)
     if getattr(args, "paper_original", False):
         from .paper_original import build_paper_model
@@ -1058,7 +1067,16 @@ def _train(args, budget):
     if resumed:
         if resumed.get("checkpoint_kind") != "resume":
             raise ValueError("This is an evaluation checkpoint; resume requires the complete last.pt state")
-        migrated_selection = resume_identity_matches(resumed["identity"], identity, args.resume_gradient_audit_upgrade)
+        stability_migrated = args.resume_stability_upgrade and resumed["identity"] != identity
+        if stability_migrated:
+            upgrade_identity(resumed["identity"], identity)
+            resumed["coordination"].update(normalization="bounded_l2", replay=[], previous=None, pending_model_step=False)
+            resumed["progress"]["gradient_health"] = {}
+            resumed["progress"]["stability_migration"] = {"source": str(args.resume), "learning_rate_factor": .1, "policy_replay_reset": True}
+            for group in resumed["optimizer"]["param_groups"]:
+                group["lr"] *= .1
+        else:
+            migrated_selection = resume_identity_matches(resumed["identity"], identity, args.resume_gradient_audit_upgrade)
         model.load_state_dict(resumed["model"], strict=True)
         if team is not None:
             if resumed.get("coordination") is None:
@@ -1130,6 +1148,13 @@ def _train(args, budget):
                 restore_rng(resumed["rng"])
                 resumed = None
 
+            if stability:
+                report["stability"] = {"normalization": "bounded_l2", "coefficient_upper_bound": 1.,
+                                       "model_gradient_clip": 1., "policy_gradient_clip": 1.,
+                                       "learning_rates": [group["lr"] for group in optimizer.param_groups],
+                                       "migration": progress.get("stability_migration"),
+                                       "recovery": progress.get("stability_recovery"), "test_used": False}
+
             def checkpoint(path):
                 nonlocal previous_weights
                 state = checkpoint_state(model, optimizer, progress, identity, team, evaluation_only=path.name == "best.pt",
@@ -1141,6 +1166,11 @@ def _train(args, budget):
                 if args.checkpoint_mode == "weights":
                     previous_weights = {"path": path, "progress": dict(progress), "identity": identity}
 
+            if stability and not (args.output / "stable.pt").exists():
+                initial_probe = evaluate(model, training_probe, templates)["metrics"]
+                if not stable_probe(initial_probe):
+                    raise ValueError("Stability guard: initial checkpoint fails training probe")
+                checkpoint(args.output / "stable.pt")
             for epoch in range(progress["epoch"], epochs):
                 train_mode(model)
                 order = torch.randperm(len(datasets["train"]), generator=torch.Generator().manual_seed(args.seed + 10000 * phase_index + epoch)).tolist()
@@ -1170,6 +1200,8 @@ def _train(args, budget):
                         output = model(templates[0], image, templates[1], templates[2], if_train=True)
                         losses = original_losses(output, brain, label)
                         losses["registration"] = GCC()(output[2][-1], templates[0])
+                        if stability:
+                            check_training_loss(losses["classification"])
                         new_loss = {"synthstrip": "extraction", "voxelmorph": "registration", "lapirn": "registration", "nnunet": "segmentation"}.get(args.method)
                         weights = dict(base_weights)
                         if getattr(model, "learned_parcellation", False):
@@ -1236,6 +1268,10 @@ def _train(args, budget):
                         if module not in probes and parameter.grad is not None and torch.count_nonzero(parameter.grad):
                             indices, before = parameter_probe(parameter)
                             probes[module] = (parameter, indices, before, name)
+                    if stability:
+                        norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1., error_if_nonfinite=True)
+                        if policy_record is not None:
+                            policy_record["model_gradient_norm_before_clip"] = float(norm)
                     optimizer.step()
                     if policy_record is not None and hasattr(team, "after_model_step"):
                         policy_record = team.after_model_step()
@@ -1284,6 +1320,10 @@ def _train(args, budget):
                     if probe_indices:
                         row["training_probe"] = evaluate(model, training_probe, templates)["metrics"]
                     report["history"].append(row)
+                    if stability and row.get("training_probe"):
+                        if not stable_probe(row["training_probe"]):
+                            raise ValueError("Stability guard: training probe classification collapse")
+                        checkpoint(args.output / "stable.pt")
                     if loss < progress["best_loss"]:
                         progress.update(best_loss=loss, best_value=loss, best_epoch=epoch + 1, selection_metric=args.selection_metric)
                         report["selection"].update(best_epoch=epoch + 1, best_value=loss)
@@ -1365,6 +1405,7 @@ def parser():
     result.add_argument("--max-steps", type=int)
     result.add_argument("--wall-seconds", type=float)
     result.add_argument("--resume-gradient-audit-upgrade", action="store_true")
+    result.add_argument("--resume-stability-upgrade", action="store_true")
     result.add_argument("--train-probe-size", type=int, default=0)
     result.add_argument("--template-normalization", choices=("none", "minmax"), default="none")
     result.add_argument("--eval-limit", type=int)
@@ -1375,7 +1416,7 @@ def parser():
     result.add_argument("--coordination", choices=("none", "taskforce"), default="none")
     result.add_argument("--coordination-batch-size", type=int, default=64)
     result.add_argument("--taskforce-profile", choices=("paper", "legacy"), default="paper")
-    result.add_argument("--taskforce-gradient-normalization", choices=("l2", "none"), default="l2")
+    result.add_argument("--taskforce-gradient-normalization", choices=("l2", "bounded_l2", "none"), default="l2")
     result.add_argument("--taskforce-action-bound", type=float)
     result.add_argument("--probe-budget", type=int, default=50000)
     result.add_argument("--probe-modules", nargs="+")
