@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 
-from unibrain_agent.anchored_taskforce import AnchoredTaskForce, matched_forward, shield_coefficients
+from unibrain_agent.anchored_taskforce import AnchoredTaskForce, matched_forward, shield_coefficients, upgrade_anchored_identity
 from unibrain_agent.replacement_training import rng_state
 from unibrain_agent.taskforce import TASKS
 from unibrain_agent.training_stability import recover
@@ -16,6 +16,17 @@ def losses(x, offset=0.):
 
 
 class AnchoredTests(unittest.TestCase):
+    def test_original_checkpoint_upgrade_preserves_dataset_identity(self):
+        previous = {'coordination': 'none', 'dataset': 'abide', 'implementation_hashes': {
+            'replacement_training.py': 'b3e429b125c4a12f534e1722d550c001e761e22e7451272d13e25824b65d3425'}}
+        current = copy.deepcopy(previous)
+        current.update(coordination='taskforce', taskforce_profile='paper', taskforce_action_bound=1., taskforce_gradient_normalization='anchored')
+        current['implementation_hashes'].update({name: 'new' for name in ('replacement_training.py', 'taskforce_paper.py', 'training_stability.py', 'anchored_taskforce.py')})
+        upgrade_anchored_identity(previous, current)
+        current['dataset'] = 'different'
+        with self.assertRaises(ValueError):
+            upgrade_anchored_identity(previous, current)
+
     def test_reference_coefficients_and_conflict_shield(self):
         gradients = torch.tensor([[1., 0.], [-3., .1], [.2, 1.], [0., -1.]], dtype=torch.float64)
         gram = gradients @ gradients.T
