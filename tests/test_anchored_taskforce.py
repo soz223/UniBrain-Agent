@@ -4,8 +4,9 @@ import unittest
 from pathlib import Path
 
 import torch
+import numpy as np
 
-from unibrain_agent.anchored_taskforce import AnchoredTaskForce, matched_forward, shield_coefficients, upgrade_anchored_identity
+from unibrain_agent.anchored_taskforce import AnchoredTaskForce, matched_forward, shield_coefficients, upgrade_anchored_identity, classification_probe
 from unibrain_agent.replacement_training import rng_state
 from unibrain_agent.taskforce import TASKS
 from unibrain_agent.training_stability import recover
@@ -16,6 +17,24 @@ def losses(x, offset=0.):
 
 
 class AnchoredTests(unittest.TestCase):
+    def test_classification_probe_keeps_metrics_and_omits_image_work(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.scale = torch.nn.Parameter(torch.tensor(1.))
+
+            def forward(self, ref, image, tissue, atlas, if_train):
+                assert not if_train and not self.training
+                score = image.mean() * self.scale
+                return (torch.stack((-score, score)).reshape(1, 2),)
+
+        rows = [(str(i), i % 2, np.full((2, 2, 2), 1. if i % 2 else -1., dtype=np.float32)) for i in range(4)]
+        metrics = classification_probe(Model(), rows, (None, None, None))
+        self.assertEqual(metrics['auc'], 1.)
+        self.assertEqual(metrics['predicted_positive_fraction'], .5)
+        self.assertLess(metrics['classification_loss'], .2)
+        self.assertNotIn('registration_mi', metrics)
+
     def test_original_checkpoint_upgrade_preserves_dataset_identity(self):
         previous = {'coordination': 'none', 'dataset': 'abide', 'implementation_hashes': {
             'replacement_training.py': 'b3e429b125c4a12f534e1722d550c001e761e22e7451272d13e25824b65d3425'}}
