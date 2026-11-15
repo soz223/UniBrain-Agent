@@ -23,7 +23,8 @@ IDENTITY_FIELDS = ("method", "setting", "initialization", "seed", "epochs", "pre
 IMPLEMENTATION_FILES = ("replacement_training.py", "full_model.py", "full_candidates.py", "full_connectivity.py",
                         "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py",
                         "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py",
-                        "full_replacement.py", "sources.py", "site_training.py", "taskforce_paper.py", "training_control.py")
+                        "full_replacement.py", "sources.py", "site_training.py", "taskforce_paper.py", "training_control.py",
+                        "training_stability.py", "anchored_taskforce.py")
 
 
 def read_json(path):
