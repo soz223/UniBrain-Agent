@@ -66,3 +66,12 @@ test('backend readiness cannot overwrite user navigation, and hash changes are h
   page.sandbox.location.hash='#settings';page.listeners.hashchange();
   assert.equal(page.views.find(view=>!view.hidden).dataset.workspace,'settings');
 });
+
+
+test('anchored records describe reference coefficients and matched rewards',()=>{
+  const view=context.trainingPolicyDescription({profile:'unibrain_anchored',trust_radius:.1,accepted_action_fraction:.5});
+  assert.match(view.label,/ANCHORED/);
+  assert.match(view.formula,/original/);
+  assert.match(view.method,/matched training-subject/);
+  assert.doesNotMatch(view.label,/LEGACY/);
+});

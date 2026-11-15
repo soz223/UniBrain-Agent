@@ -13,6 +13,10 @@ const trainingState = {packet:null, latestPacket:null, current:null, selected:nu
 function trainingPolicyDescription(policy) {
   if(!policy)return {label:'TASKFORCE · COOPERATIVE ACTOR CRITIC',formula:'The backend records the applied coefficient rule.',
     scope:'Gradient measurements await a recorded update.',method:'Select a recorded update to inspect its coordinator profile.',action:'a'};
+  if(policy.profile==='unibrain_anchored')return {label:'UNIBRAIN ANCHORED AGENTS',
+    formula:'Applied λⱼ = original λⱼ × [1 + sρ clip(4 softmax(a)ⱼ − 1, −1, 1)].',
+    scope:'All trainable parameters. Original task coefficients with a gradient alignment safeguard. Trust radius ρ = '+trainingNumber(policy.trust_radius)+'.',
+    method:'Local actors and centralized critics learn from matched training-subject rewards before and after each update. Random state is replayed. The safeguard contracts the action using the full gradient Gram matrix; s = '+trainingNumber(policy.accepted_action_fraction)+'. This is a UniBrain adaptation.',action:'a'};
   if(policy.profile==='paper_core')return {label:'TASKFORCE CORE · FULL GRADIENTS',
     formula:policy.gradient_normalization==='none'?'w = softmax(a) · Applied λ = w.':'w = softmax(a) · Applied λⱼ = wⱼ / ‖∇Lⱼ‖₂. Zero norms use scale 1.',
     scope:'Every trainable parameter is included. '+(policy.gradient_normalization==='none'?'Raw gradient Gram matrix.':'L2 normalized gradient Gram matrix.'),
