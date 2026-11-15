@@ -32,6 +32,23 @@ TaskForce describes shared model parameters. UniBrain has a branched serial grap
 
 ## Verification and reproduction
 
+### Anchored UniBrain adaptation
+
+The optional `anchored` coordinator changes the reward and gradient mixing rules
+above. It retains the four actors, centralized critics, replay and target networks.
+Its reward measures the same training subject before and after an actual model
+update, replaying stochastic state. Its action is a bounded residual around
+UniBrain's original loss coefficients, constrained using the full gradient Gram
+matrix. This is an explicit adaptation, not an exact TaskForce reproduction.
+
+Recovery restores a safe model and Adam checkpoint, resets the learned policies,
+and contracts their adjustment radius. It preserves the model learning rate and
+existing collapse checks. See [recovery rules](training-recovery.md) for the exact
+limits. An original-model warm start must be reported separately from an Agent
+continuation; inherited validation measurements are not Agent results.
+
+### Original coordinator acceptance
+
 Run the controller tests with `python -m unittest tests.test_taskforce_paper tests.test_policy_checkpoint`. They check the model gradient, actual actor/critic updates, policy ordering, decentralized inputs, shared reward and exact resume behavior. `scripts/validate_taskforce_core.py` runs two updates of the complete paper-aligned UniBrain on a prepared ABIDE or ADHD fold, then independently verifies each actor and critic against seeded initialization. It uses replay batch one only to exercise policy learning within two updates; normal training defaults to batch 64.
 
 ```sh
