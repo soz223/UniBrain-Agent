@@ -4,6 +4,15 @@ from unibrain_agent.generalization_audit import diagnose_cases, summarize
 
 
 class GeneralizationAuditTests(unittest.TestCase):
+    def test_generalization_diagnosis_uses_full_cohort_evidence(self):
+        from unibrain_agent.training_diagnosis import diagnostic_context, screening_issues
+        report = {'auc_gap': .3, 'summaries': {'train_full': {'auc': .9},
+                  'train_probe': {'auc': .92}, 'validation': {'auc': .6, 'confident_error_fraction': .2}}}
+        issues = screening_issues(diagnostic_context(report))
+        self.assertEqual(issues, ['generalization_gap', 'overconfident_errors'])
+        report['summaries']['train_full']['auc'] = .6
+        self.assertIn('unrepresentative_training_probe', screening_issues(diagnostic_context(report)))
+
     def test_full_cohort_exposes_unrepresentative_probe(self):
         train = [{'id': str(i), 'site': 'A', 'label': i % 2,
                   'probability': (.9 if i % 2 else .1) if i < 4 else (.1 if i % 2 else .9)}

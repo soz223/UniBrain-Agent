@@ -17,10 +17,12 @@ def summarize(cases, seed=17):
     if not len(labels):
         return {'n': 0, 'auc': None}
     result = {'n': len(labels), 'positive': int(labels.sum()),
-              'accuracy': float(((probabilities >= .5) == labels).mean()),
-              'classification_loss': float(log_loss(labels, probabilities, labels=[0, 1])),
+              'accuracy': float(((probabilities > .5) == labels).mean()),
+              'classification_loss': float(np.mean([c['classification_loss'] for c in cases]))
+                                     if all('classification_loss' in c for c in cases)
+                                     else float(log_loss(labels, probabilities, labels=[0, 1])),
               'brier': float(np.mean((probabilities - labels) ** 2)),
-              'confident_error_fraction': float(np.mean(((probabilities >= .5) != labels) &
+              'confident_error_fraction': float(np.mean(((probabilities > .5) != labels) &
                                                         (np.maximum(probabilities, 1 - probabilities) >= .9)))}
     if len(np.unique(labels)) != 2:
         return {**result, 'auc': None, 'auc_ci95': None}
@@ -45,7 +47,7 @@ def diagnose_cases(train, validation, probe_ids):
                     for name, rows in [('train', train), ('validation', validation)]} for s in sites}
     counts = {s: [c['label'] for c in train if c['site'] == s] for s in sites}
     global_rate = (sum(c['label'] for c in train) + 1) / (len(train) + 2)
-    site_predictions = [{**c, 'probability': (sum(counts[c['site']]) + 1) / (len(counts[c['site']]) + 2)
+    site_predictions = [{**{k: v for k, v in c.items() if k != 'classification_loss'}, 'probability': (sum(counts[c['site']]) + 1) / (len(counts[c['site']]) + 2)
                          if counts[c['site']] else global_rate} for c in validation]
     summaries['site_only_validation'] = summarize(site_predictions)
     train_auc, val_auc = summaries['train_full']['auc'], summaries['validation']['auc']
@@ -115,7 +117,9 @@ def audit(args):
                 if not torch.isfinite(logits).all():
                     raise ValueError('Nonfinite classification output')
                 case = {'id': str(row[0]), 'label': int(row[1]), 'site': sites[str(row[0])],
-                        'probability': float(logits.softmax(1)[0, 1])}
+                        'probability': float(logits.softmax(1)[0, 1]),
+                        'classification_loss': float(torch.nn.functional.cross_entropy(
+                            logits, torch.tensor([int(row[1])], device='cuda')))}
                 cases[split].append(case)
                 stream.write(json.dumps({'split': split, **case}) + '\n')
                 if index % 16 == 0:
@@ -138,7 +142,7 @@ def main():
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--checkpoint', type=Path)
     parser.add_argument('--source', type=Path)
-    parser.add_argument('--gpu', default='0')
+    parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--metadata-only', action='store_true')
     result = audit(parser.parse_args())
     print(json.dumps(result.get('summaries', result)))

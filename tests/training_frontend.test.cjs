@@ -75,3 +75,10 @@ test('anchored records describe reference coefficients and matched rewards',()=>
   assert.match(view.method,/matched training-subject/);
   assert.doesNotMatch(view.label,/LEGACY/);
 });
+
+test('cross-subject reward is distinguished from self-fitting feedback',()=>{
+  const view=context.trainingPolicyDescription({profile:'unibrain_anchored',
+    reward_scope:'other_training_subject_before_after_update',trust_radius:.1,accepted_action_fraction:1});
+  assert.match(view.method,/different training subject/);
+  assert.match(view.method,/Validation and test are excluded/);
+});

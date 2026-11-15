@@ -1,4 +1,4 @@
-"""Review a saved segmentation audit using the configured Agent provider."""
+"""Review a saved anatomical or generalization audit with the configured Agent."""
 
 import argparse
 import json

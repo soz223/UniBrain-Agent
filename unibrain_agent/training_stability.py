@@ -93,6 +93,7 @@ def recover(source, destination, attempt):
         old = state["coordination"]
         radius = min(old["trust_radius"], .1 * .5 ** attempt)
         team = AnchoredTaskForce(old["base_weights"], state["identity"]["seed"], old["batch_size"], old["action_bound"], radius)
+        team.reward_mode = old.get('reward_mode', 'same_subject')
         team.model_steps = state["progress"]["steps"]
         state["coordination"] = team.state_dict()
         state["progress"]["stability_recovery"].update(action="reset_policy_and_contract_trust_region", trust_radius=radius)

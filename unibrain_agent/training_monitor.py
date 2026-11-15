@@ -38,11 +38,12 @@ def policy_record(value):
                    ('reward', 'policy_updates', 'actor_optimizer_steps', 'critic_optimizer_steps', 'replay_size',
                     'model_steps', 'trust_radius', 'accepted_action_fraction', 'noise_scale', 'gradient_parameter_tensors', 'gradient_parameter_elements', 'action_bound')})
     result['reward_terms'] = numeric_map(value.get('reward_terms'),
-                                       ('training_loss_improvement', 'same_subject_improvement', 'gradient_norm_penalty', 'gradient_penalty_weight'))
+                                       ('training_loss_improvement', 'same_subject_improvement', 'cross_subject_improvement', 'gradient_norm_penalty', 'gradient_penalty_weight'))
     choices = {'profile': ('paper_core', 'unibrain_anchored'), 'gradient_scope': ('all_trainable_parameters', 'recorded_probe_parameters'),
                'gradient_normalization': ('l2', 'bounded_l2', 'anchored', 'none'), 'critic_action_space': ('raw_logits',),
                'update_order': ('model_then_policy',), 'noise_type': ('ornstein_uhlenbeck',),
-               'weight_rule': ('softmax_div_gradient_scale', 'original_weights_with_guarded_residual')}
+               'weight_rule': ('softmax_div_gradient_scale', 'original_weights_with_guarded_residual'),
+               'reward_scope': ('same_training_subject_before_after_update', 'other_training_subject_before_after_update')}
     for key, allowed in choices.items():
         result[key] = value.get(key) if value.get(key) in allowed else None
     result['gradient_scope'] = result['gradient_scope'] or 'recorded_probe_parameters'
@@ -127,7 +128,7 @@ def health_record(folder):
                                       for name, value in diagnosis.get('targets', {}).items() if name in
                                       ('brain_dice', 'brain_jaccard', 'tissue_dice', 'tissue_jaccard', 'atlas_dice',
                                        'atlas_jaccard', 'registration_mi', 'registration_cc', 'accuracy', 'auc')}},
-            **numeric_map(health, ('step', 'epoch', 'recovery_count')),
+            **numeric_map(health, ('step', 'epoch', 'recovery_count', 'completed_subjects', 'total_subjects')),
             'last_recovery': {'step': number(last.get('step')), 'paths': [p for p in last.get('paths', []) if p in allowed],
                               'optimizer_modified': False if last.get('optimizer_modified') is False else None},
             'supervisor': {'status': supervisor.get('status') if supervisor.get('status') in

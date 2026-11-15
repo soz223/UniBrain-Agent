@@ -16,7 +16,7 @@ function trainingPolicyDescription(policy) {
   if(policy.profile==='unibrain_anchored')return {label:'UNIBRAIN ANCHORED AGENTS',
     formula:'Applied λⱼ = original λⱼ × [1 + sρ clip(4 softmax(a)ⱼ − 1, −1, 1)].',
     scope:'All trainable parameters. Original task coefficients with a gradient alignment safeguard. Trust radius ρ = '+trainingNumber(policy.trust_radius)+'.',
-    method:'Local actors and centralized critics learn from matched training-subject rewards before and after each update. Random state is replayed. The safeguard contracts the action using the full gradient Gram matrix; s = '+trainingNumber(policy.accepted_action_fraction)+'. This is a UniBrain adaptation.',action:'a'};
+    method:(policy.reward_scope==='other_training_subject_before_after_update'?'Actors and critics learn from loss changes on a different training subject, measured before and after the update. Validation and test are excluded. ':'Local actors and centralized critics learn from matched training-subject rewards before and after each update. Random state is replayed. ')+ 'The safeguard contracts the action using the full gradient Gram matrix; s = '+trainingNumber(policy.accepted_action_fraction)+'. This is a UniBrain adaptation.',action:'a'};
   if(policy.profile==='paper_core')return {label:'TASKFORCE CORE · FULL GRADIENTS',
     formula:policy.gradient_normalization==='none'?'w = softmax(a) · Applied λ = w.':'w = softmax(a) · Applied λⱼ = wⱼ / ‖∇Lⱼ‖₂. Zero norms use scale 1.',
     scope:'Every trainable parameter is included. '+(policy.gradient_normalization==='none'?'Raw gradient Gram matrix.':'L2 normalized gradient Gram matrix.'),

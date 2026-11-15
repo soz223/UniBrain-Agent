@@ -90,6 +90,7 @@ class AnchoredTaskForce(PaperTaskForce):
         if len(self.base) != len(TASKS) or any(value <= 0 for value in self.base):
             raise ValueError('Positive original task coefficients are required')
         self.radius = radius
+        self.reward_mode = 'same_subject'
         self.matched_transition = None
 
     def observe(self, losses, parameters):
@@ -122,7 +123,7 @@ class AnchoredTaskForce(PaperTaskForce):
                       reward_scope='same_training_subject_before_after_update')
         return sum(weights[task] * losses[task] for task in TASKS), record
 
-    def after_model_step(self, post_losses=None):
+    def after_model_step(self, post_losses=None, reference_before=None, reference_after=None):
         if post_losses is None:
             raise ValueError('Matched post-update training losses are required')
         observation, logits, before = self.before_update
@@ -131,21 +132,35 @@ class AnchoredTaskForce(PaperTaskForce):
             raise ValueError('Stability guard: invalid matched reward loss')
         base = torch.tensor(self.base)
         improvement = float(((before.log1p() - after.log1p()) * base).sum() / base.sum())
-        reward = max(-1., min(1., improvement))
+        transfer = None
+        if self.reward_mode == 'cross_subject':
+            if reference_before is None or reference_after is None:
+                raise ValueError('Cross-subject reward requires matched reference losses')
+            pair = torch.tensor([[float(values[t].detach()) for t in TASKS]
+                                 for values in (reference_before, reference_after)])
+            if not torch.isfinite(pair).all() or (pair < 0).any():
+                raise ValueError('Stability guard: invalid cross-subject reference loss')
+            transfer = float(((pair[0].log1p() - pair[1].log1p()) * base).sum() / base.sum())
+        reward = max(-1., min(1., improvement if transfer is None else transfer))
         self.matched_transition = (observation, logits, reward)
         self.last_record.update(reward=reward, reward_terms={'same_subject_improvement': improvement,
                                 'validation_used': False, 'stochastic_state_replayed': True},
                                 post_update_losses=dict(zip(TASKS, after.tolist())))
+        if transfer is not None:
+            self.last_record['reward_scope'] = 'other_training_subject_before_after_update'
+            self.last_record['reward_terms']['cross_subject_improvement'] = transfer
         return super().after_model_step()
 
     def state_dict(self):
         state = super().state_dict()
-        state.update(trust_radius=self.radius, matched_transition=copy.deepcopy(self.matched_transition))
+        state.update(trust_radius=self.radius, matched_transition=copy.deepcopy(self.matched_transition), reward_mode=self.reward_mode)
         return state
 
     def load_state_dict(self, state):
         if not 0 < state.get('trust_radius', 0) <= .1:
             raise ValueError('Invalid saved coordination radius')
         super().load_state_dict(state)
+        if state.get('reward_mode', 'same_subject') != self.reward_mode:
+            raise ValueError('Reward mode mismatch; explicit policy migration is required')
         self.radius = state['trust_radius']
         self.matched_transition = copy.deepcopy(state.get('matched_transition'))

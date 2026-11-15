@@ -24,7 +24,7 @@ IMPLEMENTATION_FILES = ("replacement_training.py", "full_model.py", "full_candid
                         "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py",
                         "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py",
                         "full_replacement.py", "sources.py", "site_training.py", "taskforce_paper.py", "training_control.py",
-                        "training_stability.py", "anchored_taskforce.py")
+                        "training_stability.py", "anchored_taskforce.py", "transfer_reward.py")
 
 
 def read_json(path):
@@ -134,7 +134,7 @@ def recorded_arguments(args, payload, report, report_path):
     for name in IDENTITY_FIELDS:
         if name not in identity or name not in declared or not same_value(identity[name], declared[name]):
             raise ValueError("Checkpoint and training configuration disagree: " + name)
-    for name in ("taskforce_profile", "taskforce_gradient_normalization", "taskforce_action_bound", "template_normalization", "train_probe_size"):
+    for name in ("taskforce_profile", "taskforce_gradient_normalization", "taskforce_action_bound", "template_normalization", "train_probe_size", "coordination_reward"):
         if name in identity and not same_value(identity[name], declared.get(name)):
             raise ValueError("Checkpoint and training configuration disagree: " + name)
     for name in ("method", "setting", "seed"):

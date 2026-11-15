@@ -356,7 +356,7 @@ def sample_tensors(row):
     return image, brain, tissue, atlas, torch.tensor([int(row[1])], device="cuda")
 
 
-def evaluate(model, dataset, templates, limit=None, output_dir=None):
+def evaluate(model, dataset, templates, limit=None, output_dir=None, progress_callback=None):
     import numpy as np
     import torch
     from torch.nn import functional as F
@@ -417,6 +417,8 @@ def evaluate(model, dataset, templates, limit=None, output_dir=None):
                     np.save(destination / f"{name}_reference.npy", reference.cpu().numpy())
                 case["prediction_directory"] = str(destination.resolve())
             cases.append(case)
+            if progress_callback is not None and ((index + 1) % 8 == 0 or index + 1 == min(len(dataset), limit or len(dataset))):
+                progress_callback(index + 1, min(len(dataset), limit or len(dataset)))
     return {"sample_count": len(cases), "full_split_count": len(dataset), "metrics": metrics_from_cases(cases), "cases": cases}
 
 
@@ -976,6 +978,11 @@ def _train(args, budget):
     from .training_stability import check_training_loss, stable_probe, upgrade_identity, retained_copy
 
     anchored = args.taskforce_gradient_normalization == "anchored"
+    cross_subject = args.coordination_reward == 'cross_subject'
+    if cross_subject and (not anchored or args.coordination != 'taskforce'):
+        raise ValueError('Cross-subject reward requires the anchored coordinator')
+    if args.resume_reward_upgrade and (not cross_subject or not args.resume):
+        raise ValueError('Reward migration requires a checkpoint and cross-subject coordination')
     if anchored and (not args.paper_original or args.method != "original" or args.setting != "original"):
         raise ValueError("Anchored matched rewards currently require the original full paper pipeline")
     if args.resume_coordination_upgrade and (not args.resume or not anchored):
@@ -1025,6 +1032,9 @@ def _train(args, budget):
         identity["implementation_hashes"]["training_stability.py"] = hashlib.sha256(Path(__file__).with_name("training_stability.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     if anchored:
         identity["implementation_hashes"]["anchored_taskforce.py"] = hashlib.sha256(Path(__file__).with_name("anchored_taskforce.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    if cross_subject:
+        identity['coordination_reward'] = args.coordination_reward
+        identity['implementation_hashes']['transfer_reward.py'] = hashlib.sha256(Path(__file__).with_name('transfer_reward.py').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
     host_checkpoint = host_checkpoint_spec(args)
     if getattr(args, "paper_original", False):
         from .paper_original import build_paper_model
@@ -1069,6 +1079,8 @@ def _train(args, budget):
     progress = {"phase": 0, "epoch": 0, "position": 0, "steps": 0, "pretrain_steps": 0, "best_loss": float("inf"), "bad_epochs": 0,
                 "selection_metric": args.selection_metric, "best_epoch": None, "best_value": None,
                 "gradient_warmup": empty_gradient_warmup()}
+    if anchored:
+        team.reward_mode = args.coordination_reward
     migrated_selection = False
     resumed = torch.load(args.resume, map_location="cpu", weights_only=True) if args.resume else None
     if resumed:
@@ -1076,7 +1088,14 @@ def _train(args, budget):
             raise ValueError("This is an evaluation checkpoint; resume requires the complete last.pt state")
         stability_migrated = args.resume_stability_upgrade and resumed["identity"] != identity
         coordination_migrated = args.resume_coordination_upgrade and resumed["identity"] != identity
-        if coordination_migrated:
+        if args.resume_reward_upgrade and resumed['identity'] != identity:
+            from .transfer_reward import upgrade_reward_identity
+            upgrade_reward_identity(resumed['identity'], identity)
+            team.model_steps = resumed['progress']['steps']
+            resumed['coordination'] = team.state_dict()
+            resumed['progress']['stability_migration'] = {'source': str(args.resume), 'policy_reset': True,
+                'learning_rate_factor': 1., 'rule': 'cross_subject_training_reward', 'start_step': resumed['progress']['steps']}
+        elif coordination_migrated:
             from .anchored_taskforce import upgrade_anchored_identity
             upgrade_anchored_identity(resumed["identity"], identity)
             team.model_steps = resumed["progress"]["steps"]
@@ -1213,6 +1232,12 @@ def _train(args, budget):
                     if args.verify_gradients:
                         image = image.detach().requires_grad_(True)
                     optimizer.zero_grad(set_to_none=True)
+                    reference_sample = reference_before = None
+                    if cross_subject:
+                        from .transfer_reward import reference_index, reference_losses
+                        reference = reference_index(datasets['train'].array['label'], order[position], progress['steps'], args.seed)
+                        reference_sample = sample_tensors(datasets['train'][reference])
+                        reference_before = reference_losses(model, reference_sample, templates)
                     policy_record = None
                     if standalone and args.method == "synthstrip":
                         output = model.ext_net(image, True)
@@ -1305,7 +1330,12 @@ def _train(args, budget):
                                 values["registration"] = GCC()(post[2][-1], templates[0])
                                 return values
                             post_losses = matched_forward(model, forward_rng, measure_after_update)
-                            policy_record = team.after_model_step(post_losses)
+                            reference_after = reference_losses(model, reference_sample, templates) if cross_subject else None
+                            policy_record = team.after_model_step(post_losses, reference_before, reference_after)
+                            if cross_subject:
+                                policy_record['reference_subject'] = {'split': 'train', 'index': reference,
+                                    'updated_index': order[position], 'distinct': reference != order[position]}
+                            reference_sample = reference_before = reference_after = None
                         else:
                             policy_record = team.after_model_step()
                     if gradient_record is not None:
@@ -1347,7 +1377,12 @@ def _train(args, budget):
                 if not standalone:
                     save_json(args.output / "health.json", {"phase": "validation", "step": progress["steps"],
                               "epoch": epoch + 1, **progress.get("gradient_health", {})})
-                    validation = evaluate(model, datasets["val"], templates, args.eval_limit)
+                    def validation_progress(completed, total):
+                        save_json(args.output / 'health.json', {'phase': 'validation', 'step': progress['steps'],
+                            'epoch': epoch + 1, 'completed_subjects': completed, 'total_subjects': total,
+                            **progress.get('gradient_health', {})})
+                    validation = evaluate(model, datasets["val"], templates, args.eval_limit,
+                                          progress_callback=validation_progress)
                     loss = selection_value(validation["metrics"], args.selection_metric)
                     row = {"epoch": epoch + 1, "validation": validation["metrics"]}
                     if probe_indices:
@@ -1445,6 +1480,8 @@ def parser():
     result.add_argument("--resume-gradient-audit-upgrade", action="store_true")
     result.add_argument("--resume-stability-upgrade", action="store_true")
     result.add_argument("--resume-coordination-upgrade", action="store_true")
+    result.add_argument('--coordination-reward', choices=('same_subject', 'cross_subject'), default='same_subject')
+    result.add_argument('--resume-reward-upgrade', action='store_true')
     result.add_argument("--train-probe-size", type=int, default=0)
     result.add_argument("--template-normalization", choices=("none", "minmax"), default="none")
     result.add_argument("--eval-limit", type=int)

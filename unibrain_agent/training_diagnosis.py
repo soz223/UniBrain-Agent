@@ -3,11 +3,12 @@
 from .paths import PROJECT
 
 ISSUES = ('target_disagreement', 'invalid_target_mass', 'metric_disagreement',
-          'geometry_warning', 'missing_segmentation_gradient', 'insufficient_evidence')
+          'geometry_warning', 'missing_segmentation_gradient', 'insufficient_evidence',
+          'generalization_gap', 'unrepresentative_training_probe', 'overconfident_errors')
 SCHEMA = {'type': 'object', 'additionalProperties': False, 'properties': {
     'summary': {'type': 'string'}, 'issues': {'type': 'array', 'items': {'type': 'string', 'enum': list(ISSUES)}},
     'evidence_ids': {'type': 'array', 'items': {'type': 'string'}},
-    'next_action': {'type': 'string', 'enum': ['inspect_supervision', 'inspect_geometry', 'inspect_metrics', 'inspect_gradients', 'request_measurement']},
+    'next_action': {'type': 'string', 'enum': ['inspect_supervision', 'inspect_geometry', 'inspect_metrics', 'inspect_gradients', 'request_measurement', 'test_cross_subject_reward']},
     'uncertainty': {'type': 'string'}}, 'required': ['summary', 'issues', 'evidence_ids', 'next_action', 'uncertainty']}
 
 
@@ -28,6 +29,9 @@ def diagnostic_context(report):
             'metric_contract': {'classes': [1, 2, 3], 'average': 'unweighted foreground class mean',
                                 'smoothing': 1e-5, 'both_empty': 'Dice equals one and remains included in the mean'},
             'training_mode_probe': report.get('training_mode_probe'),
+            'generalization_audit': {'summaries': report['summaries'], 'auc_gap': report.get('auc_gap'),
+                                    'checkpoint_sha256': report.get('checkpoint_sha256')}
+                                    if 'summaries' in report else None,
             'evidence': [{'id': f'probe_{index}', **{key: case[key] for key in fields if key in case}}
                          for index, case in enumerate(report.get('cases', []))],
             'saved_prediction_check': report.get('saved_prediction_check', {})}
@@ -36,7 +40,18 @@ def diagnostic_context(report):
 def screening_issues(context):
     issues = set()
     rows = context.get('evidence', [])
-    if not rows:
+    generalization = context.get('generalization_audit') or {}
+    summary = generalization.get('summaries', {})
+    if summary:
+        gap = generalization.get('auc_gap')
+        if gap is not None and gap > .1:
+            issues.add('generalization_gap')
+        full, probe = summary.get('train_full', {}).get('auc'), summary.get('train_probe', {}).get('auc')
+        if full is not None and probe is not None and abs(full - probe) > .1:
+            issues.add('unrepresentative_training_probe')
+        if summary.get('validation', {}).get('confident_error_fraction', 0) > .1:
+            issues.add('overconfident_errors')
+    if not rows and not summary:
         return ['insufficient_evidence']
     for row in rows:
         target = row.get('prediction_to_training_target', {}).get('foreground_macro_dice')
@@ -61,12 +76,14 @@ def review(agent, context):
     expected = screening_issues(context)
     result = agent.decide('training_diagnosis', context, SCHEMA,
                           {'summary': 'Deterministic screening only; no language model used.', 'issues': expected,
-                           'evidence_ids': [row['id'] for row in context.get('evidence', [])],
-                           'next_action': 'request_measurement', 'uncertainty': 'Screening flags are not causal proof.'},
+                           'evidence_ids': [row['id'] for row in context.get('evidence', [])] +
+                                           (['generalization_audit'] if context.get('generalization_audit') else []),
+                           'next_action': 'test_cross_subject_reward' if 'generalization_gap' in expected else 'request_measurement',
+                           'uncertainty': 'Screening flags are not causal proof.'},
                           instructions=(PROJECT / 'prompts/training_diagnosis.md').read_text(encoding='utf-8'))
     allowed = {row['id'] for row in context.get('evidence', [])}
     allowed.update(context.get('operator_evidence', {}))
-    allowed.update(key for key in ('training_mode_probe', 'metric_contract', 'saved_prediction_check') if context.get(key))
+    allowed.update(key for key in ('training_mode_probe', 'metric_contract', 'saved_prediction_check', 'generalization_audit') if context.get(key))
     if not set(result['evidence_ids']) <= allowed:
         raise ValueError('Diagnosis cited unavailable evidence')
     result['screening_issues'] = expected
