@@ -184,3 +184,10 @@ resets actors, critics, target networks and policy optimizers, and reduces the
 policy trust radius to .05, .025 and .0125 across three attempts. The model learning
 rate remains unchanged. The safe checkpoint includes its matching validation
 selection and committed update trace; rejected attempts remain archived.
+
+
+A known original UniBrain resume checkpoint can also initialize anchored agents.
+This preserves the original model and model optimizer, initializes only the new
+coordinator, and records the previous coordination mode and transition step. It
+must be reported as a warm-start experiment. Inherited validation history is not
+evidence of agent performance. The donor experiment and its files remain unchanged.

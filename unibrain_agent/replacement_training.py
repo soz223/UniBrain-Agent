@@ -1083,7 +1083,7 @@ def _train(args, budget):
             resumed["coordination"] = team.state_dict()
             resumed["progress"]["gradient_health"] = {}
             resumed["progress"]["classification_health"] = {}
-            resumed["progress"]["stability_migration"] = {"source": str(args.resume), "policy_reset": True, "learning_rate_factor": 1., "rule": "original_weight_anchor_and_matched_reward"}
+            resumed["progress"]["stability_migration"] = {"source": str(args.resume), "policy_reset": True, "learning_rate_factor": 1., "rule": "original_weight_anchor_and_matched_reward", "previous_coordination": resumed["identity"]["coordination"], "start_step": resumed["progress"]["steps"]}
         elif stability_migrated:
             upgrade_identity(resumed["identity"], identity)
             resumed["coordination"].update(normalization="bounded_l2", replay=[], previous=None, pending_model_step=False)

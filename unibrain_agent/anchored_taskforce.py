@@ -16,10 +16,12 @@ def upgrade_anchored_identity(previous, current):
                '19cb651a1a78b1f5bc43f5923a22a4747fe9e9703d29cee91d3c9fe9bd4b4671'))
     migrated = copy.deepcopy(previous)
     hashes = migrated['implementation_hashes']
-    if ((hashes.get('replacement_training.py'), hashes.get('taskforce_paper.py')) not in known
-            or previous.get('coordination') != 'taskforce'
+    baseline = previous.get('coordination') == 'none' and hashes.get('replacement_training.py') in PREVIOUS_TRAINERS
+    if (not baseline and (hashes.get('replacement_training.py'), hashes.get('taskforce_paper.py')) not in known
             or current.get('taskforce_gradient_normalization') != 'anchored'):
         raise ValueError('Unsupported anchored coordinator migration')
+    if baseline:
+        migrated.update(coordination='taskforce', taskforce_profile='paper', taskforce_action_bound=1.)
     migrated['taskforce_gradient_normalization'] = 'anchored'
     for name in ('replacement_training.py', 'taskforce_paper.py', 'training_stability.py', 'anchored_taskforce.py'):
         hashes[name] = current['implementation_hashes'][name]
