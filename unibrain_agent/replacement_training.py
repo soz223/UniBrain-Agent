@@ -975,9 +975,14 @@ def _train(args, budget):
 
     from .training_stability import check_training_loss, stable_probe, upgrade_identity, retained_copy
 
+    anchored = args.taskforce_gradient_normalization == "anchored"
+    if anchored and (not args.paper_original or args.method != "original" or args.setting != "original"):
+        raise ValueError("Anchored matched rewards currently require the original full paper pipeline")
+    if args.resume_coordination_upgrade and (not args.resume or not anchored):
+        raise ValueError("Coordinator migration requires an anchored resume")
     if args.resume_stability_upgrade and (not args.resume or args.taskforce_gradient_normalization != "bounded_l2" or args.coordination != "taskforce" or args.taskforce_action_bound is None or not args.verify_gradients):
         raise ValueError("Stability migration requires a verified bounded TaskForce continuation")
-    if args.taskforce_gradient_normalization == "bounded_l2" and (args.coordination != "taskforce" or args.taskforce_profile != "paper" or args.taskforce_action_bound is None or not args.verify_gradients or args.train_probe_size < 2):
+    if args.taskforce_gradient_normalization in ("bounded_l2", "anchored") and (args.coordination != "taskforce" or args.taskforce_profile != "paper" or args.taskforce_action_bound is None or not args.verify_gradients or args.train_probe_size < 2):
         raise ValueError("Stabilized coordination requires bounded actions, gradient checks and a training probe")
     audit = preflight(args)
     if args.preflight:
@@ -1015,9 +1020,11 @@ def _train(args, budget):
     identity["source"] = audit["source"]
     if args.coordination == "taskforce" and args.taskforce_profile == "paper":
         identity["implementation_hashes"]["taskforce_paper.py"] = hashlib.sha256(Path(__file__).with_name("taskforce_paper.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
-    stability = args.coordination == "taskforce" and args.taskforce_gradient_normalization == "bounded_l2"
+    stability = args.coordination == "taskforce" and args.taskforce_gradient_normalization in ("bounded_l2", "anchored")
     if stability:
         identity["implementation_hashes"]["training_stability.py"] = hashlib.sha256(Path(__file__).with_name("training_stability.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    if anchored:
+        identity["implementation_hashes"]["anchored_taskforce.py"] = hashlib.sha256(Path(__file__).with_name("anchored_taskforce.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     host_checkpoint = host_checkpoint_spec(args)
     if getattr(args, "paper_original", False):
         from .paper_original import build_paper_model
@@ -1068,7 +1075,16 @@ def _train(args, budget):
         if resumed.get("checkpoint_kind") != "resume":
             raise ValueError("This is an evaluation checkpoint; resume requires the complete last.pt state")
         stability_migrated = args.resume_stability_upgrade and resumed["identity"] != identity
-        if stability_migrated:
+        coordination_migrated = args.resume_coordination_upgrade and resumed["identity"] != identity
+        if coordination_migrated:
+            from .anchored_taskforce import upgrade_anchored_identity
+            upgrade_anchored_identity(resumed["identity"], identity)
+            team.model_steps = resumed["progress"]["steps"]
+            resumed["coordination"] = team.state_dict()
+            resumed["progress"]["gradient_health"] = {}
+            resumed["progress"]["classification_health"] = {}
+            resumed["progress"]["stability_migration"] = {"source": str(args.resume), "policy_reset": True, "learning_rate_factor": 1., "rule": "original_weight_anchor_and_matched_reward"}
+        elif stability_migrated:
             upgrade_identity(resumed["identity"], identity)
             resumed["coordination"].update(normalization="bounded_l2", replay=[], previous=None, pending_model_step=False)
             resumed["progress"]["gradient_health"] = {}
@@ -1149,7 +1165,7 @@ def _train(args, budget):
                 resumed = None
 
             if stability:
-                report["stability"] = {"normalization": "bounded_l2", "coefficient_upper_bound": 1.,
+                report["stability"] = {"normalization": args.taskforce_gradient_normalization, "coefficient_upper_bound": 1.1 if anchored else 1.,
                                        "model_gradient_clip": 1., "policy_gradient_clip": 1.,
                                        "learning_rates": [group["lr"] for group in optimizer.param_groups],
                                        "migration": progress.get("stability_migration"),
@@ -1199,6 +1215,7 @@ def _train(args, budget):
                         losses = {"extraction": torch.nn.functional.binary_cross_entropy(output[1][-1], brain)}
                         total = losses["extraction"]
                     else:
+                        forward_rng = rng_state() if anchored else None
                         output = model(templates[0], image, templates[1], templates[2], if_train=True)
                         losses = original_losses(output, brain, label)
                         losses["registration"] = GCC()(output[2][-1], templates[0])
@@ -1276,7 +1293,17 @@ def _train(args, budget):
                             policy_record["model_gradient_norm_before_clip"] = float(norm)
                     optimizer.step()
                     if policy_record is not None and hasattr(team, "after_model_step"):
-                        policy_record = team.after_model_step()
+                        if anchored:
+                            from .anchored_taskforce import matched_forward
+                            def measure_after_update():
+                                post = model(templates[0], image, templates[1], templates[2], if_train=True)
+                                values = original_losses(post, brain, label)
+                                values["registration"] = GCC()(post[2][-1], templates[0])
+                                return values
+                            post_losses = matched_forward(model, forward_rng, measure_after_update)
+                            policy_record = team.after_model_step(post_losses)
+                        else:
+                            policy_record = team.after_model_step()
                     if gradient_record is not None:
                         record_warmup_update(model, warmup, gradient_record)
                     observed = {module: {"tensor": name, "sampled_elements": len(indices),
@@ -1409,6 +1436,7 @@ def parser():
     result.add_argument("--wall-seconds", type=float)
     result.add_argument("--resume-gradient-audit-upgrade", action="store_true")
     result.add_argument("--resume-stability-upgrade", action="store_true")
+    result.add_argument("--resume-coordination-upgrade", action="store_true")
     result.add_argument("--train-probe-size", type=int, default=0)
     result.add_argument("--template-normalization", choices=("none", "minmax"), default="none")
     result.add_argument("--eval-limit", type=int)
@@ -1419,7 +1447,7 @@ def parser():
     result.add_argument("--coordination", choices=("none", "taskforce"), default="none")
     result.add_argument("--coordination-batch-size", type=int, default=64)
     result.add_argument("--taskforce-profile", choices=("paper", "legacy"), default="paper")
-    result.add_argument("--taskforce-gradient-normalization", choices=("l2", "bounded_l2", "none"), default="l2")
+    result.add_argument("--taskforce-gradient-normalization", choices=("l2", "bounded_l2", "anchored", "none"), default="l2")
     result.add_argument("--taskforce-action-bound", type=float)
     result.add_argument("--probe-budget", type=int, default=50000)
     result.add_argument("--probe-modules", nargs="+")

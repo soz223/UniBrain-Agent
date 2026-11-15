@@ -203,7 +203,7 @@ def supervise(spec):
                         from .training_stability import install_recovery
                         install_recovery(destination, folder, attempt)
                         state.update(stability_recoveries=attempt, resume_path=str(folder / "last.pt"), consecutive_restarts=0)
-                        reason = "training_checkpoint_rollback_with_reduced_learning_rate"
+                        reason = "checkpoint_rollback_and_policy_reset" if spec.get("coordination_recovery") else "training_checkpoint_rollback_with_reduced_learning_rate"
                         event("stability_recovery_prepared", attempt=attempt, details=repair.stdout.strip())
                     else:
                         event("stability_recovery_rejected", error=repair.stderr[-2000:])

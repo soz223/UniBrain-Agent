@@ -77,10 +77,10 @@ def recover(source, destination, attempt):
     if not 1 <= attempt <= 3 or source.resolve() == destination.resolve():
         raise ValueError("Invalid stability recovery attempt")
     state = torch.load(source, map_location="cpu", weights_only=True)
-    if (state.get("checkpoint_kind") != "resume"
-            or state["identity"].get("taskforce_gradient_normalization") != "bounded_l2"):
+    mode = state["identity"].get("taskforce_gradient_normalization")
+    if state.get("checkpoint_kind") != "resume" or mode not in ("bounded_l2", "anchored"):
         raise ValueError("Recovery requires a complete stabilized checkpoint")
-    rates = [group["lr"] * .5 ** attempt for group in state["optimizer"]["param_groups"]]
+    rates = [group["lr"] * (1. if mode == "anchored" else .5 ** attempt) for group in state["optimizer"]["param_groups"]]
     if min(rates) < 1e-7:
         raise ValueError("Recovery learning rate floor reached")
     for group, rate in zip(state["optimizer"]["param_groups"], rates):
@@ -88,7 +88,16 @@ def recover(source, destination, attempt):
     state["progress"]["gradient_health"] = {}
     state["progress"]["classification_health"] = {}
     state["progress"]["stability_recovery"] = {"attempt": attempt, "learning_rates": rates}
-    state["coordination"].update(replay=[], previous=None, pending_model_step=False)
+    if mode == "anchored":
+        from .anchored_taskforce import AnchoredTaskForce
+        old = state["coordination"]
+        radius = min(old["trust_radius"], .1 * .5 ** attempt)
+        team = AnchoredTaskForce(old["base_weights"], state["identity"]["seed"], old["batch_size"], old["action_bound"], radius)
+        team.model_steps = state["progress"]["steps"]
+        state["coordination"] = team.state_dict()
+        state["progress"]["stability_recovery"].update(action="reset_policy_and_contract_trust_region", trust_radius=radius)
+    else:
+        state["coordination"].update(replay=[], previous=None, pending_model_step=False)
     temp = destination.with_suffix(".tmp")
     torch.save(state, temp)
     temp.replace(destination)

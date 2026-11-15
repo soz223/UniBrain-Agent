@@ -155,3 +155,32 @@ failures remain visible. No test metrics or labels drive these decisions.
 Acceptance requires full-model updates and completed validation on an available
 GPU. CPU fault-injection tests verify the recovery mechanism only; they cannot
 establish full-model stability or target AUC.
+
+
+## Anchored coordination with matched rewards
+
+The `anchored` normalization option selects an explicit UniBrain adaptation.
+The original coefficients `(1, .1, 1, 1)` remain the reference. Actors propose
+relative changes within ten percent. A full-parameter gradient Gram matrix
+contracts that proposal when its deviation exceeds the trust radius or a task's
+first-order alignment becomes worse than the allowed reference alignment.
+This is a gradient-space safeguard, not a guarantee about an Adam step or held-out
+performance. All original gradient checks and collapse thresholds remain active.
+
+Policy rewards compare the same augmented training subject immediately before
+and after a model update. Random state is replayed, then restored; the additional
+forward does not advance persistent buffers. The resulting reward is attached to
+the executed action, and its next observation is supplied by the subsequent
+training step. Different subjects' losses are no longer subtracted to create a
+reward. Actors and centralized critics still learn from replay transitions.
+
+An explicit `--resume-coordination-upgrade` migrates only allowlisted checkpoint
+implementations. It preserves model parameters, model optimizer moments and
+learning rate, resets the incompatible old policy, and records that intervention.
+This continuation is a separate experiment, not an unchanged TaskForce reproduction.
+
+If instability returns, the supervisor restores the safe model and optimizer,
+resets actors, critics, target networks and policy optimizers, and reduces the
+policy trust radius to .05, .025 and .0125 across three attempts. The model learning
+rate remains unchanged. The safe checkpoint includes its matching validation
+selection and committed update trace; rejected attempts remain archived.

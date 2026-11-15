@@ -184,7 +184,7 @@ class PaperTaskForce(GradientTeam):
             error = (self.critics[i](torch.cat((flat, actions), dim=1)) - target).square().mean()
             self.critic_optimizers[i].zero_grad()
             error.backward()
-            if self.normalization == 'bounded_l2':
+            if self.normalization in ('bounded_l2', 'anchored'):
                 torch.nn.utils.clip_grad_norm_(self.critics[i].parameters(), 1., error_if_nonfinite=True)
             self.critic_optimizers[i].step()
             candidate = joint_actions.clone()
@@ -193,7 +193,7 @@ class PaperTaskForce(GradientTeam):
             objective = -self.critics[i](torch.cat((flat, candidate), dim=1)).mean()
             self.actor_optimizers[i].zero_grad()
             objective.backward()
-            if self.normalization == 'bounded_l2':
+            if self.normalization in ('bounded_l2', 'anchored'):
                 torch.nn.utils.clip_grad_norm_(self.actors[i].parameters(), 1., error_if_nonfinite=True)
             self.actor_optimizers[i].step()
             self.critics[i].requires_grad_(True)
@@ -228,6 +228,9 @@ class PaperTaskForce(GradientTeam):
 
 
 def make_team(base_weights, seed=17, batch_size=None, profile='paper', normalization='l2', action_bound=None):
+    if profile == 'paper' and normalization == 'anchored':
+        from .anchored_taskforce import AnchoredTaskForce
+        return AnchoredTaskForce(base_weights, seed, 64 if batch_size is None else batch_size, action_bound)
     if profile == 'paper':
         return PaperTaskForce(seed, 64 if batch_size is None else batch_size, normalization, action_bound)
     if profile == 'legacy':
