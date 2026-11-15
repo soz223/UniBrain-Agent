@@ -1185,7 +1185,11 @@ def _train(args, budget):
                     previous_weights = {"path": path, "progress": dict(progress), "identity": identity}
 
             if stability and not (args.output / "stable.pt").exists():
-                initial_probe = evaluate(model, training_probe, templates)["metrics"]
+                if anchored:
+                    from .anchored_taskforce import classification_probe
+                    initial_probe = classification_probe(model, training_probe, templates)
+                else:
+                    initial_probe = evaluate(model, training_probe, templates)["metrics"]
                 if not stable_probe(initial_probe):
                     raise ValueError("Stability guard: initial checkpoint fails training probe")
                 checkpoint(args.output / "stable.pt")
@@ -1347,7 +1351,11 @@ def _train(args, budget):
                     loss = selection_value(validation["metrics"], args.selection_metric)
                     row = {"epoch": epoch + 1, "validation": validation["metrics"]}
                     if probe_indices:
-                        row["training_probe"] = evaluate(model, training_probe, templates)["metrics"]
+                        if anchored:
+                            from .anchored_taskforce import classification_probe
+                            row["training_probe"] = classification_probe(model, training_probe, templates)
+                        else:
+                            row["training_probe"] = evaluate(model, training_probe, templates)["metrics"]
                     report["history"].append(row)
                     if stability and row.get("training_probe"):
                         if not stable_probe(row["training_probe"]):

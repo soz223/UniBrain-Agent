@@ -8,6 +8,23 @@ from .taskforce import TASKS
 from .taskforce_paper import PaperTaskForce
 
 
+def classification_probe(model, dataset, templates):
+    from .replacement_training import metrics_from_cases
+
+    model.eval()
+    device = next(model.parameters()).device
+    cases = []
+    with torch.no_grad():
+        for row in dataset:
+            image = torch.as_tensor(row[2], dtype=torch.float32, device=device).reshape(1, 1, *row[2].shape)
+            label = torch.tensor([int(row[1])], device=device)
+            logits = model(templates[0], image, templates[1], templates[2], if_train=False)[-1]
+            cases.append({'label': int(label.item()), 'prediction': int(logits.argmax(1)),
+                          'probability': float(logits.softmax(1)[0, 1]),
+                          'classification_loss': float(torch.nn.functional.cross_entropy(logits, label))})
+    return metrics_from_cases(cases)
+
+
 def upgrade_anchored_identity(previous, current):
     from .training_stability import PREVIOUS_TRAINERS, PREVIOUS_POLICY, PREVIOUS_CONTROL
 
