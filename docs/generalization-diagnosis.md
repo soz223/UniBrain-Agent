@@ -23,6 +23,9 @@ a fitting gap are observations, not proof of a particular causal mechanism.
 
 An anchored coordinator can use `--coordination-reward cross_subject`. Each update
 also measures another training subject before and after the model optimizer step.
+The first reference forward occurs after the training backward pass, immediately
+before the optimizer step. Both reference measurements use the same running
+buffers, avoiding a reward confound from the training forward's BatchNorm update.
 The reference excludes the updated subject and alternates diagnosis classes. Its
 index is reproducible from the seed and step. Evaluation mode, model buffers and
 random state are restored after each reference forward. No reference loss is

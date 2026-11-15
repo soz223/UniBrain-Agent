@@ -11,10 +11,34 @@ import torch
 from unibrain_agent.anchored_taskforce import AnchoredTaskForce
 from unibrain_agent.taskforce import TASKS
 from unibrain_agent.training_stability import recover
-from unibrain_agent.transfer_reward import PREVIOUS, reference_index, reference_losses, upgrade_reward_identity
+from unibrain_agent.transfer_reward import PREVIOUS, reference_index, reference_losses, step_with_reference, upgrade_reward_identity
 
 
 class TransferRewardTests(unittest.TestCase):
+    def test_zero_parameter_step_has_zero_reference_improvement_after_batchnorm_update(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.bn = torch.nn.BatchNorm1d(3)
+
+            def forward(self, ref, image, tissue, atlas, if_train):
+                value = self.bn(image).square().mean()
+                return (value, None, [value])
+
+        model = Model().train()
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.)
+        model(None, torch.randn(4, 3) + 10, None, None, True)[0].backward()
+        buffers = [v.clone() for v in model.buffers()]
+        with patch.dict('sys.modules', {'model': SimpleNamespace(GCC=lambda: lambda x, y: x)}), \
+             patch('unibrain_agent.replacement_training.original_losses', side_effect=lambda o, b, l: {t: o[0] for t in TASKS}):
+            before, after = step_with_reference(model, optimizer,
+                (torch.ones(4, 3), None, None, None, None), (None, None, None))
+        for task in TASKS:
+            torch.testing.assert_close(before[task], after[task], rtol=0, atol=0)
+        for old, new in zip(buffers, model.buffers()):
+            torch.testing.assert_close(old, new, rtol=0, atol=0)
+        self.assertTrue(model.training)
+
     def test_reference_forward_preserves_modes_buffers_and_random_state(self):
         class Model(torch.nn.Module):
             def __init__(self):

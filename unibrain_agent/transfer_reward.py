@@ -52,3 +52,9 @@ def reference_losses(model, sample, templates):
     finally:
         for module, mode in modes:
             module.training = mode
+
+
+def step_with_reference(model, optimizer, sample, templates):
+    before = reference_losses(model, sample, templates)
+    optimizer.step()
+    return before, reference_losses(model, sample, templates)

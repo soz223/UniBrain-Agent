@@ -1233,11 +1233,6 @@ def _train(args, budget):
                         image = image.detach().requires_grad_(True)
                     optimizer.zero_grad(set_to_none=True)
                     reference_sample = reference_before = None
-                    if cross_subject:
-                        from .transfer_reward import reference_index, reference_losses
-                        reference = reference_index(datasets['train'].array['label'], order[position], progress['steps'], args.seed)
-                        reference_sample = sample_tensors(datasets['train'][reference])
-                        reference_before = reference_losses(model, reference_sample, templates)
                     policy_record = None
                     if standalone and args.method == "synthstrip":
                         output = model.ext_net(image, True)
@@ -1320,7 +1315,13 @@ def _train(args, budget):
                         norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1., error_if_nonfinite=True)
                         if policy_record is not None:
                             policy_record["model_gradient_norm_before_clip"] = float(norm)
-                    optimizer.step()
+                    if cross_subject:
+                        from .transfer_reward import reference_index, step_with_reference
+                        reference = reference_index(datasets['train'].array['label'], order[position], progress['steps'], args.seed)
+                        reference_sample = sample_tensors(datasets['train'][reference])
+                        reference_before, reference_after = step_with_reference(model, optimizer, reference_sample, templates)
+                    else:
+                        optimizer.step()
                     if policy_record is not None and hasattr(team, "after_model_step"):
                         if anchored:
                             from .anchored_taskforce import matched_forward
@@ -1330,7 +1331,8 @@ def _train(args, budget):
                                 values["registration"] = GCC()(post[2][-1], templates[0])
                                 return values
                             post_losses = matched_forward(model, forward_rng, measure_after_update)
-                            reference_after = reference_losses(model, reference_sample, templates) if cross_subject else None
+                            if not cross_subject:
+                                reference_after = None
                             policy_record = team.after_model_step(post_losses, reference_before, reference_after)
                             if cross_subject:
                                 policy_record['reference_subject'] = {'split': 'train', 'index': reference,
