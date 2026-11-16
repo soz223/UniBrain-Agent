@@ -24,8 +24,12 @@ function objectiveTermColor(packet, id, fallback) {
 }
 
 function objectiveFormula(packet) {
-  return packet.terms.map(term => ({name: term.name, symbol: term.id, coefficient: term.weight,
-    expression: 'λ', weightSymbol: term.id}));
+  const abbreviations={extraction:'EXT',registration:'REG',segmentation:'SEG',classification:'CLS',parcellation:'PAR',regularization:'REG'};
+  return packet.terms.map(term=>{
+    const stage=(packet.stages||[]).find(stage=>stage.loss_ids.includes(term.id));
+    return {name:term.name,id:term.id,symbol:(stage?.method||term.name)+(term.id==='regularization'?' · smoothness':''),
+      expression:'λ',weightSymbol:abbreviations[stage?.id||term.id]||term.id.toUpperCase()};
+  });
 }
 
 function paintObjective(packet) {
@@ -34,7 +38,9 @@ function paintObjective(packet) {
   if (packet) objectivePreviousPacket = packet;
   byId("objectiveProfile").textContent = packet ? packet.profile + " · " + (packet.status === "observed" ? "Observed update " + packet.step : "Backend definition preview") : "Connect the updated backend to resolve this selection";
   byId("objectiveFormula").innerHTML = packet ? '<span><i>L</i><sub>joint</sub> =</span>' + objectiveFormula(packet).map((term, i) =>
-    (i ? '<span class="objective-plus">+</span>' : '') + '<span class="objective-part" style="--loss-color:' + objectiveTermColor(packet, term.symbol, i) + '"><span class="objective-weight">' + escapeHtml(term.expression) + '<sub>' + escapeHtml(term.weightSymbol) + '</sub></span><i>L</i><sub>' + escapeHtml(term.symbol) + '</sub></span>').join('') : '';
+    (i ? '<span class="objective-plus">+</span>' : '') + '<span class="objective-part" style="--loss-color:' + objectiveTermColor(packet, term.id, i) + '"><span class="objective-weight">' + escapeHtml(term.expression) + '<sub>' + escapeHtml(term.weightSymbol) + '</sub></span><i>L</i><sub>' + escapeHtml(term.symbol) + '</sub></span>').join('') : '';
+  const upstream=(packet?.stages||[]).filter(stage=>['denoising','bias','normalization'].includes(stage.id));
+  if(upstream.length)byId('objectiveFormula').innerHTML+='<span class="objective-input">; x̃ = '+upstream.map(stage=>escapeHtml(stage.method)).join(' ∘ ')+'(x)</span>';
   const terms = packet?.terms || [];
   const stages = packet?.stages || [];
   const selected = stages.find(stage => stage.id === objectiveSelected) || stages[0];
@@ -54,7 +60,7 @@ function paintObjective(packet) {
   byId("objectiveDetail").textContent = selected ? selected.name + ': ' + (details.length ? details.map(term =>
     term.name + ' = ' + term.definition + '. Effective coefficient: ' + term.weight + '. Reference: ' + term.supervision + (Number.isFinite(term.value) ?
     '. Observed loss: ' + term.value.toPrecision(5) + '; weighted: ' + term.weighted_value.toPrecision(5) : '')).join('. ') : selected.note) : '';
-  const connected = stages.map((stage, i) => stage.loss_ids.length ? i : -1).filter(i => i >= 0);
+  const connected = stages.map((stage, i) => i);
   const bus = document.querySelector('.objective-bus');
   bus.style.left = connected.length ? ((connected[0] + .5) / stages.length * 100) + '%' : '50%';
   bus.style.right = connected.length ? ((stages.length - connected.at(-1) - .5) / stages.length * 100) + '%' : '50%';
@@ -62,7 +68,7 @@ function paintObjective(packet) {
   const changed = previous && packet ? packet.terms.filter(term => JSON.stringify(term) !== JSON.stringify(previous.terms.find(item => item.id === term.id))).map(term => term.name) : [];
   const modulesChanged = previous && packet ? packet.modules.filter(module => !previous.modules.some(item => item.id === module.id && item.name === module.name)).map(module => module.name) : [];
   byId("objectiveChanges").textContent = packet?.status === 'observed' ? 'Executed total: ' + packet.total.toPrecision(6) + '. Reconstructed from displayed terms: ' + packet.reconstructed_total.toPrecision(6) + '.' :
-    (changed.length || modulesChanged.length ? 'Updated: ' + [...changed, ...modulesChanged].join(', ') + '. ' : '') + (packet?.explanation || '');
+    (changed.length || modulesChanged.length ? 'Updated: ' + [...changed, ...modulesChanged].join(', ') + '. ' : '') + (packet?.explanation || '') + (upstream.length ? ' Active preprocessing: '+upstream.map(stage=>stage.method).join(', ')+'. Downstream losses are evaluated on this transformed input; no independent preprocessing loss is declared.' : '');
   byId("objectiveConnections").innerHTML = (packet?.modules || []).map(module => {
     const losses = (packet.connections || []).filter(edge => edge.module === module.id && edge.status !== 'zero_weight').map(edge => packet.terms.find(term => term.id === edge.loss)?.name || edge.loss);
     const gradient = packet.gradient_verification?.classification_to_candidates?.[module.id];
