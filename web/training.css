@@ -106,3 +106,17 @@
 .experiment-controls details[open] { flex-basis:100%; }
 #experimentFoldDetail>.training-source { padding:5px 0 9px;border:0; }
 .training-graph { margin-top:4px; }
+
+.training-lab { position:relative; }
+#experimentLibrary { position:absolute;z-index:30;top:48px;left:0;width:min(420px,calc(100% - 26px));max-height:340px;margin:0;padding:12px;background:var(--panel);box-shadow:0 12px 40px #0008; }
+#experimentLibrary .panel-head h2 { font-size:12px;margin:0; }
+#experimentLibrary>input { padding:8px;font-size:12px; }
+#experimentList { max-height:210px;overflow:auto; }
+.experiment-entry { gap:6px;padding:3px 0; }
+.experiment-entry>button:first-child { padding:7px;font-size:11px; }
+.experiment-entry span { margin-top:3px;font-size:10px; }
+#experimentLibrary>.disclosure-note { display:none; }
+.experiment-archive-toggle { font-size:10px;margin:7px 0; }
+#experimentTitle { margin-right:auto; }
+#experimentOverview .experiment-controls { justify-content:flex-end;margin:4px 0; }
+#experimentResults { margin-top:24px; }
