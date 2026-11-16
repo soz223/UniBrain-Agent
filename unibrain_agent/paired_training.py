@@ -49,7 +49,16 @@ def run(spec, directory):
                 else:
                     if folder.exists():
                         raise ValueError('Existing experiment lacks a resume checkpoint: ' + job['name'])
-                    gpu_available(job.get('environment', {}))
+                    while not stopping:
+                        try:
+                            gpu_available(job.get('environment', {}))
+                            break
+                        except RuntimeError:
+                            atomic_json(directory / 'queue.json', {'status': 'waiting_for_gpu', 'active': job['name']})
+                            time.sleep(5)
+                    if stopping:
+                        atomic_json(directory / 'queue.json', {'status': 'stopped'})
+                        return
                     with (directory / (job['name'] + '_initial.log')).open('ab') as log:
                         child = subprocess.Popen(current['command'], cwd=job['cwd'],
                             env={**os.environ, **job.get('environment', {})}, stdout=log, stderr=subprocess.STDOUT)

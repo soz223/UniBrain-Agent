@@ -8,7 +8,7 @@ from unibrain_agent.paired_training import run
 
 
 class PairedTrainingTests(unittest.TestCase):
-    def execute(self, directory, mismatch=False):
+    def execute(self, directory, mismatch=False, busy=False):
         seen = []
         jobs = [{'name': name, 'cwd': str(directory), 'output': str(directory / name),
                  'command': ['python', 'train.py', '--output', str(directory / name)]}
@@ -32,11 +32,18 @@ class PairedTrainingTests(unittest.TestCase):
             self.assertTrue(spec['resume_supervisor_state'])
             write(spec['command'])
             return {'status': 'budget_exhausted'}
-        with patch('unibrain_agent.paired_training.gpu_available'), \
+        with patch('unibrain_agent.paired_training.gpu_available', side_effect=[RuntimeError('busy'), None, None] if busy else None), \
+             patch('unibrain_agent.paired_training.time.sleep'), \
              patch('unibrain_agent.paired_training.subprocess.Popen', Child), \
              patch('unibrain_agent.paired_training.supervise', supervise):
             run({'jobs': jobs, 'steps_per_epoch': 3, 'epochs': 2}, directory)
         return seen
+
+    def test_waits_for_gpu_release_before_launch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            seen = self.execute(Path(folder), busy=True)
+            self.assertEqual(seen[:2], [('original', 2), ('agent', 2)])
+            self.assertEqual(json.loads((Path(folder) / 'queue.json').read_text())['status'], 'complete')
 
     def test_alternates_matched_budgets_and_resumes_each_checkpoint(self):
         with tempfile.TemporaryDirectory() as folder:
