@@ -9,6 +9,70 @@ const trainingPhases = {
   learn:'On the next training sample, loss improvement and the previous mixed gradient produce a shared reward. Replay trains four actors and four centralized critics.'
 };
 const trainingState = {packet:null, latestPacket:null, current:null, selected:null, task:'classification', phase:'observe', follow:true, playing:false, timer:null, poll:null, source:'current', generation:0, error:null};
+const experimentState = {items:[],selected:null,poll:null,generation:0};
+
+function displayProtocol(value) {
+  return (value||'').replace(/(?:[·,]\s*)?seed\s*[:=]?\s*\d+/gi,'').trim();
+}
+
+function archivedExperiments() {
+  try{return JSON.parse(localStorage.getItem('archivedTrainingExperiments')||'[]');}catch{return [];}
+}
+
+function renderExperimentLibrary() {
+  const query=byId('experimentSearch').value.toLowerCase(),archived=archivedExperiments();
+  const items=experimentState.items.filter(item=>(byId('experimentArchived').checked||!archived.includes(item.id))&&
+    [item.label,item.server,item.protocol].join(' ').toLowerCase().includes(query));
+  byId('experimentList').innerHTML=items.length?items.map(item=>'<article class="experiment-entry"><button data-open-experiment="'+escapeHtml(item.id)+'"><strong>'+escapeHtml(item.label)+'</strong><span>'+escapeHtml(item.server)+' · '+item.expected_folds+' fold'+(item.expected_folds===1?'':'s')+' · '+escapeHtml(displayProtocol(item.protocol))+'</span></button><button class="text-button" data-archive-experiment="'+escapeHtml(item.id)+'">'+(archived.includes(item.id)?'Restore':'Archive')+'</button></article>').join(''):'<p>No matching experiments.</p>';
+  byId('experimentList').querySelectorAll('[data-open-experiment]').forEach(button=>button.onclick=()=>openExperiment(button.dataset.openExperiment));
+  byId('experimentList').querySelectorAll('[data-archive-experiment]').forEach(button=>button.onclick=()=>{
+    const key=button.dataset.archiveExperiment,set=new Set(archivedExperiments());set.has(key)?set.delete(key):set.add(key);
+    localStorage.setItem('archivedTrainingExperiments',JSON.stringify([...set]));renderExperimentLibrary();
+  });
+}
+
+function selectTrainingRun(source,label) {
+  byId('experimentLibrary').hidden=true;
+  trainingState.source=source;trainingState.generation++;trainingState.follow=true;trainingState.error=null;clearTimeout(trainingState.poll);
+  trainingState.packet=source==='current'?trainingState.current:null;trainingState.latestPacket=trainingState.packet;
+  byId('experimentOverview').hidden=!experimentState.selected;byId('experimentFoldDetail').hidden=false;
+  byId('experimentFoldTitle').textContent=label;byId('experimentBack').hidden=true;
+  renderTraining();pollTrainingRun();
+}
+
+async function openExperiment(identifier,push=true) {
+  clearTimeout(trainingState.poll);trainingState.generation++;clearTimeout(experimentState.poll);
+  experimentState.selected=identifier;const generation=++experimentState.generation;
+  byId('experimentLibrary').hidden=true;byId('experimentFoldDetail').hidden=false;byId('experimentOverview').hidden=false;
+  if(push){const url=new URL(location.href);url.searchParams.set('experiment',identifier);url.hash='roles';history.pushState({},'',url);}
+  byId('experimentOverview').innerHTML='<p role="status">Loading experiment…</p>';
+  let initialized=false;
+  async function refresh() {
+    if(generation!==experimentState.generation)return;
+    try {
+      const data=await requestJson('/api/training-experiments/'+encodeURIComponent(identifier));
+      if(generation!==experimentState.generation)return;
+      byId('experimentTitle').textContent=data.label;
+      const propertiesOpen=byId('experimentProperties')?.open||false;
+      const metrics=Object.keys(data.summary.validation).map(key=>{
+        const values=data.folds.map(f=>f.validation[key]).filter(Number.isFinite);
+        const mean=values.length?values.reduce((a,b)=>a+b,0)/values.length:null;
+        const sd=values.length>1?Math.sqrt(values.reduce((sum,v)=>sum+(v-mean)**2,0)/(values.length-1)):null;
+        const labels={auc:'AUC',accuracy:'Accuracy',brain_dice:'Brain Dice',tissue_dice:'Tissue Dice',atlas_dice:'Atlas Dice',registration_mi:'MI',registration_cc:'CC'};
+        return '<span class="experiment-result"><span>'+escapeHtml(labels[key]||key)+'</span><strong>'+(mean===null?'Pending':mean.toFixed(3)+(sd===null?'':' ± '+sd.toFixed(3)))+'</strong></span>';
+      }).join('');
+      byId('experimentOverview').innerHTML='<div class="experiment-results">'+metrics+'</div><div class="experiment-controls"><span class="disclosure-note">Validation · selected checkpoints · '+data.completed_folds+'/'+data.expected_folds+' folds complete'+(data.completed_folds<data.expected_folds?' · provisional':'')+'</span><label>Viewing <select id="experimentFoldSelect" aria-label="View fold">'+data.folds.map(f=>'<option value="'+escapeHtml(f.run)+'" '+(trainingState.source===f.run?'selected':'')+'>Fold '+f.fold+' · '+escapeHtml(f.status==='no_records'?'Queued':f.status||'Queued')+'</option>').join('')+'</select></label><details id="experimentProperties" '+(propertiesOpen?'open':'')+'><summary>Details</summary><p>'+escapeHtml(data.server)+' · '+escapeHtml(displayProtocol(data.protocol))+'</p><p>Mean across folds with recorded validation; sample SD when at least two folds are available.</p><div>'+data.folds.map(f=>'<p>Fold '+f.fold+' · epoch '+f.epoch+'/'+(f.epochs||'pending')+' · family isolation '+(f.family_disjoint_verified===true?'verified':'pending')+'</p>').join('')+'</div></details></div>';
+      byId('experimentFoldSelect').onchange=event=>{const fold=data.folds.find(f=>f.run===event.target.value);selectTrainingRun(fold.run,'Fold '+fold.fold);};
+      if(!initialized){
+        initialized=true;
+        const fold=data.folds.find(f=>f.run===trainingState.source)||data.folds.find(f=>f.status==='running')||data.folds.find(f=>f.status!=='no_records')||data.folds[0];
+        if(fold){byId('experimentFoldSelect').value=fold.run;selectTrainingRun(fold.run,'Fold '+fold.fold);}
+      }
+    }catch(error){if(generation===experimentState.generation)byId('experimentOverview').textContent='Experiment unavailable: '+error.message;}
+    if(generation===experimentState.generation&&!byId('rolesView').hidden)experimentState.poll=setTimeout(refresh,15000);
+  }
+  await refresh();
+}
 
 function trainingPolicyDescription(policy) {
   if(!policy)return {label:'TASKFORCE · COOPERATIVE ACTOR CRITIC',formula:'The backend records the applied coefficient rule.',
@@ -178,6 +242,14 @@ function renderTraining() {
   byId('trainingValidation').innerHTML=validation.length?table(['Epoch','Extraction D / J','Registration MI / CC','Tissue D / J','Translation D / J','Val ACC / AUC','Train probe AUC'],validation.slice(-10).map(item=>[item.epoch,...[['brain_dice','brain_jaccard'],['registration_mi','registration_cc'],['tissue_dice','tissue_jaccard'],['atlas_dice','atlas_jaccard'],['accuracy','auc']].map(pair=>pair.map(key=>trainingNumber(item.validation?.[key])).join(' / ')),trainingNumber(item.training_probe?.auc)]))+(packet.training_probe_size?'<p>D: Dice. J: Jaccard. Metrics use the pinned upstream implementation. Train probe: '+packet.training_probe_size+' fixed training subjects. Validation uses the registered validation split; these are not five-fold test means.</p>':''):'<p>No completed epoch evaluation in this source.</p>';
   const targets=health?.diagnosis?.targets;
   if(targets&&Object.keys(targets).length)byId('trainingValidation').innerHTML+=table(['Reference target','Latest validation','Target','Status'],Object.entries(targets).map(([name,value])=>[name,trainingNumber(value.observed),trainingNumber(value.target),value.met===true?'Reached':value.met===false?'Below target':'Not measured']));
+  const original=experimentState.selected==='hcp_family_original'||packet?.coordination==='none';
+  byId('trainingLab').classList.toggle('original-training',original);
+  byId('trainingCritics').hidden=original;byId('trainingCooperation').hidden=original;
+  if(original){
+    byId('trainingProfile').textContent='UNIBRAIN · JOINT TRAINING';
+    byId('trainingActors').querySelectorAll('.actor-label').forEach((label,i)=>label.textContent='LOSS '+(i+1));
+    byId('trainingActors').querySelectorAll('.actor-io').forEach(label=>label.textContent='Loss → joint objective → parameters');
+  }
   updateTrainingPhase();updateTrainingFreshness();
 }
 
@@ -226,13 +298,17 @@ async function initializeTraining() {
   byId('trainingStep').oninput=()=>{trainingState.follow=false;trainingState.selected=trainingFrames(trainingState.packet)[Number(byId('trainingStep').value)]?.step;renderTraining();};
   byId('trainingLatest').onclick=()=>{trainingState.follow=true;trainingState.packet=trainingState.latestPacket;renderTraining();};
   byId('trainingMatrixMode').onchange=renderTraining;byId('trainingWeightMode').onchange=renderTraining;
-  byId('trainingRun').onchange=()=>{
-    trainingState.source=byId('trainingRun').value;trainingState.generation++;trainingState.follow=true;trainingState.error=null;clearTimeout(trainingState.poll);
-    trainingState.packet=trainingState.source==='current'?trainingState.current:null;trainingState.latestPacket=trainingState.packet;renderTraining();pollTrainingRun();
-  };
+  byId('experimentBrowse').onclick=()=>{byId('experimentLibrary').hidden=!byId('experimentLibrary').hidden;renderExperimentLibrary();};
+  byId('experimentClose').onclick=()=>{byId('experimentLibrary').hidden=true;};
+  byId('experimentSearch').oninput=renderExperimentLibrary;byId('experimentArchived').onchange=renderExperimentLibrary;
+  byId('experimentBack').onclick=()=>openExperiment(experimentState.selected,false);
+  byId('experimentCurrent').onclick=()=>{experimentState.selected=null;experimentState.generation++;clearTimeout(experimentState.poll);byId('experimentTitle').textContent='Training workspace';const url=new URL(location.href);url.searchParams.delete('experiment');history.pushState({},'',url);selectTrainingRun('current','Current workspace');};
+  window.addEventListener('popstate',()=>{const key=new URL(location.href).searchParams.get('experiment');if(key)openExperiment(key,false);else byId('experimentCurrent').click();});
   window.addEventListener('trainingtelemetry',event=>acceptTrainingTelemetry(event.detail));
   window.addEventListener('cycletrainingtelemetry',event=>acceptTrainingTelemetry({history:event.detail.updates||[]}));
-  window.addEventListener('workspacechange',event=>{updateTrainingPhase();if(event.detail==='roles')pollTrainingRun();else clearTimeout(trainingState.poll);});
+  window.addEventListener('workspacechange',event=>{updateTrainingPhase();if(event.detail==='roles'){
+    if(experimentState.selected&&!byId('experimentOverview').hidden)openExperiment(experimentState.selected,false);else pollTrainingRun();
+  }else {clearTimeout(trainingState.poll);clearTimeout(experimentState.poll);}});
   const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
   trainingState.playing=!reduced.matches;
   reduced.addEventListener('change',event=>{if(event.matches){trainingState.playing=false;updateTrainingPhase();}});
@@ -245,9 +321,9 @@ async function initializeTraining() {
   if(typeof liveRun!=='undefined'&&liveRun)acceptTrainingTelemetry(liveRun);
   if(!await backendReady)return;
   try {
-    const result=await requestJson('/api/training-runs');
-    byId('trainingRun').innerHTML+='<optgroup label="Server training runs">'+(result.runs||[]).map(run=>'<option value="'+escapeHtml(run.id)+'">'+escapeHtml(run.label)+'</option>').join('')+'</optgroup>';
-    if(result.runs?.length&&!trainingFrames(trainingState.current).length){byId('trainingRun').value=result.runs[0].id;byId('trainingRun').onchange();}
+    const result=await requestJson('/api/training-experiments');experimentState.items=result.experiments||[];
+    const requested=new URL(location.href).searchParams.get('experiment');
+    if(requested||experimentState.items.length)openExperiment(requested||experimentState.items[0].id,false);
   } catch(error){updateTrainingFreshness('This backend does not expose external training runs. Workspace telemetry remains available.');}
 }
 

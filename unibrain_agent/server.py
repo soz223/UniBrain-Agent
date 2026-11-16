@@ -135,6 +135,10 @@ def create_server(port=8777, host="127.0.0.1", access=None):
                     self.respond(snapshot)
                 elif path == "/api/training-runs":
                     self.respond({"runs": training.listing()})
+                elif path == "/api/training-experiments":
+                    self.respond({"experiments": training.experiments()})
+                elif path.startswith("/api/training-experiments/"):
+                    self.respond(training.experiment(path.removeprefix("/api/training-experiments/")))
                 elif path.startswith("/api/training-runs/"):
                     self.respond(training.read(path.removeprefix("/api/training-runs/")))
                 elif path == "/api/research-cycles":

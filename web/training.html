@@ -1,5 +1,15 @@
 <section class="training-lab" id="trainingLab" aria-label="Gradient agent training">
-  <div class="training-source"><label>Training run <select id="trainingRun" aria-label="Training run"><option value="current">Current workspace</option></select></label><span id="trainingFreshness" role="status">Waiting for recorded updates</span></div>
+  <div class="training-source"><button id="experimentBrowse">▦ Experiments</button><strong id="experimentTitle">Training workspace</strong><button id="experimentCurrent" class="text-button">Workspace run</button></div>
+  <aside id="experimentLibrary" class="experiment-library" hidden aria-label="Experiment library">
+    <div class="panel-head"><h2>Experiments</h2><button id="experimentClose" class="text-button">Close</button></div>
+    <input id="experimentSearch" type="search" placeholder="Search experiment, dataset or server" aria-label="Search experiments">
+    <label class="experiment-archive-toggle"><input id="experimentArchived" type="checkbox"> Show archived on this browser</label>
+    <div id="experimentList"></div>
+    <p class="disclosure-note">Connected backend registry · Archiving hides an entry on this browser. Server files are preserved.</p>
+  </aside>
+  <div id="experimentOverview" hidden></div>
+  <div id="experimentFoldDetail">
+  <div class="training-source"><button id="experimentBack" class="text-button" hidden>← Experiment overview</button><strong id="experimentFoldTitle">Current workspace</strong><span id="trainingFreshness" role="status">Waiting for recorded updates</span></div>
   <details class="disclosure training-inspect" id="trainingHealthPanel" hidden><summary>Training health <span id="trainingHealthStatus"></span></summary><div id="trainingHealth"></div></details>
   <div class="training-caption"><span class="source-tag" id="trainingProfile">TASKFORCE · COOPERATIVE ACTOR CRITIC</span><span id="trainingMode" class="badge">Schematic</span></div>
   <div class="training-phases" aria-label="Training cycle">
@@ -23,4 +33,5 @@
   <details class="disclosure training-inspect"><summary>Inside the selected agent <span id="trainingSelectedTask">Extraction</span></summary><div id="trainingAgentDetail"></div></details>
   <details class="disclosure training-inspect"><summary>Validation outcomes <span>Evaluation only</span></summary><div id="trainingValidation"></div></details>
   <details class="disclosure training-inspect"><summary>Method and measurement scope</summary><p>Each task actor observes one gradient Gram row and its training loss. Four centralized critics each see all task observations and actions. A shared reward and replay buffer train the policies. Inference uses the trained UniBrain checkpoint.</p><p id="trainingMethodScope">Select a recorded update to inspect its coordinator profile.</p><p>TaskForce also uses loss, gradient and reward normalization. UniBrain uses a different task graph and model optimizer; this is a task adaptation, not a reproduction of its reported benchmarks. Validation does not drive the reward. An autograd path establishes connectivity, not a nonzero gradient or convergence.</p><p><a href="https://openaccess.thecvf.com/content/CVPR2026/html/Choi_TaskForce_Cooperative_Multi-agent_Reinforcement_Learning_for_Multi-task_Optimization_CVPR_2026_paper.html" target="_blank" rel="noopener">TaskForce · CVPR 2026 ↗</a></p></details>
+  </div>
 </section>

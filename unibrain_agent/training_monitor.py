@@ -3,6 +3,7 @@
 import json
 import math
 import re
+import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -174,6 +175,10 @@ def snapshot(folder, identifier, label=None):
             'fold': number(config.get('fold')), 'epochs': number(config.get('epochs')),
             'paper_original': config.get('paper_original') is True,
             'coordination': 'taskforce' if config.get('coordination') == 'taskforce' else 'none',
+            'selection': {key: report.get('selection', {}).get(key) for key in ('metric', 'best_epoch')},
+            'best_validation': numeric_map(report.get('best_validation'), metric_keys),
+            'test': numeric_map(report.get('test', {}).get('metrics'), metric_keys),
+            'family_disjoint_verified': report.get('audit', {}).get('cohort', {}).get('family_disjoint_verified'),
             'observed_at': timestamp(max(path.stat().st_mtime for path in files)) if files else None,
             'captured_at': datetime.now(timezone.utc).isoformat(), 'history': history, 'validation': validation}
 
@@ -189,6 +194,50 @@ class TrainingMonitor:
     def listing(self):
         return [{'id': key, 'label': value.get('label', key) if isinstance(value, dict) else key}
                 for key, value in self.entries.items() if re.fullmatch(r'[A-Za-z0-9_]+', key)]
+
+    def experiments(self):
+        groups = {}
+        for run in self.listing():
+            value = self.entries[run['id']]
+            meta = value.get('experiment', {}) if isinstance(value, dict) else {}
+            key = meta.get('id', run['id'])
+            if not re.fullmatch(r'[A-Za-z0-9_]+', key):
+                continue
+            group = groups.setdefault(key, {'id': key, 'label': meta.get('label', run['label']),
+                'expected_folds': meta.get('expected_folds', 1), 'server': meta.get('server', 'Configured backend'),
+                'protocol': meta.get('protocol', 'Not specified'), 'runs': []})
+            group['runs'].append(run['id'])
+        return list(groups.values())
+
+    def experiment(self, identifier):
+        entry = next((item for item in self.experiments() if item['id'] == identifier), None)
+        if entry is None:
+            raise ValueError('Unknown experiment')
+        folds = []
+        for run in entry['runs']:
+            packet = self.read(run)
+            settings = self.entries[run]
+            meta = settings.get('experiment', {}) if isinstance(settings, dict) else {}
+            folds.append({'run': run, 'fold': packet.get('fold') or meta.get('fold'),
+                'status': packet.get('reported_status'), 'health': packet.get('health'),
+                'epoch': packet.get('validation', [{}])[-1].get('epoch') if packet.get('validation') else 0,
+                'epochs': packet.get('epochs'), 'selection': packet.get('selection', {}),
+                'validation': packet.get('best_validation', {}), 'test': packet.get('test', {}),
+                'family_disjoint_verified': packet.get('family_disjoint_verified'),
+                'observed_at': packet.get('observed_at'),
+                'source': meta.get('source', settings.get('path') if isinstance(settings, dict) else settings)})
+        complete = [item for item in folds if item['status'] == 'complete']
+        summaries = {}
+        for split in ('validation', 'test'):
+            summaries[split] = {}
+            for metric in ('auc', 'accuracy', 'brain_dice', 'tissue_dice', 'atlas_dice', 'registration_mi', 'registration_cc'):
+                values = [item[split][metric] for item in complete if number(item[split].get(metric)) is not None]
+                summaries[split][metric] = {'n': len(values), 'mean': statistics.mean(values) if values else None,
+                    'std': statistics.stdev(values) if len(values) > 1 else None,
+                    'variance': statistics.variance(values) if len(values) > 1 else None}
+        return {**entry, 'folds': sorted(folds, key=lambda item: item['fold'] or 0), 'summary': summaries,
+                'completed_folds': len(complete), 'aggregation': 'Completed folds only; sample SD and variance (ddof=1).',
+                'selection_scope': 'Validation metrics belong to each validation-selected checkpoint. Test is shown only when recorded.'}
 
     def read(self, identifier):
         if not re.fullmatch(r'[A-Za-z0-9_]+', identifier) or identifier not in self.entries:
