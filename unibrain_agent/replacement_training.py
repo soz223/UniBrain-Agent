@@ -1157,7 +1157,8 @@ def _train(args, budget):
     if args.dataset == 'hcp':
         report['reference_semantics'] = {'task': 'sex_classification', 'label_0': 'female', 'label_1': 'male',
             'tissue_metrics': 'annotated_voxels_only', 'tissue_training_loss': 'original_transferred_template_target',
-            'family_disjoint_verified': False, 'scope': 'exploratory_learning_check'}
+            'family_disjoint_verified': bool(audit.get('cohort', {}).get('family_disjoint_verified')),
+            'scope': 'family_grouped_learning_check' if audit.get('cohort', {}).get('family_disjoint_verified') else 'exploratory_learning_check'}
     report["execution_budget"] = budget.describe()
     if args.resume_gradient_audit_upgrade:
         report["gradient_audit_upgrade"] = {"previous_trainer": resumed["identity"]["implementation_hashes"]["replacement_training.py"] if resumed else None,

@@ -30,7 +30,7 @@ def identifier(value):
     return value.decode("utf-8") if isinstance(value, bytes) else str(value)
 
 
-def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=False, existing=None):
+def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=False, existing=None, split_root=None):
     cohort, output = Path(cohort).resolve(), Path(output).resolve()
     if dataset not in {"abide", "adhd", "hcp"}:
         raise ValueError("Declare the source dataset explicitly")
@@ -48,7 +48,8 @@ def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=Fals
     ids = [identifier(value) for value in master["id"]]
     if any(not value.strip() for value in ids) or len(set(ids)) != len(ids) or not np.isin(master["label"], (0, 1)).all():
         raise ValueError("Master subjects must have unique IDs and binary classification labels")
-    source_paths = {split: cohort / "rounds" / f"round{fold}" / f"{split}_indices.npy" for split in SPLITS}
+    index_root = Path(split_root).resolve() if split_root is not None else cohort
+    source_paths = {split: index_root / "rounds" / f"round{fold}" / f"{split}_indices.npy" for split in SPLITS}
     indices = {split: np.load(path, allow_pickle=False) for split, path in source_paths.items()}
     if any(value.ndim != 1 or not np.issubdtype(value.dtype, np.integer) for value in indices.values()):
         raise ValueError("Original fold indices must be one dimensional integer arrays")
@@ -99,7 +100,20 @@ def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=Fals
     if dataset == 'hcp':
         report.update(task='sex_classification', label_meaning={'0': 'female', '1': 'male'},
                       family_disjoint_verified=False, benchmark_scope='exploratory_subject_split', tissue_validity={})
+    protocol_path = index_root / 'split_protocol.json'
+    if split_root is not None:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from unibrain_agent.grouped_provenance import validate_protocol
+        protocol = validate_protocol(protocol_path, report['master_sha256'], fold, indices, ids)
+        for split in SPLITS:
+            if sha(source_paths[split]) != protocol['folds'][fold - 1][split]['sha256']:
+                raise ValueError('Protocol index checksum mismatch')
+        report.update(family_disjoint_verified=protocol['family_disjoint_verified'],
+                      benchmark_scope=protocol['kind'], split_protocol_sha256=sha(protocol_path))
     output.mkdir(parents=True, exist_ok=False)
+    if split_root is not None:
+        shutil.copyfile(protocol_path, output / 'split_protocol.json')
     (output / "source_indices").mkdir()
     try:
         for split, chosen in selected.items():

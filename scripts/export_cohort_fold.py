@@ -10,8 +10,8 @@ else:
     from export_acceptance_subset import export
 
 
-def export_fold(cohort, fold, destination, full=False, dataset=None, existing=None):
-    return export(cohort, destination, fold=fold, dataset=dataset, full=full, existing=existing)
+def export_fold(cohort, fold, destination, full=False, dataset=None, existing=None, split_root=None):
+    return export(cohort, destination, fold=fold, dataset=dataset, full=full, existing=existing, split_root=split_root)
 
 
 if __name__ == "__main__":
@@ -22,7 +22,8 @@ if __name__ == "__main__":
     parser.add_argument("--fold", type=int, choices=range(1, 6), required=True)
     parser.add_argument("--full", action="store_true", help="Retain every original subject in the original split order")
     parser.add_argument("--existing", type=Path, help="Verify and hard-link an existing fold on the same filesystem")
+    parser.add_argument("--split-root", type=Path, help="Use a verified versioned split protocol")
     args = parser.parse_args()
-    report = export_fold(args.cohort, args.fold, args.destination, args.full, args.dataset, args.existing)
+    report = export_fold(args.cohort, args.fold, args.destination, args.full, args.dataset, args.existing, args.split_root)
     print(json.dumps({"status": report["status"], "scope": report["scope"], "dataset": report["dataset"],
                       "fold": report["fold"], "counts": {key: value["count"] for key, value in report["splits"].items()}}))

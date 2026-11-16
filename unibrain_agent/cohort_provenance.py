@@ -109,8 +109,22 @@ def validate_cohort(directory, dataset, fold, data_hashes=None, required_scope=N
         first_affine = affine
         declared[name] = details["sha256"]
     if dataset == 'hcp':
-        if record.get('task') != 'sex_classification' or record.get('family_disjoint_verified') is not False:
+        if record.get('task') != 'sex_classification' or type(record.get('family_disjoint_verified')) is not bool:
             raise ValueError('HCP exploratory task and family-split provenance are required')
+        if record.get('family_disjoint_verified') or record.get('split_protocol_sha256'):
+            from .grouped_provenance import validate_protocol
+            protocol_path = directory / 'split_protocol.json'
+            if not checksum(record.get('split_protocol_sha256')) or file_hash(protocol_path) != record['split_protocol_sha256']:
+                raise ValueError('Missing or changed split protocol')
+            indices = {s: np.load(directory / 'source_indices' / f'{s}_indices.npy') for s in SPLITS}
+            protocol = validate_protocol(protocol_path, record['master_sha256'], fold, indices)
+            if protocol['family_disjoint_verified'] != record['family_disjoint_verified']:
+                raise ValueError('Family claim differs from split protocol')
+            for split in SPLITS:
+                if index_hashes[split] != protocol['folds'][fold - 1][split]['sha256']:
+                    raise ValueError('Grouped index checksum mismatch')
+                if [protocol['members'][i]['id'] for i in record['splits'][split]['master_indices']] != record['splits'][split]['ids']:
+                    raise ValueError('Grouped subject membership mismatch')
         for split in SPLITS:
             details = record.get('tissue_validity', {}).get(split, {})
             name = f'tissue_valid_{split}.npy'
