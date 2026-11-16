@@ -121,6 +121,11 @@ def supervise(spec):
     state = {"status": "starting", "restarts": 0, "consecutive_restarts": 0, "pid": os.getpid(), "max_restarts": retries,
              "wall_seconds": seconds, "automatic_actions": ["scaled_gradient_diagnosis", "checkpoint_resume"],
              "validation_used_for_repair": False}
+    if spec.get('resume_supervisor_state'):
+        previous = read_json(folder / 'supervisor.json')
+        for key in ('restarts', 'consecutive_restarts', 'stability_recoveries', 'last_gradient_failure'):
+            if key in previous:
+                state[key] = previous[key]
     child = None
     reviewed_epoch = None
 

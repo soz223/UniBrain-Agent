@@ -71,6 +71,19 @@ def stable_probe(metrics):
     return math.isfinite(loss) and loss < 5 and .05 < fraction < .95
 
 
+def qualify_probe(metrics, progress, completed_epochs, bootstrap_epochs=0):
+    state = progress.setdefault('stability_bootstrap', {'qualified': False, 'epoch_limit': bootstrap_epochs})
+    if stable_probe(metrics):
+        state['qualified'] = True
+        return True
+    loss = metrics.get('classification_loss', math.inf)
+    fraction = metrics.get('predicted_positive_fraction', -1)
+    if (not math.isfinite(loss) or loss >= 5 or not 0 <= fraction <= 1
+            or state['qualified'] or completed_epochs >= bootstrap_epochs):
+        raise ValueError('Stability guard: training probe classification collapse')
+    return False
+
+
 def recover(source, destination, attempt):
     import torch
 

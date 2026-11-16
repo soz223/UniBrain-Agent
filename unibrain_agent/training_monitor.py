@@ -132,7 +132,7 @@ def health_record(folder):
             'last_recovery': {'step': number(last.get('step')), 'paths': [p for p in last.get('paths', []) if p in allowed],
                               'optimizer_modified': False if last.get('optimizer_modified') is False else None},
             'supervisor': {'status': supervisor.get('status') if supervisor.get('status') in
-                          ('starting', 'running', 'waiting_for_gpu', 'checkpointing', 'recovering', 'complete', 'budget_exhausted', 'stopped', 'needs_attention') else None,
+                          ('starting', 'running', 'waiting_for_gpu', 'waiting_for_turn', 'checkpointing', 'recovering', 'complete', 'budget_exhausted', 'stopped', 'needs_attention') else None,
                           **numeric_map(supervisor, ('restarts', 'max_restarts', 'heartbeat_age_seconds')),
                           'updated_at': supervisor.get('updated_at')}}
 

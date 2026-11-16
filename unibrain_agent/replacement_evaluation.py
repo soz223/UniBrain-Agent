@@ -136,7 +136,7 @@ def recorded_arguments(args, payload, report, report_path):
     for name in IDENTITY_FIELDS:
         if name not in identity or name not in declared or not same_value(identity[name], declared[name]):
             raise ValueError("Checkpoint and training configuration disagree: " + name)
-    for name in ("taskforce_profile", "taskforce_gradient_normalization", "taskforce_action_bound", "template_normalization", "train_probe_size", "coordination_reward"):
+    for name in ("taskforce_profile", "taskforce_gradient_normalization", "taskforce_action_bound", "template_normalization", "train_probe_size", "coordination_reward", "coordination_bootstrap_epochs"):
         if name in identity and not same_value(identity[name], declared.get(name)):
             raise ValueError("Checkpoint and training configuration disagree: " + name)
     for name in ("method", "setting", "seed"):

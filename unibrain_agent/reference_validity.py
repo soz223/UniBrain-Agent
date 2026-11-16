@@ -3,6 +3,15 @@
 import numpy as np
 
 
+def initial_state_digest(model):
+    import hashlib
+    value = hashlib.sha256()
+    for name, tensor in sorted(model.state_dict().items()):
+        value.update((name + str(tensor.dtype) + str(tuple(tensor.shape))).encode())
+        value.update(tensor.detach().cpu().contiguous().numpy().tobytes())
+    return value.hexdigest()
+
+
 def attach_validity(datasets, directory):
     for split, dataset in datasets.items():
         array = np.load(directory / f'tissue_valid_{split}.npy', mmap_mode='r', allow_pickle=False)

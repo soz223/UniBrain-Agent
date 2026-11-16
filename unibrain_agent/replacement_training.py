@@ -989,9 +989,11 @@ def _train(args, budget):
     from .taskforce_paper import make_team, policy_parameters
     from .training_control import normalize_template, training_probe_indices
 
-    from .training_stability import check_training_loss, stable_probe, upgrade_identity, retained_copy
+    from .training_stability import check_training_loss, stable_probe, qualify_probe, upgrade_identity, retained_copy
 
     anchored = args.taskforce_gradient_normalization == "anchored"
+    if not 0 <= args.coordination_bootstrap_epochs <= 3 or (args.coordination_bootstrap_epochs and not anchored):
+        raise ValueError('At most three bootstrap epochs are supported for fresh anchored training')
     cross_subject = args.coordination_reward == 'cross_subject'
     if cross_subject and (not anchored or args.coordination != 'taskforce'):
         raise ValueError('Cross-subject reward requires the anchored coordinator')
@@ -1046,6 +1048,8 @@ def _train(args, budget):
         identity["implementation_hashes"]["training_stability.py"] = hashlib.sha256(Path(__file__).with_name("training_stability.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     if anchored:
         identity["implementation_hashes"]["anchored_taskforce.py"] = hashlib.sha256(Path(__file__).with_name("anchored_taskforce.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+        if args.coordination_bootstrap_epochs:
+            identity['coordination_bootstrap_epochs'] = args.coordination_bootstrap_epochs
     if cross_subject:
         identity['coordination_reward'] = args.coordination_reward
         identity['implementation_hashes']['transfer_reward.py'] = hashlib.sha256(Path(__file__).with_name('transfer_reward.py').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
@@ -1077,6 +1081,9 @@ def _train(args, budget):
         from .full_candidates import build_candidate_model
         model, config, architecture = build_candidate_model(args.source, args.method, adapter=args.adapter, weights=args.weights, plans=args.plans, host_checkpoint=host_checkpoint)
     model = finalize_pipeline(model, architecture, args)
+    if args.dataset == 'hcp':
+        from .reference_validity import initial_state_digest
+        architecture['initial_state_sha256'] = initial_state_digest(model)
     model.cuda()
     from model import GCC
     from utils import train_aug
@@ -1233,9 +1240,10 @@ def _train(args, budget):
                     initial_probe = classification_probe(model, training_probe, templates)
                 else:
                     initial_probe = evaluate(model, training_probe, templates)["metrics"]
-                if not stable_probe(initial_probe):
-                    raise ValueError("Stability guard: initial checkpoint fails training probe")
-                checkpoint(args.output / "stable.pt")
+                if qualify_probe(initial_probe, progress, progress['epoch'], args.coordination_bootstrap_epochs):
+                    checkpoint(args.output / "stable.pt")
+                else:
+                    report['stability']['bootstrap'] = copy.deepcopy(progress['stability_bootstrap'])
             for epoch in range(progress["epoch"], epochs):
                 train_mode(model)
                 order = torch.randperm(len(datasets["train"]), generator=torch.Generator().manual_seed(args.seed + 10000 * phase_index + epoch)).tolist()
@@ -1419,8 +1427,7 @@ def _train(args, budget):
                             row["training_probe"] = evaluate(model, training_probe, templates)["metrics"]
                     report["history"].append(row)
                     if stability and row.get("training_probe"):
-                        if not stable_probe(row["training_probe"]):
-                            raise ValueError("Stability guard: training probe classification collapse")
+                        qualify_probe(row['training_probe'], progress, epoch + 1, args.coordination_bootstrap_epochs)
                     if loss < progress["best_loss"]:
                         progress.update(best_loss=loss, best_value=loss, best_epoch=epoch + 1, selection_metric=args.selection_metric)
                         report["selection"].update(best_epoch=epoch + 1, best_value=loss)
@@ -1429,7 +1436,7 @@ def _train(args, budget):
                         checkpoint(args.output / "best.pt")
                     else:
                         progress["bad_epochs"] += 1
-                if stability and not standalone:
+                if stability and not standalone and progress.get('stability_bootstrap', {}).get('qualified'):
                     checkpoint(args.output / "stable.pt")
                 stopped = not standalone and args.patience and progress["bad_epochs"] >= args.patience
                 if stopped:
@@ -1508,6 +1515,7 @@ def parser():
     result.add_argument("--resume-coordination-upgrade", action="store_true")
     result.add_argument('--coordination-reward', choices=('same_subject', 'cross_subject'), default='same_subject')
     result.add_argument('--resume-reward-upgrade', action='store_true')
+    result.add_argument('--coordination-bootstrap-epochs', type=int, default=0)
     result.add_argument("--train-probe-size", type=int, default=0)
     result.add_argument("--template-normalization", choices=("none", "minmax"), default="none")
     result.add_argument("--eval-limit", type=int)

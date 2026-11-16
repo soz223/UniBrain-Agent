@@ -5,10 +5,31 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from unibrain_agent.reference_validity import attach_validity, validity_for
+from unibrain_agent.reference_validity import attach_validity, validity_for, initial_state_digest
 
 
 class ReferenceValidityTests(unittest.TestCase):
+    def test_fresh_bootstrap_does_not_disable_established_collapse_checks(self):
+        from unibrain_agent.training_stability import qualify_probe
+        progress = {}
+        initial = {'classification_loss': .69, 'predicted_positive_fraction': 1.}
+        self.assertFalse(qualify_probe(initial, progress, 0, 3))
+        with self.assertRaisesRegex(ValueError, 'collapse'):
+            qualify_probe(initial, {}, 3, 3)
+        with self.assertRaisesRegex(ValueError, 'collapse'):
+            qualify_probe({'classification_loss': 6., 'predicted_positive_fraction': 1.}, {}, 0, 3)
+        self.assertTrue(qualify_probe({'classification_loss': .6, 'predicted_positive_fraction': .5}, progress, 1, 3))
+        with self.assertRaisesRegex(ValueError, 'collapse'):
+            qualify_probe(initial, progress, 1, 3)
+
+    def test_initialization_digest_detects_parameter_changes(self):
+        model = torch.nn.Linear(3, 2)
+        before = initial_state_digest(model)
+        self.assertEqual(before, initial_state_digest(model))
+        with torch.no_grad():
+            model.bias.add_(1)
+        self.assertNotEqual(before, initial_state_digest(model))
+
     def test_subset_uses_original_subject_mask(self):
         dataset = torch.utils.data.TensorDataset(torch.zeros(2))
         with tempfile.TemporaryDirectory() as folder:
