@@ -188,7 +188,7 @@ function updateTrainingFreshness(message) {
   const observed=Date.parse(packet?.observed_at),age=Number.isFinite(observed)?Math.max(0,Math.round((Date.now()-observed)/1000)):null;
   const status=packet?.reported_status,finished=['complete','budget_exhausted','failed'].includes(status);
   const budgetLabel=packet?.stop_reason==='wall_time_budget'?'time budget reached · checkpoint saved':packet?.stop_reason==='termination_signal'?'paused · checkpoint saved':'planned step limit reached';
-  const label=status==='budget_exhausted'?budgetLabel:status||'unknown';
+  const label=packet?.health?.supervisor?.status==='waiting_for_turn'?'waiting for next GPU turn · checkpoint saved':status==='budget_exhausted'?budgetLabel:status||'unknown';
   byId('trainingFreshness').textContent=age!==null?'Last file update '+(age<120?age+'s':Math.round(age/60)+'m')+' ago · '+label+(age>120&&!finished?' · may be validating or offline':''):trainingFrames(packet).length?'Workspace telemetry · recorded updates':'Connect a backend or run a training cycle to receive measurements.';
 }
 
