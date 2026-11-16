@@ -18,7 +18,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("cohort", type=Path)
     parser.add_argument("destination", type=Path)
-    parser.add_argument("--dataset", choices=("abide", "adhd"), required=True)
+    parser.add_argument("--dataset", choices=("abide", "adhd", "hcp"), required=True)
     parser.add_argument("--fold", type=int, choices=range(1, 6), required=True)
     parser.add_argument("--full", action="store_true", help="Retain every original subject in the original split order")
     parser.add_argument("--existing", type=Path, help="Verify and hard-link an existing fold on the same filesystem")

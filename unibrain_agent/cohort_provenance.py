@@ -108,6 +108,20 @@ def validate_cohort(directory, dataset, fold, data_hashes=None, required_scope=N
             raise ValueError("Template grid provenance is invalid or inconsistent")
         first_affine = affine
         declared[name] = details["sha256"]
+    if dataset == 'hcp':
+        if record.get('task') != 'sex_classification' or record.get('family_disjoint_verified') is not False:
+            raise ValueError('HCP exploratory task and family-split provenance are required')
+        for split in SPLITS:
+            details = record.get('tissue_validity', {}).get(split, {})
+            name = f'tissue_valid_{split}.npy'
+            if details.get('file') != name or not checksum(details.get('sha256')):
+                raise ValueError('Missing HCP tissue validity provenance')
+            array = np.load(directory / name, mmap_mode='r', allow_pickle=False)
+            if array.dtype != np.bool_ or array.shape != (counts[split], 96, 96, 96):
+                raise ValueError('Tissue validity shape differs from exported subjects')
+            if [v.get('id') for v in details.get('sources', [])] != record['splits'][split]['ids']:
+                raise ValueError('Tissue validity subject order differs from imaging')
+            declared[name] = details['sha256']
     if data_hashes is not None and any(data_hashes.get(name) != expected for name, expected in declared.items()):
         raise ValueError("Exported data or template checksum mismatch")
     return {"status": "verified" if data_hashes is not None else "metadata_verified", "scope": scope,
@@ -115,6 +129,7 @@ def validate_cohort(directory, dataset, fold, data_hashes=None, required_scope=N
             "manifest_sha256": file_hash(path), "master_sha256": record["master_sha256"],
             "original_index_hashes": index_hashes, "split_counts": counts, "declared_data_hashes": declared,
             "data_hashes": data_hashes,
+            "task": record.get('task', 'diagnosis'), 'family_disjoint_verified': record.get('family_disjoint_verified'),
             "boundary": "Checksum agreement and preserved fold membership do not establish clinical label accuracy"}
 
 

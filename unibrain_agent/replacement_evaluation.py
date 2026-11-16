@@ -24,7 +24,7 @@ IMPLEMENTATION_FILES = ("replacement_training.py", "full_model.py", "full_candid
                         "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py",
                         "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py",
                         "full_replacement.py", "sources.py", "site_training.py", "taskforce_paper.py", "training_control.py",
-                        "training_stability.py", "anchored_taskforce.py", "transfer_reward.py")
+                        "training_stability.py", "anchored_taskforce.py", "transfer_reward.py", "reference_validity.py")
 
 
 def read_json(path):
@@ -74,6 +74,8 @@ def architecture_files(identity):
         files.update(("full_composition.py", "full_replacement.py"))
     if identity.get("template_normalization", "none") != "none":
         files.add("training_control.py")
+    if identity.get('reference_validity'):
+        files.add('reference_validity.py')
     return sorted(files)
 
 
@@ -249,6 +251,8 @@ def audit_data(restored, identity, report):
     from .data import OriginalDataset
     from .cohort_provenance import validate_cohort, validate_site
     names = [f"adhd_{split}_sample.npy" for split in SPLITS] + list(TEMPLATES)
+    if identity.get('reference_validity'):
+        names += [f'tissue_valid_{split}.npy' for split in SPLITS]
     expected = identity.get("data_hashes")
     if not isinstance(expected, dict) or set(expected) != set(names) or expected != report.get("audit", {}).get("data_hashes"):
         raise ValueError("Checkpoint and report data identities disagree")
@@ -370,6 +374,7 @@ def evaluate_checkpoint(args):
     started = time.monotonic()
     try:
         model = reconstruct(restored, payload, audit)
+        payload_validity = payload['identity'].get('reference_validity')
         del payload
         model.cuda()
         from .training_control import normalize_template
@@ -378,6 +383,9 @@ def evaluate_checkpoint(args):
         result["template_normalization"] = scaling
         templates = [torch.from_numpy(array).float().cuda().reshape(1, 1, 96, 96, 96) for array in arrays]
         dataset = OriginalDataset(restored.data / f"adhd_{args.split}_sample.npy")
+        if payload_validity:
+            from .reference_validity import attach_validity
+            attach_validity({args.split: dataset}, restored.data)
         result["evaluation"] = evaluate(model, dataset, templates, args.limit, args.output / "predictions" if args.save_predictions else None)
         for name, binding in audit["bindings"].items():
             file_binding(binding["path"], binding["sha256"], name)

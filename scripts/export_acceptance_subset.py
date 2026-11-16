@@ -32,7 +32,7 @@ def identifier(value):
 
 def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=False, existing=None):
     cohort, output = Path(cohort).resolve(), Path(output).resolve()
-    if dataset not in {"abide", "adhd"}:
+    if dataset not in {"abide", "adhd", "hcp"}:
         raise ValueError("Declare the source dataset explicitly")
     if type(fold) is not int or fold not in range(1, 6) or type(per_class) is not int or per_class < 1:
         raise ValueError("A preserved fold from one to five and a positive sample budget are required")
@@ -47,7 +47,7 @@ def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=Fals
         raise ValueError("All image and reference arrays must have shape 96 cubed")
     ids = [identifier(value) for value in master["id"]]
     if any(not value.strip() for value in ids) or len(set(ids)) != len(ids) or not np.isin(master["label"], (0, 1)).all():
-        raise ValueError("Master subjects must have unique IDs and binary diagnosis labels")
+        raise ValueError("Master subjects must have unique IDs and binary classification labels")
     source_paths = {split: cohort / "rounds" / f"round{fold}" / f"{split}_indices.npy" for split in SPLITS}
     indices = {split: np.load(path, allow_pickle=False) for split, path in source_paths.items()}
     if any(value.ndim != 1 or not np.issubdtype(value.dtype, np.integer) for value in indices.values()):
@@ -96,6 +96,9 @@ def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=Fals
               "dataset": dataset, "fold": fold, "seed": seed, "per_class": None if full else per_class,
               "master_count": len(master), "master_size_bytes": initial_stat.st_size,
               "master_sha256": sha(master_path), "source_data_modified": False, "splits": {}, "templates": {}}
+    if dataset == 'hcp':
+        report.update(task='sex_classification', label_meaning={'0': 'female', '1': 'male'},
+                      family_disjoint_verified=False, benchmark_scope='exploratory_subject_split', tissue_validity={})
     output.mkdir(parents=True, exist_ok=False)
     (output / "source_indices").mkdir()
     try:
@@ -133,6 +136,24 @@ def export(cohort, output, fold=1, per_class=1, seed=17, dataset=None, full=Fals
                                        "class_counts": {str(label): int(np.count_nonzero(master["label"][chosen] == label)) for label in (0, 1)},
                                        "sha256": sha(target), "original_indices_sha256": index_hash,
                                        "original_indices_file": copied.relative_to(output).as_posix()}
+            if dataset == 'hcp':
+                validity_path = output / f'tissue_valid_{split}.npy'
+                validity = np.lib.format.open_memmap(validity_path, mode='w+', dtype=np.bool_, shape=(len(chosen), 96, 96, 96))
+                sources = []
+                try:
+                    for position, index in enumerate(chosen):
+                        source = cohort / 'subjects' / ids[index] / 'tissue_valid_mask.npy'
+                        mask = np.load(source, allow_pickle=False)
+                        if mask.shape != (96, 96, 96) or not np.isin(mask, (0, 1)).all() or not mask.any():
+                            raise ValueError('Invalid partial tissue reference mask')
+                        if np.any(master[index]['raw_img_gm_mask_np'][mask == 0] != 0):
+                            raise ValueError('Tissue reference conflicts with its validity mask')
+                        validity[position] = mask.astype(bool)
+                        sources.append({'id': ids[index], 'sha256': sha(source)})
+                finally:
+                    validity.flush()
+                    del validity
+                report['tissue_validity'][split] = {'file': validity_path.name, 'sha256': sha(validity_path), 'sources': sources}
             if existing is not None:
                 after = source_array.stat()
                 if (source_stat.st_size, source_stat.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
@@ -156,7 +177,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("cohort", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--dataset", choices=("abide", "adhd"), required=True)
+    parser.add_argument("--dataset", choices=("abide", "adhd", "hcp"), required=True)
     parser.add_argument("--fold", type=int, choices=range(1, 6), default=1)
     parser.add_argument("--per-class", type=int, default=1)
     parser.add_argument("--seed", type=int, default=17)

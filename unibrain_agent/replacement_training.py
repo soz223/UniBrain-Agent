@@ -234,6 +234,8 @@ def preflight(args):
     if any(root == p.resolve() or p.resolve() in root.parents for p in (args.source, args.data)):
         raise ValueError("Output must be separate from source and data")
     files = [args.data / f"adhd_{split}_sample.npy" for split in datasets] + [args.data / name for name in templates]
+    if args.dataset == 'hcp':
+        files += [args.data / f'tissue_valid_{split}.npy' for split in datasets]
     data_hashes = {path.name: fingerprint(path) for path in files}
     from .cohort_provenance import validate_cohort, validate_site
     cohort = (validate_site(args.data, args.dataset, args.split_id, data_hashes) if args.split_id else
@@ -376,32 +378,44 @@ def evaluate(model, dataset, templates, limit=None, output_dir=None, progress_ca
             registered = F.grid_sample(tissue, grid, mode="nearest", align_corners=True)
             losses = original_losses(output, brain, label)
             tissue_logits = output[5][0] if isinstance(output[5], list) else output[5]
+            from .reference_validity import validity_for
+            valid = validity_for(dataset, index, tissue.device)
+            tissue_prediction, tissue_reference = tissue_logits.argmax(1), tissue
+            registration_reference = templates[1]
+            if valid is not None:
+                tissue_prediction = tissue_prediction * valid[:, 0]
+                tissue_reference = tissue * valid
+                registered_valid = F.grid_sample(valid.float(), grid, mode='nearest', align_corners=True) > .5
+                registration_reference = templates[1] * registered_valid
+                registered = registered * registered_valid
             registration_loss = GCC()(output[2][-1], templates[0])
             reference = losses["extraction"] + losses["segmentation"] + losses["classification"] + getattr(model, "paper_registration_weight", .1) * registration_loss
             case = {"id": str(row[0]), "label": int(label.item()), "prediction": int(output[-1].argmax(1).item()),
                     "probability": float(output[-1].softmax(1)[0, 1]), "reference_loss": float(reference),
-                    "brain_dice": float(f1_loss(mask, brain)), "tissue_dice": float(compute_label_dice_v2(tissue_logits.argmax(1), tissue, "gm")),
+                    "brain_dice": float(f1_loss(mask, brain)), "tissue_dice": float(compute_label_dice_v2(tissue_prediction, tissue_reference, "gm")),
                     "atlas_dice": float(compute_label_dice_v2(output[8], atlas, "aal")),
-                    "registration_dice": float(compute_label_dice_v2(templates[1], registered, "gm"))}
+                    "registration_dice": float(compute_label_dice_v2(registration_reference, registered, "gm"))}
             case.update({name + "_loss": float(loss) for name, loss in losses.items()})
             case.update(brain_jaccard=float(jaccard_loss(mask, brain)),
-                        tissue_jaccard=float(compute_label_jaccard_v2(tissue_logits.argmax(1), tissue, "gm")),
+                        tissue_jaccard=float(compute_label_jaccard_v2(tissue_prediction, tissue_reference, "gm")),
                         atlas_jaccard=float(compute_label_jaccard_v2(output[8], atlas, "aal")),
                         registration_mi=float(mutual_information(output[2][-1], templates[0])),
                         registration_cc=float(normalized_cross_correlation(output[2][-1], templates[0])))
             case["registration_loss"] = float(registration_loss)
             if getattr(model, "paper_original", False):
                 target_labels = output[6].argmax(1)
+                if valid is not None:
+                    target_labels = target_labels * valid[:, 0]
                 foreground = tissue[:, 0] > 0
                 subject_ce = F.cross_entropy(tissue_logits, tissue[:, 0].long(), reduction="none")
                 outside = (model.last_inverse_grid.abs() > 1).any(-1)
-                case.update(diagnostic_target_subject_dice=float(compute_label_dice_v2(target_labels, tissue, "gm")),
+                case.update(diagnostic_target_subject_dice=float(compute_label_dice_v2(target_labels, tissue_reference, "gm")),
                             diagnostic_target_foreground_fraction=float((target_labels > 0).float().mean()),
                             diagnostic_subject_foreground_ce=float(subject_ce[foreground].mean()),
                             diagnostic_foreground_outside_fraction=float(outside[foreground].float().mean()),
                             diagnostic_affine_determinant=float(torch.det(output[3][-1][:, :, :3]).mean()))
                 for label_index in range(1, 4):
-                    prediction = tissue_logits.argmax(1) == label_index
+                    prediction = tissue_prediction == label_index
                     reference_mask = tissue[:, 0] == label_index
                     intersection = (prediction & reference_mask).sum()
                     case[f"diagnostic_tissue_{label_index}_dice"] = float((2 * intersection + 1e-5) / (prediction.sum() + reference_mask.sum() + 1e-5))
@@ -1035,6 +1049,9 @@ def _train(args, budget):
     if cross_subject:
         identity['coordination_reward'] = args.coordination_reward
         identity['implementation_hashes']['transfer_reward.py'] = hashlib.sha256(Path(__file__).with_name('transfer_reward.py').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+    if args.dataset == 'hcp':
+        identity['reference_validity'] = 'partial_tissue_mask_v1'
+        identity['implementation_hashes']['reference_validity.py'] = hashlib.sha256(Path(__file__).with_name('reference_validity.py').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
     host_checkpoint = host_checkpoint_spec(args)
     if getattr(args, "paper_original", False):
         from .paper_original import build_paper_model
@@ -1064,6 +1081,9 @@ def _train(args, budget):
     from model import GCC
     from utils import train_aug
     datasets = {split: OriginalDataset(args.data / f"adhd_{split}_sample.npy") for split in ("train", "val", "test")}
+    if args.dataset == 'hcp':
+        from .reference_validity import attach_validity
+        attach_validity(datasets, args.data)
     template_image, template_scaling = normalize_template(np.load(args.data / "template_img_orig_96.npy"), args.template_normalization)
     template_arrays = [template_image] + [np.load(args.data / name) for name in
                                        ("template_img_gm_mask_orig_96.npy", "template_img_aal_mask_orig_96.npy")]
@@ -1127,6 +1147,10 @@ def _train(args, budget):
         update_budget = min(update_budget, args.max_steps)
     report = {"status": "running", "method": args.method, "setting": args.setting, "seed": args.seed, "config": settings,
               "architecture": architecture, "audit": audit, "gpu": gpu, "history": [], "steps": progress["steps"], "pretrain_steps": progress["pretrain_steps"]}
+    if args.dataset == 'hcp':
+        report['reference_semantics'] = {'task': 'sex_classification', 'label_0': 'female', 'label_1': 'male',
+            'tissue_metrics': 'annotated_voxels_only', 'tissue_training_loss': 'original_transferred_template_target',
+            'family_disjoint_verified': False, 'scope': 'exploratory_learning_check'}
     report["execution_budget"] = budget.describe()
     if args.resume_gradient_audit_upgrade:
         report["gradient_audit_upgrade"] = {"previous_trainer": resumed["identity"]["implementation_hashes"]["replacement_training.py"] if resumed else None,
