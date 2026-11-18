@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from unibrain_agent import replacement_training
 from unibrain_agent.anchored_taskforce import AnchoredTaskForce
 from unibrain_agent.taskforce import TASKS
 from unibrain_agent.training_stability import recover
@@ -15,6 +16,31 @@ from unibrain_agent.transfer_reward import PREVIOUS, reference_index, reference_
 
 
 class TransferRewardTests(unittest.TestCase):
+    def test_shadow_update_matches_independent_adam_and_preserves_agent_state(self):
+        from unibrain_agent.transfer_reward import step_against_reference
+
+        model = torch.nn.Linear(1, 1, bias=False)
+        optimizer = torch.optim.Adam(model.parameters(), lr=.01)
+        model.weight.square().sum().backward()
+        optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+        expected, expected_opt = copy.deepcopy((model, optimizer))
+        baseline, baseline_opt = copy.deepcopy((model, optimizer))
+        expected.weight.sum().backward()
+        expected_opt.step()
+        (-baseline.weight.sum()).backward()
+        torch.nn.utils.clip_grad_norm_(baseline.parameters(), 1.)
+        baseline_opt.step()
+        model.weight.sum().backward()
+        def measure(network, sample, templates):
+            return network.weight.detach().clone()
+        with patch('unibrain_agent.transfer_reward.reference_losses', side_effect=measure):
+            base_score, agent_score = step_against_reference(model, optimizer, -model.weight.sum(), None, None)
+        torch.testing.assert_close(base_score, baseline.weight)
+        torch.testing.assert_close(agent_score, expected.weight)
+        for key, value in expected_opt.state[expected.weight].items():
+            torch.testing.assert_close(optimizer.state[model.weight][key], value)
+
     def test_zero_parameter_step_has_zero_reference_improvement_after_batchnorm_update(self):
         class Model(torch.nn.Module):
             def __init__(self):
@@ -30,7 +56,7 @@ class TransferRewardTests(unittest.TestCase):
         model(None, torch.randn(4, 3) + 10, None, None, True)[0].backward()
         buffers = [v.clone() for v in model.buffers()]
         with patch.dict('sys.modules', {'model': SimpleNamespace(GCC=lambda: lambda x, y: x)}), \
-             patch('unibrain_agent.replacement_training.original_losses', side_effect=lambda o, b, l: {t: o[0] for t in TASKS}):
+             patch.object(replacement_training, 'original_losses', side_effect=lambda o, b, l: {t: o[0] for t in TASKS}):
             before, after = step_with_reference(model, optimizer,
                 (torch.ones(4, 3), None, None, None, None), (None, None, None))
         for task in TASKS:
@@ -57,7 +83,7 @@ class TransferRewardTests(unittest.TestCase):
         image = torch.ones(2, 3)
         before = torch.get_rng_state().clone()
         with patch.dict('sys.modules', {'model': SimpleNamespace(GCC=lambda: lambda x, y: x)}), \
-             patch('unibrain_agent.replacement_training.original_losses', side_effect=lambda o, b, l: {t: o[0] for t in TASKS}):
+             patch.object(replacement_training, 'original_losses', side_effect=lambda o, b, l: {t: o[0] for t in TASKS}):
             values = reference_losses(model, (image, None, None, None, None), (None, None, None))
         self.assertTrue(model.training)
         self.assertFalse(model.bn.training)

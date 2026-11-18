@@ -994,7 +994,8 @@ def _train(args, budget):
     anchored = args.taskforce_gradient_normalization == "anchored"
     if not 0 <= args.coordination_bootstrap_epochs <= 3 or (args.coordination_bootstrap_epochs and not anchored):
         raise ValueError('At most three bootstrap epochs are supported for fresh anchored training')
-    cross_subject = args.coordination_reward == 'cross_subject'
+    paired_reward = args.coordination_reward == 'classification_advantage'
+    cross_subject = paired_reward or args.coordination_reward == 'cross_subject'
     if cross_subject and (not anchored or args.coordination != 'taskforce'):
         raise ValueError('Cross-subject reward requires the anchored coordinator')
     if args.resume_reward_upgrade and (not cross_subject or not args.resume):
@@ -1352,7 +1353,12 @@ def _train(args, budget):
                         from .transfer_reward import reference_index, step_with_reference
                         reference = reference_index(datasets['train'].array['label'], order[position], progress['steps'], args.seed)
                         reference_sample = sample_tensors(datasets['train'][reference])
-                        reference_before, reference_after = step_with_reference(model, optimizer, reference_sample, templates)
+                        if paired_reward:
+                            from .transfer_reward import step_against_reference
+                            baseline_loss = sum(base_weights[t] * losses[t] for t in base_weights)
+                            reference_before, reference_after = step_against_reference(model, optimizer, baseline_loss, reference_sample, templates)
+                        else:
+                            reference_before, reference_after = step_with_reference(model, optimizer, reference_sample, templates)
                     else:
                         optimizer.step()
                     if policy_record is not None and hasattr(team, "after_model_step"):
@@ -1514,7 +1520,7 @@ def parser():
     result.add_argument("--resume-gradient-audit-upgrade", action="store_true")
     result.add_argument("--resume-stability-upgrade", action="store_true")
     result.add_argument("--resume-coordination-upgrade", action="store_true")
-    result.add_argument('--coordination-reward', choices=('same_subject', 'cross_subject'), default='same_subject')
+    result.add_argument('--coordination-reward', choices=('same_subject', 'cross_subject', 'classification_advantage'), default='same_subject')
     result.add_argument('--resume-reward-upgrade', action='store_true')
     result.add_argument('--coordination-bootstrap-epochs', type=int, default=0)
     result.add_argument("--train-probe-size", type=int, default=0)

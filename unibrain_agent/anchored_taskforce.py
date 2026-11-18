@@ -133,7 +133,7 @@ class AnchoredTaskForce(PaperTaskForce):
         base = torch.tensor(self.base)
         improvement = float(((before.log1p() - after.log1p()) * base).sum() / base.sum())
         transfer = None
-        if self.reward_mode == 'cross_subject':
+        if self.reward_mode in {'cross_subject', 'classification_advantage'}:
             if reference_before is None or reference_after is None:
                 raise ValueError('Cross-subject reward requires matched reference losses')
             pair = torch.tensor([[float(values[t].detach()) for t in TASKS]
@@ -141,6 +141,9 @@ class AnchoredTaskForce(PaperTaskForce):
             if not torch.isfinite(pair).all() or (pair < 0).any():
                 raise ValueError('Stability guard: invalid cross-subject reference loss')
             transfer = float(((pair[0].log1p() - pair[1].log1p()) * base).sum() / base.sum())
+            if self.reward_mode == 'classification_advantage':
+                index = TASKS.index('classification')
+                transfer = float(pair[0, index].log1p() - pair[1, index].log1p())
         reward = max(-1., min(1., improvement if transfer is None else transfer))
         self.matched_transition = (observation, logits, reward)
         self.last_record.update(reward=reward, reward_terms={'same_subject_improvement': improvement,
@@ -149,6 +152,12 @@ class AnchoredTaskForce(PaperTaskForce):
         if transfer is not None:
             self.last_record['reward_scope'] = 'other_training_subject_before_after_update'
             self.last_record['reward_terms']['cross_subject_improvement'] = transfer
+        if self.reward_mode == 'classification_advantage':
+            self.last_record['reward_scope'] = 'other_training_subject_agent_vs_original_classification'
+            terms = self.last_record['reward_terms']
+            terms['classification_advantage'] = terms.pop('cross_subject_improvement')
+            terms['baseline_classification_loss'] = float(reference_before['classification'])
+            terms['agent_classification_loss'] = float(reference_after['classification'])
         return super().after_model_step()
 
     def state_dict(self):

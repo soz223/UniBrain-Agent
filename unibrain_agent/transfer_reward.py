@@ -58,3 +58,29 @@ def step_with_reference(model, optimizer, sample, templates):
     before = reference_losses(model, sample, templates)
     optimizer.step()
     return before, reference_losses(model, sample, templates)
+
+
+def step_against_reference(model, optimizer, baseline_loss, sample, templates):
+    """Evaluate the original weights and the proposed weights from identical Adam state."""
+    import torch
+
+    params = [p for group in optimizer.param_groups for p in group['params']]
+    grads = torch.autograd.grad(baseline_loss, params, allow_unused=True)
+    trial = copy.deepcopy(optimizer)
+    copies = [p for group in trial.param_groups for p in group['params']]
+    for param, grad in zip(copies, grads):
+        param.grad = grad
+    torch.nn.utils.clip_grad_norm_(copies, 1., error_if_nonfinite=True)
+    trial.step()
+    # Exchange parameter storage while scoring the shadow update. Optimizer state stays separate.
+    with torch.no_grad():
+        for param, clone in zip(params, copies):
+            param.data, clone.data = clone.data, param.data
+        try:
+            baseline = reference_losses(model, sample, templates)
+        finally:
+            for param, clone in zip(params, copies):
+                param.data, clone.data = clone.data, param.data
+    del trial, copies, grads
+    optimizer.step()
+    return baseline, reference_losses(model, sample, templates)
