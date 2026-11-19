@@ -105,6 +105,8 @@ def preflight(args):
     from .site_training import validate_site_options
 
     validate_site_options(args)
+    if args.coordination == "pcgrad" and not args.paper_original:
+        raise ValueError("PCGrad requires the four original paper objectives")
     paper_weight = getattr(args, "paper_registration_weight", .1)
     if not math.isfinite(paper_weight) or paper_weight <= 0 or (paper_weight != .1 and not getattr(args, "paper_original", False)):
         raise ValueError("A positive finite paper registration weight requires the paper profile")
@@ -1042,8 +1044,10 @@ def _train(args, budget):
     identity["implementation_hashes"] = {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
                                           for name in ("replacement_training.py", "full_model.py", "full_candidates.py", "full_connectivity.py", "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py", "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py", "full_replacement.py", "sources.py", "site_training.py", "training_control.py")}
     identity["source"] = audit["source"]
-    if args.coordination == "taskforce" and args.taskforce_profile == "paper":
+    if args.coordination in ("pcgrad", "taskforce") and args.taskforce_profile == "paper":
         identity["implementation_hashes"]["taskforce_paper.py"] = hashlib.sha256(Path(__file__).with_name("taskforce_paper.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    if args.coordination == "pcgrad":
+        identity["implementation_hashes"]["pcgrad.py"] = hashlib.sha256(Path(__file__).with_name("pcgrad.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     stability = args.coordination == "taskforce" and args.taskforce_gradient_normalization in ("bounded_l2", "anchored")
     if stability:
         identity["implementation_hashes"]["training_stability.py"] = hashlib.sha256(Path(__file__).with_name("training_stability.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
@@ -1203,6 +1207,11 @@ def _train(args, budget):
             standalone = phase == "standalone"
             configure_trainable(model, args.method, args.setting, args.trainable, standalone)
             gradient_probes = []
+            if args.coordination == "pcgrad":
+                from .pcgrad import project_weights
+                gradient_probes = [p for p in model.parameters() if p.requires_grad]
+                report["coordination"].update(algorithm="PCGrad", gradient_scope="all_trainable_parameters",
+                                              probe_elements=sum(p.numel() for p in gradient_probes))
             if team is not None and not standalone:
                 gradient_probes, names = policy_parameters(model, args.taskforce_profile, args.probe_budget, args.probe_modules)
                 report["coordination"].update(probe_names=names, probe_elements=sum(parameter.numel() for parameter in gradient_probes),
@@ -1281,6 +1290,8 @@ def _train(args, budget):
                             check_training_loss(losses["classification"], progress.setdefault("classification_health", {}))
                         new_loss = {"synthstrip": "extraction", "voxelmorph": "registration", "lapirn": "registration", "nnunet": "segmentation"}.get(args.method)
                         weights = dict(base_weights)
+                        if args.coordination == "pcgrad":
+                            weights = project_weights(losses, weights, gradient_probes, args.seed, progress["steps"])
                         if getattr(model, "learned_parcellation", False):
                             atlas_indices = atlas_class_indices(atlas_target, templates[2])
                             losses["parcellation"] = torch.nn.functional.cross_entropy(output[7], atlas_indices)
@@ -1530,7 +1541,7 @@ def parser():
     result.add_argument("--seed", type=int, default=17)
     result.add_argument("--gpu", type=int, default=0)
     result.add_argument("--threads", type=int, default=2)
-    result.add_argument("--coordination", choices=("none", "taskforce"), default="none")
+    result.add_argument("--coordination", choices=("none", "taskforce", "pcgrad"), default="none")
     result.add_argument("--coordination-batch-size", type=int, default=64)
     result.add_argument("--taskforce-profile", choices=("paper", "legacy"), default="paper")
     result.add_argument("--taskforce-gradient-normalization", choices=("l2", "bounded_l2", "anchored", "none"), default="l2")
