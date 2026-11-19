@@ -20,6 +20,14 @@ The coding agent received [the task](codex/task.txt) and implemented the [frozen
 python ../../scripts/evaluate_external_classifier.py codex/model.py 53c19e384a3b65b83bed79ef0e8a08d32ae3fa11627706bfdc5ae5b60ae1459d "$FOLD_DIR" "$NEW_RESULT_DIR"
 ```
 
+## OpenClaw with original source
+
+OpenClaw 2026.11.3 ran its isolated coding loop with GPT 5.2 on the [task](openclaw/task.txt) and four public files from [the original implementation](https://github.com/Anonymous7852/UniBrain/tree/f9f8d906b1725046d532f862a28876482aca2cfa). It generated the [adapter](openclaw/adapter.py) in nine assistant turns with eight tool calls. On real ADHD subjects, two Adam updates produced finite gradients and parameter changes. Four held-out validation subjects returned finite probabilities. This protocol checks integration and optimizer updates, with insufficient data for a diagnostic performance estimate.
+
+```sh
+python openclaw/adapter.py --source "$ORIGINAL_SRC" --fold "$ADHD_FOLD" --output "$NEW_RESULT_DIR" --steps 2
+```
+
 ## NeuroPilot
 
 The publicly available [DICOM conversion skill](https://github.com/acmlab/dcm2bids-skill/tree/7e9880588e203404d08652aee576a2c68ee71f87) takes acquisition DICOM files. An agent inspected metadata from the author's synthetic fixture and produced the saved conversion rules. The replay checks series assignment, six image and sidecar outputs, and BIDS validation. The resulting measurements concern data standardization.
