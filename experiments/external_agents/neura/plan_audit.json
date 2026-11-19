@@ -1,0 +1,66 @@
+[
+  {
+    "arm": "native",
+    "revised": false,
+    "model": "gpt-4.1-mini",
+    "upstream": "c349dde3e9d713181ecb7b734c8bb42fe9646c37",
+    "tool_names": [
+      "dicom_to_nifti",
+      "spm_analysis",
+      "spm_analysis",
+      "spm_analysis",
+      "python_stats",
+      "python_stats",
+      "python_stats",
+      "python_stats"
+    ],
+    "decision_sha256": "32e4aeb6ffb83d39064946fb8b361ab0680755e83ce446d6f77c806f46e872b9",
+    "review_status": "needs_revision"
+  },
+  {
+    "arm": "native",
+    "revised": true,
+    "model": "gpt-4.1-mini",
+    "upstream": "c349dde3e9d713181ecb7b734c8bb42fe9646c37",
+    "tool_names": [
+      "spm_analysis",
+      "spm_analysis",
+      "spm_analysis",
+      "python_stats",
+      "python_stats",
+      "python_stats",
+      "python_stats",
+      "python_stats"
+    ],
+    "decision_sha256": "ce3f9c9b1182db2b605200a5cb859fd72c3c9754d86419378a5f8e03521c0511",
+    "review_status": "needs_revision"
+  },
+  {
+    "arm": "with_unibrain",
+    "revised": false,
+    "model": "gpt-4.1-mini",
+    "upstream": "c349dde3e9d713181ecb7b734c8bb42fe9646c37",
+    "tool_names": [
+      "dicom_to_nifti",
+      "freesurfer_analysis",
+      "freesurfer_analysis",
+      "freesurfer_analysis",
+      "unibrain_original_diagnosis",
+      "python_stats"
+    ],
+    "decision_sha256": "bd5eea0c5b87fc25258034d5cb272fed392cead0ec962707e29710b2471e8a9c",
+    "review_status": "needs_revision"
+  },
+  {
+    "arm": "with_unibrain",
+    "revised": true,
+    "model": "gpt-4.1-mini",
+    "upstream": "c349dde3e9d713181ecb7b734c8bb42fe9646c37",
+    "tool_names": [
+      "unibrain_original_diagnosis",
+      "python_stats"
+    ],
+    "decision_sha256": "211f05d21ad6044dfcab2891dcb97e484e3808be5e569ccaaa492d1281777a02",
+    "review_status": "needs_revision"
+  }
+]

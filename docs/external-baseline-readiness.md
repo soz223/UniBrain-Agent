@@ -1,5 +1,7 @@
 # External baseline readiness
 
+For the subsequent downstream diagnosis runs and DICOM conversion replay, see [external agent experiments](../experiments/external_agents/README.md).
+
 Audit date: 2026-11-11. This is a source and interface audit, not execution
 evidence. No external system was installed, authenticated or run for this audit.
 The [catalog](../catalog/external_baselines.json) records candidate source pins;

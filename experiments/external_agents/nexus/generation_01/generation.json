@@ -1,0 +1,13 @@
+{
+  "upstream": "c2e15d4983489fd89d604fdbbefbbf1726958068",
+  "llm": "gpt-5.2",
+  "request_count": 5,
+  "model_sha256": "7b26a649bf32673284c1800947597750d059e34e0566022622a060ef221889e9",
+  "retrieved_tools": [],
+  "retrieved_knowledge": [
+    "Guideline: T1w Gray Matter Probability Map-based Prediction"
+  ],
+  "supervisor_dispatches": 1,
+  "downstream_reports": 1,
+  "scope": "Upstream supervisor, downstream retrieval and ReAct generation on schema only"
+}

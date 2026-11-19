@@ -1,0 +1,25 @@
+{
+  "descriptions": [
+    {
+      "suffix": "T1w",
+      "datatype": "anat",
+      "criteria": {
+        "SeriesDescription": "mp_rage_synth"
+      }
+    },
+    {
+      "suffix": "T2w",
+      "datatype": "anat",
+      "criteria": {
+        "SeriesDescription": "t2_spc_synth"
+      }
+    },
+    {
+      "suffix": "FLAIR",
+      "datatype": "anat",
+      "criteria": {
+        "SeriesDescription": "t2_flair_synth"
+      }
+    }
+  ]
+}
