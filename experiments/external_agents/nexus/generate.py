@@ -13,7 +13,7 @@ import threading
 REVISION = "c2e15d4983489fd89d604fdbbefbbf1726958068"
 
 
-def generate(source, workspace):
+def generate(source, workspace, task="diagnosis"):
     import httpx
     import langchain_openai
     from langchain_core.messages import HumanMessage
@@ -58,8 +58,13 @@ def generate(source, workspace):
     downstream.downstream_analysis_tools = [write_program]
     graph = create_react_agent(model=master.llm, tools=[master.call_downstream_analysis_agent],
                                prompt=master.SUPERVISOR_SYSTEM_PROMPT, state_schema=master.SupervisorState)
-    request = f"""Develop the NEXUS downstream sMRI disease classifier for ADHD versus control. The same
-    method will be applied independently to ABIDE ASD versus control. The inputs are prepared whole-head
+    objective = ("Develop a NEXUS structural MRI classifier predicting recorded binary sex in HCP. The existing "
+                 "family-aware training and held-out evaluation sets must remain separate. Pre-specify "
+                 "regularization and all hyperparameters. No internal cross-validation or tuning is permitted "
+                 "because family identifiers are intentionally unavailable to your training module."
+                 if task == "hcp" else "Develop the NEXUS downstream sMRI disease classifier for ADHD versus control. "
+                 "The same method will be applied independently to ABIDE ASD versus control.")
+    request = f"""{objective} The inputs are prepared whole-head
     T1 MRI arrays on a common 96x96x96 array grid. No affines, tissue probabilities, atlas maps, voxel
     spacing, demographics, external labels, or functional time series are available to the classifier.
     Use the Downstream Analysis Agent and its original resource retrieval to choose a method appropriate
@@ -74,8 +79,7 @@ def generate(source, workspace):
     labels are accessible to the model. Fit preprocessing only on training, transform eval subjects
     independently. You may use numpy, scipy and sklearn. Use deterministic randomness, one CPU thread
     and under 8GB RAM. Iterate over subjects for feature extraction; no train-size dense volume copy.
-    Choose an effective structural representation and regularized predictive model. Any hyperparameter
-    search must use training-only folds and be practical with a 30 minute CPU budget. No filesystem I/O,
+    Choose an effective structural representation and regularized predictive model within a 30 minute CPU budget. No filesystem I/O,
     subprocess, networking, installation, external model downloads, or executing shell commands inside
     generated code. No mock results. Report when the code has been written for external testing."""
     state = {name: [] for name in master.SupervisorState.__annotations__ if name != "user_request"}
@@ -83,7 +87,7 @@ def generate(source, workspace):
     state_result = graph.invoke(state, config={"recursion_limit": 10})
     if not program.is_file():
         raise RuntimeError("NEXUS did not write the classifier")
-    result = {"upstream": revision, "llm": "gpt-5.2", "request_count": len(calls),
+    result = {"upstream": revision, "task": task, "llm": "gpt-5.2", "request_count": len(calls),
               "model_sha256": hashlib.sha256(program.read_bytes()).hexdigest(),
               "retrieved_tools": state_result.get("downstream_analysis_agent_selected_tools", []),
               "retrieved_knowledge": state_result.get("downstream_analysis_agent_selected_knowledge_docs", []),
@@ -100,5 +104,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
     parser.add_argument("workspace", type=Path)
+    parser.add_argument("--task", choices=("diagnosis", "hcp"), default="diagnosis")
     args = parser.parse_args()
-    generate(args.source, args.workspace)
+    generate(args.source, args.workspace, args.task)

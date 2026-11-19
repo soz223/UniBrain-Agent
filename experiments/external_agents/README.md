@@ -1,5 +1,18 @@
 # External agent experiments
 
+## HCP sex classification
+
+HCP uses a separate family-disjoint first fold with 646 training, 223 validation and 244 test subjects. Female is coded 0 and male 1. The HCP Codex and NEXUS classifiers have task-specific implementations and fixed hyperparameters. Run the commands below from this directory. The test set is reserved.
+
+```sh
+python ../../scripts/evaluate_external_classifier.py codex/hcp/model.py 72c2499b185453b60a0c31b7ef3546e96f51bf856d8b381e6afa3b99cbe8b776 "$HCP_FOLD" "$NEW_RESULT_DIR"
+python nexus/evaluate.py "$HCP_FOLD" nexus/generation_hcp "$OTHER_NEW_RESULT_DIR" --threshold 0.5
+```
+
+The HCP NEURA registered tool uses the HCP trainer for one epoch. The OpenClaw integration check performs two original-model updates and four validation forwards. Stage `openclaw/adapter.py` as `base_adapter.py` alongside `openclaw/hcp/adapter.py` to replay the generated HCP wrapper. The public NeuroPilot DICOM skill requires a different input from the exported HCP fold.
+
+## Disease diagnosis
+
 The diagnosis task uses fold 1 of ADHD (ADHD versus control) and ABIDE (autism versus control). Preserve train and validation subject membership. Supply the agent with a task and tensor schema, freeze its implementation, and evaluate the implementation locally on subject images. The held-out test partition stays closed. Report AUROC, accuracy, sensitivity and specificity per dataset. A successful conversion or tool call is a separate outcome.
 
 For system comparisons, retain upstream revision, model version, tool permissions, human adaptations, execution failures and generation budget. The frozen classifiers below each came from a single generation. Cross-validation over the subjects cannot measure variability across agent generations.
