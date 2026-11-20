@@ -104,7 +104,7 @@ def _robust_normalize(vol: np.ndarray) -> np.ndarray:
 
     Returns a float32 array (same shape) with NaNs/Infs replaced by 0.
     """
-    v = _as_float32_view(vol)
+    v = _as_float32_view(vol).copy()
     _nan_to_num_inplace(v)
 
     flat = v.reshape(-1)

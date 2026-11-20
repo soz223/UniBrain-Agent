@@ -3,12 +3,14 @@
   "task": "hcp",
   "llm": "gpt-5.2",
   "request_count": 5,
-  "model_sha256": "211aded9b43a5165e46dfa3889654d3b7c59040fc21404e4e025e6edff1b03bd",
+  "model_sha256": "86dc9a68a608a2965c47362361b8222b7b3083277feca44b7b0069660b2fd8ea",
   "retrieved_tools": [],
   "retrieved_knowledge": [
     "Guideline: T1w Gray Matter Probability Map-based Prediction"
   ],
   "supervisor_dispatches": 1,
   "downstream_reports": 1,
-  "scope": "Upstream supervisor, downstream retrieval and ReAct generation on schema only"
+  "scope": "Upstream supervisor, downstream retrieval and ReAct generation on schema only",
+  "original_model_sha256": "211aded9b43a5165e46dfa3889654d3b7c59040fc21404e4e025e6edff1b03bd",
+  "manual_repair": "Copy the subject image before in-place normalization of read-only inputs."
 }
