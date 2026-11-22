@@ -42,12 +42,23 @@ vm.runInContext(readFileSync('web/objective.js','utf8'),objectiveContext);
 test('formula renders backend terms and coefficients, including unfamiliar losses',()=>{
  const packet={status:'observed',terms:[{id:'novel',name:'New loss',weight:0.037},{id:'regularization',name:'Field penalty',weight:0.2}]};
  const formula=objectiveContext.objectiveFormula(packet);
- assert.equal(formula.length,2);assert.equal(formula[0].expression,'λ');assert.equal(formula[0].weightSymbol,'novel');assert.equal(formula[0].coefficient,0.037);assert.equal(formula[1].name,'Field penalty');
+ assert.equal(formula.length,2);assert.equal(formula[0].expression,'λ');assert.equal(formula[0].weightSymbol,'NOVEL');assert.equal(formula[0].coefficient,0.037);assert.equal(formula[1].name,'Field penalty');
 });
 test('symbolic weights preserve effective backend coefficients in every mode',()=>{
  const packet={status:'declared',coordination:'taskforce',terms:[{id:'penalty',name:'Penalty',weight:.001,weight_group:'registration',relative_weight:.01}]};
- assert.equal(objectiveContext.objectiveFormula(packet)[0].weightSymbol,'penalty');
+ assert.equal(objectiveContext.objectiveFormula(packet)[0].weightSymbol,'PENALTY');
  packet.status='observed';assert.equal(objectiveContext.objectiveFormula(packet)[0].expression,'λ');assert.equal(objectiveContext.objectiveFormula(packet)[0].coefficient,.001);
+});
+
+test('formula follows selected methods while retaining stage abbreviations and backend weights',()=>{
+ const packet={stages:[{id:'registration',method:'VoxelMorph',loss_ids:['registration','regularization']}],
+   terms:[{id:'registration',name:'Image similarity',weight:.1},{id:'regularization',name:'Field penalty',weight:.001}]};
+ let formula=objectiveContext.objectiveFormula(packet);
+ assert.equal(formula[0].weightSymbol,'REG');assert.equal(formula[0].symbol,'VoxelMorph');
+ assert.equal(formula[1].symbol,'VoxelMorph · smoothness');assert.equal(formula[1].coefficient,.001);
+ packet.stages[0].method='LapIRN';packet.terms[0].weight=.3;
+ formula=objectiveContext.objectiveFormula(packet);
+ assert.equal(formula[0].symbol,'LapIRN');assert.equal(formula[0].weightSymbol,'REG');assert.equal(formula[0].coefficient,.3);
 });
 
 test('loss colors follow their owning stage rather than loss order',()=>{

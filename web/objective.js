@@ -27,7 +27,7 @@ function objectiveFormula(packet) {
   const abbreviations={extraction:'EXT',registration:'REG',segmentation:'SEG',classification:'CLS',parcellation:'PAR',regularization:'REG'};
   return packet.terms.map(term=>{
     const stage=(packet.stages||[]).find(stage=>stage.loss_ids.includes(term.id));
-    return {name:term.name,id:term.id,symbol:(stage?.method||term.name)+(term.id==='regularization'?' · smoothness':''),
+    return {name:term.name,id:term.id,coefficient:term.weight,symbol:(stage?.method||term.name)+(term.id==='regularization'?' · smoothness':''),
       expression:'λ',weightSymbol:abbreviations[stage?.id||term.id]||term.id.toUpperCase()};
   });
 }
