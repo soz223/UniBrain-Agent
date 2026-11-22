@@ -9,18 +9,43 @@ from unibrain_agent.reference_validity import attach_validity, validity_for, ini
 
 
 class ReferenceValidityTests(unittest.TestCase):
-    def test_fresh_bootstrap_does_not_disable_established_collapse_checks(self):
+    def test_finite_probe_imbalance_records_warning_and_allows_training(self):
+        from unibrain_agent.training_stability import qualify_probe
+        for epoch, loss, fraction in ((0, .69, 1.), (3, .69, 0.), (100, 6., 1.)):
+            with self.subTest(epoch=epoch):
+                progress = {}
+                metrics = {'classification_loss': loss, 'predicted_positive_fraction': fraction}
+                self.assertFalse(qualify_probe(metrics, progress, epoch, 3))
+                state = progress['stability_bootstrap']
+                self.assertFalse(state['qualified'])
+                self.assertEqual(state['last_warning'], {'epoch': epoch, **metrics})
+
+    def test_qualified_probe_retains_later_warnings(self):
         from unibrain_agent.training_stability import qualify_probe
         progress = {}
-        initial = {'classification_loss': .69, 'predicted_positive_fraction': 1.}
-        self.assertFalse(qualify_probe(initial, progress, 0, 3))
-        with self.assertRaisesRegex(ValueError, 'collapse'):
-            qualify_probe(initial, {}, 3, 3)
-        with self.assertRaisesRegex(ValueError, 'collapse'):
-            qualify_probe({'classification_loss': 6., 'predicted_positive_fraction': 1.}, {}, 0, 3)
-        self.assertTrue(qualify_probe({'classification_loss': .6, 'predicted_positive_fraction': .5}, progress, 1, 3))
-        with self.assertRaisesRegex(ValueError, 'collapse'):
-            qualify_probe(initial, progress, 1, 3)
+        balanced = {'classification_loss': .6, 'predicted_positive_fraction': .5}
+        imbalanced = {'classification_loss': .69, 'predicted_positive_fraction': 1.}
+        self.assertTrue(qualify_probe(balanced, progress, 1, 3))
+        self.assertFalse(qualify_probe(imbalanced, progress, 4, 3))
+        self.assertTrue(progress['stability_bootstrap']['qualified'])
+        warning = {'epoch': 4, **imbalanced}
+        self.assertEqual(progress['stability_bootstrap']['last_warning'], warning)
+        self.assertTrue(qualify_probe(balanced, progress, 5, 3))
+        self.assertEqual(progress['stability_bootstrap']['last_warning'], warning)
+
+    def test_invalid_probe_still_blocks_training(self):
+        from unibrain_agent.training_stability import qualify_probe
+        invalid = [
+            {}, {'classification_loss': .6},
+            *({'classification_loss': loss, 'predicted_positive_fraction': .5}
+              for loss in (float('nan'), float('inf'), -float('inf'))),
+            *({'classification_loss': .6, 'predicted_positive_fraction': fraction}
+              for fraction in (-.1, 1.1, float('nan'), float('inf'))),
+        ]
+        for metrics in invalid:
+            with self.subTest(metrics=metrics):
+                with self.assertRaisesRegex(ValueError, 'invalid training probe'):
+                    qualify_probe(metrics, {}, 100, 3)
 
     def test_initialization_digest_detects_parameter_changes(self):
         model = torch.nn.Linear(3, 2)
