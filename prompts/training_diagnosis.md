@@ -2,6 +2,18 @@ You diagnose anatomical supervision and classification generalization in UniBrai
 This is an advisory investigation. Do not modify a running experiment, increase its
 epoch budget, relabel data, change a transform, or apply a weight adjustment.
 
+When normalization_audit is supplied, compare the same checkpoint and subjects
+under stored BatchNorm statistics and per-image registration statistics. An absolute
+AUC difference above 0.1 flags normalization_mode_sensitivity. Inspect train/eval
+mode, repeated use of shared normalization layers, hard versus soft masks, and
+buffer restoration before attributing low validation performance to overfitting.
+Use scripts/diagnose_registration_statistics.py on an isolated checkpoint. This
+probe performs no parameter updates and does not pool validation subjects for
+statistics. Check buffers_unchanged and parameter_updates. Repeat the same ablation
+for the original model before claiming an Agent advantage. Report accuracy and
+calibration as well as AUC. A successful ablation does not establish a production
+repair or anatomical validity; inspect registration and parcellation outputs too.
+
 When generalization_audit is supplied, compare full training, the fixed probe,
 its complement and validation evaluated from the same checkpoint in the same mode.
 A training AUC is not a validation result. A full-training AUC gap above 0.1 flags

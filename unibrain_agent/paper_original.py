@@ -66,7 +66,7 @@ class PaperUniBrain(nn.Module):
         return extracted, masks, warped, affines, inverses, tissue, target, None, labels, graph, logits
 
 
-def build_paper_model(source, registration_weight=.1):
+def build_paper_model(source, registration_weight=.1, registration_normalization='stored'):
     from scripts.evaluate_upstream import original_config
     source = Path(source).resolve()
     verify_original(source)
@@ -77,8 +77,11 @@ def build_paper_model(source, registration_weight=.1):
     config = original_config(source)
     config.update(feature_dim=256, learning_rate=1e-5, weight_decay=1e-6, lambda_reg=registration_weight)
     model = PaperUniBrain()
+    from .registration_normalization import configure_registration
+    configure_registration(model.reg_net, registration_normalization)
     model.paper_registration_weight = registration_weight
-    return model, config, {"profile": "original_paper", "parameters": sum(p.numel() for p in model.parameters()),
+    return model, config, {"profile": "original_paper", "registration_normalization": registration_normalization,
+                          "parameters": sum(p.numel() for p in model.parameters()),
                           "reference": "UniBrain KDD 2024, equations 1 to 11 and Appendix A.4",
                           "loss_weights": {"extraction": 1., "registration": registration_weight, "segmentation": 1., "classification": 1.},
                           "implementation_choices": ["128-unit MLP before the binary output", "Unit weights for randomly added edges",

@@ -24,7 +24,8 @@ IMPLEMENTATION_FILES = ("replacement_training.py", "full_model.py", "full_candid
                         "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py",
                         "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py",
                         "full_replacement.py", "sources.py", "site_training.py", "taskforce_paper.py", "training_control.py",
-                        "training_stability.py", "anchored_taskforce.py", "transfer_reward.py", "reference_validity.py")
+                        "training_stability.py", "anchored_taskforce.py", "transfer_reward.py", "reference_validity.py",
+                        "registration_normalization.py", "normalization_migration.py")
 
 
 def read_json(path):
@@ -76,6 +77,8 @@ def architecture_files(identity):
         files.add("training_control.py")
     if identity.get('reference_validity'):
         files.add('reference_validity.py')
+    if identity.get('registration_normalization') == 'per_image':
+        files.add('registration_normalization.py')
     return sorted(files)
 
 
@@ -125,6 +128,8 @@ def load_payload(path, sha256):
 
 def recorded_arguments(args, payload, report, report_path):
     identity, declared = payload["identity"], report.get("config", {})
+    if identity.get('registration_normalization', 'stored') != declared.get('registration_normalization', 'stored'):
+        raise ValueError('Registration normalization differs between checkpoint and report')
     if bool(identity.get("paper_original")) != bool(declared.get("paper_original")):
         raise ValueError("Paper profile differs between checkpoint and report")
     if identity.get("paper_registration_weight", .1) != declared.get("paper_registration_weight", .1):
@@ -321,7 +326,8 @@ def reconstruct(restored, payload, audit):
                                     "reason": "Both modes have identical topology; all trained parameters come from this final checkpoint"}
     elif getattr(restored, "paper_original", False):
         from .paper_original import build_paper_model
-        model, _, _ = build_paper_model(restored.source, getattr(restored, "paper_registration_weight", .1))
+        model, _, _ = build_paper_model(restored.source, getattr(restored, "paper_registration_weight", .1),
+                                       getattr(restored, 'registration_normalization', 'stored'))
     elif restored.method in ("original", "synthstrip"):
         model, _, _ = build_full_model(restored.source, restored.adapter if restored.method == "synthstrip" else None)
     elif restored.method in TARGETS:

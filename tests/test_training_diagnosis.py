@@ -10,6 +10,16 @@ from unibrain_agent.training_diagnosis import diagnostic_context, qualify, revie
 
 
 class DiagnosisTests(unittest.TestCase):
+    def test_normalization_audit_is_actionable_and_keeps_training_unchanged(self):
+        context = diagnostic_context({'stored_statistics': {'auc': .415},
+                                      'registration_sample_statistics': {'auc': .969},
+                                      'parameter_updates': 0, 'buffers_unchanged': True})
+        with tempfile.TemporaryDirectory() as folder:
+            result = review(Agent('rules', folder, lambda *a, **kw: None), context)
+        self.assertEqual(result['issues'], ['normalization_mode_sensitivity'])
+        self.assertEqual(result['evidence_ids'], ['normalization_audit'])
+        self.assertFalse(result['automatic_changes_applied'])
+
     def test_metric_and_permutation_are_distinct(self):
         reference = np.array([0, 1, 2, 3, 1, 2, 3, 0]).reshape(2, 2, 2)
         prediction = np.array([0, 2, 3, 1])[reference]

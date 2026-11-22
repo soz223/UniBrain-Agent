@@ -97,6 +97,10 @@ def trained_host_evidence(args):
 
 
 def preflight(args):
+    if getattr(args, 'resume_normalization_upgrade', False) and (
+            not args.resume or args.registration_normalization != 'per_image'
+            or args.resume_reward_upgrade or args.resume_coordination_upgrade or args.resume_stability_upgrade):
+        raise ValueError('Normalization migration requires a dedicated per-image resume')
     import numpy as np
     from .native import verify_original
     from .data import OriginalDataset
@@ -1044,6 +1048,13 @@ def _train(args, budget):
     identity["implementation_hashes"] = {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
                                           for name in ("replacement_training.py", "full_model.py", "full_candidates.py", "full_connectivity.py", "full_composition.py", "full_extended.py", "full_preprocessing.py", "full_anatomy_candidates.py", "full_graph_candidates.py", "taskforce.py", "cohort_provenance.py", "candidate_integration.py", "full_replacement.py", "sources.py", "site_training.py", "training_control.py")}
     identity["source"] = audit["source"]
+    normalization = getattr(args, 'registration_normalization', 'stored')
+    if normalization != 'stored':
+        if not args.paper_original:
+            raise ValueError('Per-image registration normalization requires the full paper model')
+        identity['registration_normalization'] = normalization
+        for name in ['registration_normalization.py', 'normalization_migration.py']:
+            identity['implementation_hashes'][name] = hashlib.sha256(Path(__file__).with_name(name).read_bytes().replace(b'\r\n', b'\n')).hexdigest()
     if args.coordination in ("pcgrad", "taskforce") and args.taskforce_profile == "paper":
         identity["implementation_hashes"]["taskforce_paper.py"] = hashlib.sha256(Path(__file__).with_name("taskforce_paper.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     if args.coordination == "pcgrad":
@@ -1064,7 +1075,7 @@ def _train(args, budget):
     host_checkpoint = host_checkpoint_spec(args)
     if getattr(args, "paper_original", False):
         from .paper_original import build_paper_model
-        model, config, architecture = build_paper_model(args.source, args.paper_registration_weight)
+        model, config, architecture = build_paper_model(args.source, args.paper_registration_weight, normalization)
     elif args.secondary_extraction:
         from .full_composition import build_composed_model
         model, config, architecture = build_composed_model(args.source, args.method, adapter=args.secondary_extraction,
@@ -1114,13 +1125,29 @@ def _train(args, budget):
     if anchored:
         team.reward_mode = args.coordination_reward
     migrated_selection = False
+    normalization_migrated = False
     resumed = torch.load(args.resume, map_location="cpu", weights_only=True) if args.resume else None
     if resumed:
         if resumed.get("checkpoint_kind") != "resume":
             raise ValueError("This is an evaluation checkpoint; resume requires the complete last.pt state")
         stability_migrated = args.resume_stability_upgrade and resumed["identity"] != identity
         coordination_migrated = args.resume_coordination_upgrade and resumed["identity"] != identity
-        if args.resume_reward_upgrade and resumed['identity'] != identity:
+        normalization_migrated = (getattr(args, 'resume_normalization_upgrade', False)
+                                  and resumed['identity'] != identity)
+        if normalization_migrated:
+            from .normalization_migration import verify_migration
+            verify_migration(resumed['identity'], identity)
+            if team is not None:
+                resumed['coordination'] = team.state_dict()
+            migration = {
+                'source': str(args.resume), 'start_step': resumed['progress']['steps'],
+                'source_epoch': resumed['progress']['epoch'],
+                'source_identity': resumed['identity'], 'model_and_optimizer_retained': True,
+                'policy_reset': team is not None, 'selection_reset': True,
+                'reason': 'Consistent per-image registration statistics and audited coordinator release'}
+            resumed['progress'] = copy.deepcopy(progress)
+            resumed['progress']['normalization_migration'] = migration
+        elif args.resume_reward_upgrade and resumed['identity'] != identity:
             from .transfer_reward import upgrade_reward_identity
             upgrade_reward_identity(resumed['identity'], identity)
             team.model_steps = resumed['progress']['steps']
@@ -1170,6 +1197,9 @@ def _train(args, budget):
                                             "current_trainer": identity["implementation_hashes"]["replacement_training.py"],
                                             "scope": "Gradient diagnostics, upstream evaluation metrics and graceful stopping; model, losses and optimizer unchanged"}
     report["template_normalization"] = template_scaling
+    report['registration_normalization'] = normalization
+    if progress.get('normalization_migration'):
+        report['normalization_migration'] = progress['normalization_migration']
     report["training_probe"] = {"size": len(probe_indices), "indices": probe_indices,
                                 "scope": "Fixed class-balanced training subset; diagnostic only, no checkpoint selection"}
     report["trainer_scope"] = "Matched full-model training loop; original main.py reproduction remains a separate baseline"
@@ -1194,7 +1224,7 @@ def _train(args, budget):
     if args.setting == "original_frozen_stages":
         report["stagewise_control"] = "Fixed trained UniBrain stages and trainable original classifier; not an ANTs or FSL toolchain"
     previous_seconds = 0.
-    if args.resume:
+    if args.resume and not normalization_migrated:
         previous_seconds = restore_report_state(resumed, report, args.output)
         report["gradient_verification"]["warmup"] = warmup
     started = time.monotonic()
@@ -1563,5 +1593,7 @@ def parser():
     result.add_argument("--save-predictions", action="store_true")
     result.add_argument("--preflight", action="store_true")
     result.add_argument("--paper-original", action="store_true")
+    result.add_argument('--registration-normalization', choices=('stored', 'per_image'), default='stored')
+    result.add_argument('--resume-normalization-upgrade', action='store_true')
     result.add_argument("--paper-registration-weight", type=float, default=.1)
     return result
