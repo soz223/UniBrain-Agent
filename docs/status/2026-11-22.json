@@ -1,0 +1,115 @@
+{
+  "verified_at": "2026-11-22T13:14:03-05:00",
+  "verified_at_utc": "2026-11-22T18:14:03Z",
+  "timezone": "America/New_York",
+  "snapshot_only": true,
+  "model_release_commit": "69d98ae",
+  "launcher_commit": "92d3a27",
+  "release_manifest_sha256": "149e7b0173d9aa45ba48cf5d02915dc77b3beadb9aadf27dca923b416ff42a11",
+  "source_evidence": [
+    "MAIR01 report.json, health.json and updates.jsonl",
+    "Delta squeue"
+  ],
+  "scope": "Fold 1 warm-start continuation; not five-fold test performance",
+  "hcp": {
+    "server": "MAIR01",
+    "fold": 1,
+    "train_subjects": 646,
+    "validation_subjects": 223,
+    "test_subjects": 244,
+    "common_checkpoint_epoch": 190,
+    "additional_epoch_budget": 1000,
+    "original": {
+      "continuation_epoch": 1,
+      "step": 646,
+      "status": "waiting_for_pair_turn",
+      "validation": {
+        "accuracy": 0.874439461883408,
+        "balanced_accuracy": 0.8639425417951632,
+        "macro_f1": 0.8695906432748538,
+        "auc": 0.9791429962668399,
+        "sensitivity": 0.7524752475247525,
+        "specificity": 0.9754098360655737,
+        "probability_mean": 0.3572438149554601,
+        "probability_std": 0.47026898162275366,
+        "predicted_positive_fraction": 0.3542600896860987,
+        "label_positive_fraction": 0.452914798206278,
+        "brain_dice": 0.9410296643795989,
+        "tissue_dice": 0.3606085320224676,
+        "atlas_dice": 0.20750548119234932,
+        "registration_dice": 0.35343656157698866,
+        "reference_loss": 1.7482648227246886,
+        "brain_jaccard": 0.8898206636510088,
+        "tissue_jaccard": 0.23861511352350895,
+        "atlas_jaccard": 0.13116354456864665,
+        "registration_mi": 0.7236716430016726,
+        "registration_cc": 0.8182910801049306,
+        "extraction_loss": 1.004249315090778,
+        "registration_loss": 0.18170890759994096,
+        "segmentation_loss": 0.05674893355556668,
+        "classification_loss": 0.6690956894155229,
+        "diagnostic_target_subject_dice": 0.35614113703436917,
+        "diagnostic_target_foreground_fraction": 0.061216898680134205,
+        "diagnostic_subject_foreground_ce": 3.68019347500908,
+        "diagnostic_foreground_outside_fraction": 0.008617115284735442,
+        "diagnostic_affine_determinant": 0.4091240585919453,
+        "diagnostic_tissue_1_dice": 0.07243987693213294,
+        "diagnostic_tissue_2_dice": 0.509804684150914,
+        "diagnostic_tissue_3_dice": 0.4995810356442169
+      }
+    },
+    "agent": {
+      "continuation_epoch": 1,
+      "step": 300,
+      "status": "training",
+      "policy_updates": 236,
+      "actor_optimizer_steps": 944,
+      "critic_optimizer_steps": 944,
+      "completed_validation": null
+    }
+  },
+  "delta": [
+    {
+      "dataset": "ABIDE",
+      "job_id": "24376778",
+      "status": "PENDING",
+      "reason": "Priority",
+      "gpu": "one A40",
+      "fold": 1,
+      "split_counts": {
+        "train": 651,
+        "val": 217,
+        "test": 217
+      },
+      "checks": "Static preflight passed; GPU execution not observed"
+    },
+    {
+      "dataset": "ADHD",
+      "job_id": "24376779",
+      "status": "PENDING",
+      "reason": "Priority",
+      "gpu": "one A40",
+      "fold": 1,
+      "split_counts": {
+        "train": 465,
+        "val": 155,
+        "test": 155
+      },
+      "checks": "Static preflight passed; GPU execution not observed"
+    }
+  ],
+  "agent_superiority_demonstrated": false,
+  "original_checkpoints_and_logs_retained": true,
+  "migration": {
+    "model_optimizer_retained": true,
+    "agent_policy_reset": true,
+    "validation_selection_reset": true
+  },
+  "limits": [
+    "First fold only",
+    "Anatomical reference masks are automatic",
+    "New counters exclude archived training",
+    "Scheduled Slurm rollover not yet observed",
+    "Code and execution checks do not establish convergence"
+  ]
+}

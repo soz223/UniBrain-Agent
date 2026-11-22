@@ -2,6 +2,16 @@
 
 An agent controlled training workspace built on the original [UniBrain](https://github.com/Anonymous7852/UniBrain) implementation. Select modules, inspect generated pipeline code, verify gradients and watch the selected pipeline train.
 
+## Current research handoff
+
+**Status verified: 2026-11-22 13:14 EST / 18:14 UTC.** Start with
+[HANDOFF.md](HANDOFF.md) for the active experiments, measured results, limitations
+and next actions. Use the [transfer and execution runbook](docs/handoff-runbook.md)
+to move the project to another server. The current study uses the full paper
+model with consistent registration normalization and a shared checkpoint for
+the original and Agent arms. Earlier audits below describe historical workflows;
+they are not the current experiment status. Agent superiority is not established.
+
 ## Full model research programs
 
 The research CLI uses the original 305,812,248 parameter UniBrain host and
@@ -32,6 +42,10 @@ checks are labeled separately. See the [objective contract](docs/objective-contr
 for the schema and bounded full model verification.
 
 ## Start
+
+These commands launch application defaults. To reproduce or continue the current
+controlled training comparison, use the [handoff runbook](docs/handoff-runbook.md)
+and its explicit normalization policy instead.
 
 The default pipeline is the full original UniBrain CUDA workflow. Use Python 3.10 with a CUDA GPU. Run these commands from the repository root on Windows:
 
