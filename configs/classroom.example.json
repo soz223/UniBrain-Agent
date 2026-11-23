@@ -1,0 +1,26 @@
+{
+  "host": "127.0.0.1",
+  "port": 18878,
+  "state": "/srv/unibrain-demo/state",
+  "token_env": "UNIBRAIN_DEMO_TOKEN",
+  "api_key_env": "OPENAI_API_KEY",
+  "provider": {
+    "provider": "openai",
+    "model": "REPLACE_WITH_AN_AVAILABLE_MODEL_ID",
+    "base_url": "https://api.openai.com/v1"
+  },
+  "origins": ["https://soz223.github.io"],
+  "cooldown_seconds": 5,
+  "max_runs_per_hour": 12,
+  "inference_timeout": 600,
+  "worker_command": [
+    "/srv/unibrain-demo/venv/bin/python",
+    "/srv/unibrain-demo/app/scripts/classroom_inference.py",
+    "--source", "/srv/unibrain-demo/assets/reg_unibrain",
+    "--checkpoint", "/srv/unibrain-demo/assets/model.pt",
+    "--data", "/srv/unibrain-demo/assets/demo.npy",
+    "--templates", "/srv/unibrain-demo/assets/templates",
+    "--output", "{output}",
+    "--threads", "2"
+  ]
+}

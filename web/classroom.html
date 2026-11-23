@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>UniBrain · Agent in action</title>
+  <link rel="stylesheet" href="classroom.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="UniBrain workspace"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M15 5C8 2 3 9 6 14c-5 6 0 13 7 11M17 5c7-3 12 4 9 9 5 6 0 13-7 11M16 5v22M7 12l9 5 9-5M8 23l8-6 8 6"/></svg>UniBrain <span>CLASSROOM</span></a>
+    <div class="header-actions"><span id="connectionStatus" class="status" role="status">Connecting</span><button id="connectionToggle" class="quiet" aria-expanded="false" aria-controls="connectionPanel">Connection <span aria-hidden="true">↗</span></button></div>
+  </header>
+  <section id="connectionPanel" class="connection" hidden aria-label="Demo connection">
+    <label>Demo backend<input id="backend" type="url" placeholder="https://your-demo-server.example" autocomplete="off"></label>
+    <label>Instructor access<input id="token" type="password" placeholder="Token for starting a run" autocomplete="off"></label>
+    <button id="connect" class="secondary">Connect</button><button id="forget" class="quiet">Clear access</button>
+    <p>Viewers can inspect runs. Starting a run requires instructor access. Access is kept only in this open page.</p>
+  </section>
+  <main>
+    <section class="intro">
+      <p class="eyebrow">AN EXISTING MODEL. A NATURAL LANGUAGE INTERFACE.</p>
+      <h1>A request becomes a run.</h1>
+      <p class="subtitle">The LLM chooses a tool. Python runs UniBrain. The result returns to the conversation.</p>
+      <form id="requestForm" class="request">
+        <label for="prompt" class="sr-only">Your instruction</label>
+        <textarea id="prompt" rows="2" maxlength="2000">Inspect the UniBrain pipeline, run inference on the demo sample, and explain what each output represents.</textarea>
+        <div class="request-footer"><span id="providerLabel">Isolated demonstration</span><button id="run" type="submit" disabled>Run instruction <span aria-hidden="true">↗</span></button></div>
+      </form>
+      <p id="notice" class="notice" role="status" aria-live="polite">Connecting to the demonstration backend.</p>
+    </section>
+
+    <section class="flow" aria-label="Agent execution loop">
+      <svg class="flow-lines" viewBox="0 0 1000 160" preserveAspectRatio="none" aria-hidden="true">
+        <path class="flow-track" d="M125 47H875M875 47v91H125V47"/>
+        <path id="flowPulse" class="flow-pulse" d="M125 47H875M875 47v91H125V47"/>
+        <path class="arrow" d="m355 43 7 4-7 4m250-8 7 4-7 4m250-8 7 4-7 4M507 134l-7 4 7 4"/>
+      </svg>
+      <div id="nodeLlm" class="flow-node"><span class="node-mark">01</span><strong>LLM</strong><span>Choose the next action</span></div>
+      <div id="nodeHarness" class="flow-node"><span class="node-mark">02</span><strong>Harness</strong><span>Check and dispatch</span></div>
+      <div id="nodeModel" class="flow-node"><span class="node-mark">03</span><strong>UniBrain</strong><span>Execute Python inference</span></div>
+      <div id="nodeResult" class="flow-node"><span class="node-mark">04</span><strong>Observation</strong><span>Return measured outputs</span></div>
+      <span class="feedback">Tool results become the next LLM input</span>
+    </section>
+
+    <section class="execution">
+      <div class="trace-section">
+        <div class="section-title"><h2>Execution trace</h2><span id="runStatus" class="pill">Awaiting instruction</span></div>
+        <p id="runMeta" class="meta">Actual tool calls and returned values appear here.</p>
+        <ol id="events" class="events" aria-live="polite"><li class="empty">No run selected.<br><span>Start a run above, or open a shared run link.</span></li></ol>
+        <div class="trace-actions"><button id="retry" class="quiet" hidden>Reconnect and resume</button><button id="share" class="quiet" hidden>Copy run link ↗</button></div>
+      </div>
+      <div class="results-section">
+        <div class="section-title"><h2>Model output</h2><span class="meta">INFERENCE ONLY</span></div>
+        <div id="images" class="images"></div>
+        <div id="modelOutput" class="output-empty">The sample output will appear after UniBrain finishes.</div>
+        <p class="result-caveat">A single sample demonstrates execution. It does not measure cohort accuracy or establish a clinical diagnosis.</p>
+        <div id="answerSection" class="answer" hidden><h3>Agent response</h3><p id="answer"></p></div>
+      </div>
+    </section>
+
+    <details class="teaching"><summary>The small interface behind the interaction <span>4 lines of Python</span></summary><div class="teaching-content"><pre><code>@tool
+def infer_sample(sample_id: str):
+    sample = demo_samples.load(sample_id)
+    return unibrain.predict(sample)</code></pre><p>Illustrative wrapper. The harness exposes a fixed sample and approved tools, validates the request, and records each returned observation.</p></div></details>
+    <footer><span>Demo process and outputs are isolated from training.</span><a href="https://github.com/soz223/UniBrain-Agent" target="_blank" rel="noopener">Source code ↗</a></footer>
+  </main>
+  <script src="classroom.js" defer></script>
+</body>
+</html>
