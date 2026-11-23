@@ -99,7 +99,7 @@ function trainingNumber(value, digits=3) {
 function trainingFrames(packet) {
   const rows = new Map();
   for(const row of packet?.history||[])if(Number.isFinite(row.step))rows.set(row.step,row);
-  return [...rows.values()].sort((a,b)=>a.step-b.step).slice(-128);
+  return [...rows.values()].sort((a,b)=>a.step-b.step).slice(packet?.provenance?.synthetic ? -320 : -128);
 }
 
 function trainingCosine(policy, i, j) {

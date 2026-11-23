@@ -3,6 +3,10 @@
   'use strict';
 
   const TASKS = ['extraction', 'registration', 'segmentation', 'classification'];
+  const INITIAL_STEPS = 256;
+  const STEPS_PER_EPOCH = 16;
+  const EXPERIMENT_EPOCHS = 20;
+  const MAX_STEPS = STEPS_PER_EPOCH * EXPERIMENT_EPOCHS;
   const ORDER = ['denoising', 'bias', 'extraction', 'normalization', 'registration', 'parcellation', 'graph', 'segmentation', 'classification', 'surface'];
   const MODULES = {denoising:['denoise_net'], bias:['bias_net'], extraction:['ext_net'], normalization:['norm_net'], registration:['reg_net'], segmentation:['seg_net'], parcellation:['par_net'], graph:['feature_net','graph_gen'], classification:['gnn_pred'], surface:['surface_net']};
   const PROVENANCE = {mode:'simulated', synthetic:true, source:'Embedded deterministic illustration', model_executed:false, llm_called:false, measured:false};
@@ -121,7 +125,7 @@
 
     function frame(step, selection, agent = true, coordination = agent ? 'taskforce' : 'single') {
       const observed = objective(selection, coordination, step);
-      return {step, epoch:Math.ceil(step / 8), losses:losses(step), weighted_loss:observed.total, total_loss:observed.total,
+      return {step, epoch:Math.ceil(step / STEPS_PER_EPOCH), losses:losses(step), weighted_loss:observed.total, total_loss:observed.total,
         objective:observed, ...(agent ? {gradient_policy:policy(step)} : {}), provenance:PROVENANCE};
     }
 
@@ -142,28 +146,37 @@
         reference_loss:round(1.5 - .7 * rise), count:24, simulated:true};
     }
 
+    function foldSteps(fold) {
+      if (fold !== 1) return MAX_STEPS;
+      const elapsedSteps = Math.floor(Math.max(0, clock() - started) / 4000);
+      return Math.min(MAX_STEPS, INITIAL_STEPS + elapsedSteps);
+    }
+
     function trainingPacket(id) {
       const original = id.includes('original'), fold = Number(id.match(/fold(\d)/)?.[1] || 1);
-      const count = fold === 1 ? Math.min(96, 24 + Math.floor(Math.max(0, clock() - started) / 4000)) : 96;
+      const count = foldSteps(fold);
       const selection = running && id === 'current' ? running.selection : defaults();
       const history = Array.from({length:count}, (_, i) => frame(i + 1, selection, !original));
       return {run:id, history, objective:history.at(-1).objective, coordination:original ? 'none' : 'taskforce',
-        validation:Array.from({length:Math.floor(count / 8)}, (_,i) => ({epoch:i+1, step:(i+1)*8, validation:metrics(i+1,fold), training_probe:{auc:round(.59 + .3 * (1 - Math.exp(-(i+1)/3)) + .04*noise(i+1,90+fold))}, provenance:PROVENANCE})),
-        training_probe_size:24, reported_status:fold === 1 ? 'running' : 'complete', observed_at:stamp(),
+        validation:Array.from({length:Math.floor(count / STEPS_PER_EPOCH)}, (_,i) => ({epoch:i+1, step:(i+1)*STEPS_PER_EPOCH, validation:metrics(i+1,fold), training_probe:{auc:round(.59 + .3 * (1 - Math.exp(-(i+1)/3)) + .04*noise(i+1,90+fold))}, provenance:PROVENANCE})),
+        training_probe_size:24, reported_status:count < MAX_STEPS ? 'running' : 'complete', observed_at:stamp(),
         health:{phase:'Simulated monitoring', recovery_count:0, supervisor:{status:'running',restarts:0,max_restarts:3}, diagnosis:{warnings:['Synthetic illustration; these values are not experiment results.'],targets:{}}},
         provenance:PROVENANCE};
     }
 
     function experiment(id) {
       const original = id === 'demo_original';
-      const currentEpoch = Math.floor(Math.min(96,24+Math.floor(Math.max(0,clock()-started)/4000))/8);
-      const folds = Array.from({length:5}, (_, i) => ({fold:i+1, run:id+'_fold'+(i+1), status:i === 0 ? 'running' : 'complete', epoch:i === 0 ? currentEpoch : 12, epochs:20, validation:metrics(i === 0 ? currentEpoch : 12,i+1), family_disjoint_verified:false, simulated:true}));
+      const folds = Array.from({length:5}, (_, i) => {
+        const fold = i + 1, steps = foldSteps(fold), epoch = Math.floor(steps / STEPS_PER_EPOCH);
+        return {fold, run:id+'_fold'+fold, status:steps < MAX_STEPS ? 'running' : 'complete',
+          epoch, epochs:EXPERIMENT_EPOCHS, validation:metrics(epoch,fold), family_disjoint_verified:false, simulated:true};
+      });
       const summary = {validation:{}};
       ['auc','accuracy','brain_dice','tissue_dice','atlas_dice','registration_mi','registration_cc'].forEach(key => {
         const values=folds.map(fold=>fold.validation[key]), mean=values.reduce((s,x)=>s+x,0)/values.length;
         summary.validation[key]={mean,sd:Math.sqrt(values.reduce((s,x)=>s+(x-mean)**2,0)/(values.length-1)),n:values.length};
       });
-      return {id,label:original ? 'Synthetic cohort · Original UniBrain' : 'Synthetic cohort · Gradient aware agent',server:'Embedded browser demo',protocol:'synthetic_illustration',expected_folds:5,completed_folds:4,folds,summary,provenance:PROVENANCE};
+      return {id,label:original ? 'Synthetic cohort · Original UniBrain' : 'Synthetic cohort · Gradient aware agent',server:'Embedded browser demo',protocol:'synthetic_illustration',expected_folds:5,completed_folds:folds.filter(fold => fold.status === 'complete').length,folds,summary,provenance:PROVENANCE};
     }
 
     function slice(stage, index, axis) {
@@ -196,17 +209,17 @@
     }
 
     function report(run = null) {
-      const selection=run?.selection||defaults(), steps=run?.steps||24, keys=activeModules(selection);
+      const selection=run?.selection||defaults(), steps=run?.steps||INITIAL_STEPS, keys=activeModules(selection);
       const history=Array.from({length:steps},(_,i)=>frame(i+1,selection,run ? run.coordination!=='single' : true,run?.coordination||'taskforce'));
       const planes=Object.fromEntries(['input','mask','extracted','warped','registered','segmentation','parcellation','brain','atlas'].map(stage=>[stage,[0,1,2].map(axis=>[slice(stage,48,axis)])]));
       const matrix=Object.fromEntries(TASKS.map(task=>[task,Object.fromEntries(keys.map(key=>[key,{state:history.at(-1).objective.connections.some(edge=>edge.loss===task&&edge.module===key)?'active':'disconnected',parameter_tensors:8,connected_tensors:8,nonzero_tensors:8,norm:.08,simulated:true}]))]));
-      return {status:'complete',profile:'original',mode:'single',created:stamp(run?.started||started),run_dir:'demo/'+(run?.id||'initial'),epochs:3,seed:0,
+      return {status:'complete',profile:'original',mode:'single',created:stamp(run?.started||started),run_dir:'demo/'+(run?.id||'initial'),epochs:Math.ceil(steps / STEPS_PER_EPOCH),seed:0,
         upstream_commit:'simulated display, not an executed source revision',elapsed_seconds:16,
         build:run?{id:run.build_id,selection}:null, objective:history.at(-1).objective,
         data:{splits:{train:{count:96},val:{count:24},test:{count:24}}},environment:{device:'Browser simulation',threads:0},
         previews:{candidate:{shape:[96,96,96],slice_indices:[48],planes,run_id:run?.id||'initial'}},
         native:{parameters:1280000,updates:history.map(row=>({step:row.step,modules_with_observed_updates:keys})),audit:{checks:{synthetic_fixture:true}},provenance:PROVENANCE},
-        candidate:{steps,history,training_seconds:16,validation:metrics(3),model:{config:{stages:selection}},
+        candidate:{steps,history,training_seconds:16,validation:metrics(Math.ceil(steps / STEPS_PER_EPOCH)),model:{config:{stages:selection}},
           gradients:{matrix,updated_parameters:Object.fromEntries(keys.map(key=>[key,100]))},spatial:{synthetic_geometry:true},checkpoint:'In-memory simulated record',
           coordination:run?.coordination==='single'?null:{mode:'taskforce',policy_updates:Math.max(0,steps-4),latest:policy(steps)},provenance:PROVENANCE},
         live:live({id:'initial',selection,steps,coordination:run?.coordination||'taskforce',started:clock()-17000}),provenance:PROVENANCE};
@@ -270,7 +283,7 @@
           if(method==='POST'&&buildMatch[2]==='run'){
             if(buildRecord(record).status!=='ready')return response({error:'Wait for the simulated build checks.'},409);
             if(running&&live(running).phase!=='complete')return response({error:'A simulation is already playing.'},409);
-            const steps=Math.max(2,Math.min(60,Number(body.steps)||12));
+            const steps=Math.max(2,Math.min(MAX_STEPS,Math.floor(Number(body.steps))||12));
             running={id:'demo-run-'+(++serial),build_id:record.id,selection:clone(record.selection),coordination:record.coordination,steps,started:clock()};
             return response({status:'running',run_id:running.id,steps,simulated:true});
           }

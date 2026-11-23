@@ -85,6 +85,9 @@ test('both experiments expose five folds, sample SD, policies and epoch outcomes
   const alignment=trace.map(p=>p.cosine_similarity[0][1]);
   assert.ok(Math.min(...alignment)<-.2 && Math.max(...alignment)>.2);
   const context=vm.createContext({escapeHtml:String,titleCase:value=>value});vm.runInContext(readFileSync('web/training.js','utf8'),context);
+  const frames=context.trainingFrames(packet);
+  assert.equal(frames.length,256);
+  assert.deepEqual([frames[0].step,frames.at(-1).step],[1,256]);
   assert.match(context.trainingDiagram(row.objective,'classification'),/backward-path/);
   assert.match(context.trainingCritics(policy),/Critic 4/);
   h.advance(12000);assert.ok((await h.get('/api/training-runs/demo_agent_fold1')).history.length>packet.history.length);
