@@ -37,28 +37,47 @@
       return clone(value);
     }
 
+    // Indexed noise keeps replay, live polling and the objective on the same trace.
+    function noise(step, channel) {
+      let bits = Math.imul(step + 1, 0x85ebca6b) ^ Math.imul(channel + 1, 0xc2b2ae35);
+      bits = Math.imul(bits ^ (bits >>> 16), 0x27d4eb2d);
+      return ((bits ^ (bits >>> 15)) >>> 0) / 2147483648 - 1;
+    }
+
     function losses(step) {
-      return mapTasks((_, i) => round([.55, .38, 1.1, .72][i] * Math.exp(-step / [28, 48, 40, 65][i]) + [.08, .12, .28, .35][i] + .012 * Math.sin(step * .7 + i)));
+      const difficulty = noise(step, 0);
+      return mapTasks((_, i) => {
+        const trend = [.08,.15,.22,.38][i] + [.55,.22,1.1,.40][i] * Math.exp(-step / [18,30,23,50][i]);
+        const variation = .26 * difficulty + [.28,.14,.33,.82][i] * noise(step, i + 1);
+        const surge = difficulty > .7 ? [.12,.06,.26,.48][i] : 0;
+        return round(trend * Math.exp(variation) + surge);
+      });
     }
 
     function policy(step) {
-      const vectors = [[.8,.2,.1,.03],[-.22,.65,.1,.05],[.12,.2,.7,.08],[.07,-.13,.1,.6]];
+      const batchLoss = losses(step);
+      const vectors = TASKS.map((task,i) => TASKS.map((_,j) =>
+        Math.sqrt(batchLoss[task]) * ((i === j ? 1 : 0) + .86 * noise(step, 12 + 4*i + j))));
       const scale = 1 + .08 * Math.sin(step / 7);
       const gram = vectors.map(a => vectors.map(b => round(a.reduce((s, v, k) => s + v * b[k], 0) * scale)));
       const gradient_norms = mapTasks((_, i) => Math.sqrt(gram[i][i]));
-      const action_logits = mapTasks((_, i) => .3 * Math.sin(step / 9 + i));
+      const action_logits = mapTasks((task, i) =>
+        1.75 * Math.tanh(.6 * Math.sin(step / 3 + i) + .8 * noise(step, 32+i) + .5 * batchLoss[task]));
       const denominator = Object.values(action_logits).reduce((s, x) => s + Math.exp(x), 0);
       const actions = mapTasks(task => Math.exp(action_logits[task]) / denominator);
-      const weights = mapTasks((task, i) => round([1,.1,1,1][i] * (1 + .15 * (4 * actions[task] - 1))));
+      const accepted = round(.68 + .30 * noise(step, 40));
+      const weights = mapTasks((task, i) => round([1,.1,1,1][i] *
+        (1 + accepted * .15 * Math.max(-1, Math.min(1, 4 * actions[task] - 1)))));
+      const improvement = round(.012 + .12 * noise(step, 41));
       return {profile:'unibrain_anchored', gradient_normalization:'none', reward_scope:'other_training_subject_before_after_update',
-        trust_radius:.15, accepted_action_fraction:.72, gradient_norms, gram,
+        trust_radius:.15, accepted_action_fraction:accepted, gradient_norms, gram,
         cosine_similarity:gram.map((row,i) => row.map((value,j) => value / Math.sqrt(gram[i][i] * gram[j][j]))),
         observations:mapTasks((task,i) => [...gram[i].map(value => round(value / (gram[i][i] + 1e-8))), round(Math.log1p(losses(step)[task]))]),
         task_losses:losses(step), action_logits, actions, weights,
         critic_td_losses:mapTasks((_,i) => round(.08 / (1 + step / 10) + .002 * i)),
         policy_updates:Math.max(0, step - 4), actor_optimizer_steps:Math.max(0, step - 4), critic_optimizer_steps:Math.max(0, step - 4),
-        replay_size:step, reward:round(.022 + .006 * Math.sin(step / 5)),
-        reward_terms:{training_loss_improvement:round(.027 + .006 * Math.sin(step / 5)), gradient_norm_penalty:.005},
+        replay_size:step, reward:round(improvement - .005),
+        reward_terms:{training_loss_improvement:improvement, gradient_norm_penalty:.005},
         action_bound:2, provenance:PROVENANCE};
     }
 
@@ -107,13 +126,19 @@
     }
 
     function metrics(epoch, fold = 1) {
-      const rise = 1 - Math.exp(-epoch / 3), shift = (fold - 3) * .004;
+      const rise = 1 - Math.exp(-epoch / 3), shift = .026 * noise(epoch, 50 + fold);
+      const auc = Math.round(144 * (.57 + .23 * rise + .068 * noise(epoch, 60 + fold))) / 144;
+      const correct = (rate, channel) => Math.max(0, Math.min(12,
+        Math.round(12 * (rate + .13 * noise(epoch, channel + fold)))));
+      const tp = correct(.5 + .24 * rise, 70), tn = correct(.58 + .18 * rise, 80);
+      const accuracy = (tp + tn) / 24;
+      const errors = 24 - tp - tn;
       return {brain_dice:round(.75 + .19 * rise + shift), extraction_dice:round(.75 + .19 * rise + shift), brain_jaccard:round(.64 + .24 * rise + shift),
         registration_mi:round(.43 + .17 * rise + shift), registration_cc:round(.8 + .13 * rise + shift), registration_dice:round(.6 + .12 * rise + shift),
         tissue_dice:round(.29 + .27 * rise + shift), tissue_jaccard:round(.19 + .20 * rise + shift),
         atlas_dice:round(.38 + .29 * rise + shift), atlas_jaccard:round(.25 + .25 * rise + shift),
-        accuracy:round(.54 + .21 * rise + shift), auc:round(.55 + .26 * rise + shift), balanced_accuracy:round(.54 + .21 * rise + shift),
-        sensitivity:round(.5 + .24 * rise + shift), specificity:round(.58 + .18 * rise + shift), macro_f1:round(.52 + .22 * rise + shift),
+        accuracy, auc:round(auc), balanced_accuracy:accuracy,
+        sensitivity:tp/12, specificity:tn/12, macro_f1:round(tp/(2*tp+errors) + tn/(2*tn+errors)),
         reference_loss:round(1.5 - .7 * rise), count:24, simulated:true};
     }
 
@@ -123,7 +148,7 @@
       const selection = running && id === 'current' ? running.selection : defaults();
       const history = Array.from({length:count}, (_, i) => frame(i + 1, selection, !original));
       return {run:id, history, objective:history.at(-1).objective, coordination:original ? 'none' : 'taskforce',
-        validation:Array.from({length:Math.ceil(count / 8)}, (_,i) => ({epoch:i+1, step:(i+1)*8, validation:metrics(i+1,fold), training_probe:{auc:round(.59 + .3 * (1 - Math.exp(-(i+1)/3)))}, provenance:PROVENANCE})),
+        validation:Array.from({length:Math.floor(count / 8)}, (_,i) => ({epoch:i+1, step:(i+1)*8, validation:metrics(i+1,fold), training_probe:{auc:round(.59 + .3 * (1 - Math.exp(-(i+1)/3)) + .04*noise(i+1,90+fold))}, provenance:PROVENANCE})),
         training_probe_size:24, reported_status:fold === 1 ? 'running' : 'complete', observed_at:stamp(),
         health:{phase:'Simulated monitoring', recovery_count:0, supervisor:{status:'running',restarts:0,max_restarts:3}, diagnosis:{warnings:['Synthetic illustration; these values are not experiment results.'],targets:{}}},
         provenance:PROVENANCE};
@@ -131,7 +156,7 @@
 
     function experiment(id) {
       const original = id === 'demo_original';
-      const currentEpoch = Math.ceil(Math.min(96,24+Math.floor(Math.max(0,clock()-started)/4000))/8);
+      const currentEpoch = Math.floor(Math.min(96,24+Math.floor(Math.max(0,clock()-started)/4000))/8);
       const folds = Array.from({length:5}, (_, i) => ({fold:i+1, run:id+'_fold'+(i+1), status:i === 0 ? 'running' : 'complete', epoch:i === 0 ? currentEpoch : 12, epochs:20, validation:metrics(i === 0 ? currentEpoch : 12,i+1), family_disjoint_verified:false, simulated:true}));
       const summary = {validation:{}};
       ['auc','accuracy','brain_dice','tissue_dice','atlas_dice','registration_mi','registration_cc'].forEach(key => {

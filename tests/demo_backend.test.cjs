@@ -78,7 +78,12 @@ test('both experiments expose five folds, sample SD, policies and epoch outcomes
   assert.equal(policy.gram.length,4);assert.equal(policy.observations.classification.length,5);
   assert.ok(Math.abs(Object.values(policy.actions).reduce((a,b)=>a+b)-1)<1e-12);
   for(let i=0;i<4;i++)for(let j=0;j<4;j++)assert.equal(policy.gram[i][j],policy.gram[j][i]);
-  assert.ok(policy.policy_updates>0);assert.ok(policy.reward_terms.training_loss_improvement>0);
+  assert.ok(policy.policy_updates>0);
+  assert.ok(Math.abs(policy.reward - policy.reward_terms.training_loss_improvement + policy.reward_terms.gradient_norm_penalty)<1e-6);
+  const trace=packet.history.map(row=>row.gradient_policy);
+  assert.ok(trace.some(p=>p.reward<0) && trace.some(p=>p.reward>0));
+  const alignment=trace.map(p=>p.cosine_similarity[0][1]);
+  assert.ok(Math.min(...alignment)<-.2 && Math.max(...alignment)>.2);
   const context=vm.createContext({escapeHtml:String,titleCase:value=>value});vm.runInContext(readFileSync('web/training.js','utf8'),context);
   assert.match(context.trainingDiagram(row.objective,'classification'),/backward-path/);
   assert.match(context.trainingCritics(policy),/Critic 4/);
