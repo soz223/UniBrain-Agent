@@ -135,7 +135,7 @@ def infer(args):
     atlas_labels = atlas.reshape(96, 96, 96).numpy()
     stages.insert(3, {'name': 'Atlas parcellation', 'output_shape': list(atlas.shape),
                       'observed_regions': int(torch.unique(atlas).numel() - int((atlas == 0).any()))})
-    stages[0]['brain_voxel_fraction'] = round(float(masks[-1].mean()), 4)
+    stages[0]['mean_brain_probability'] = round(float(masks[-1].mean()), 4)
     stages[2]['label_counts'] = [int((tissue_labels == label).sum()) for label in range(4)]
     visuals = [('Input MRI', image_array, False), ('Extracted brain', extracted[-1].reshape(96, 96, 96).numpy(), False),
                ('Tissue segmentation', tissue_labels, True), ('Atlas parcellation', atlas_labels, True)]

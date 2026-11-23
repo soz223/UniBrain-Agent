@@ -31,9 +31,22 @@ DECISION_SCHEMA = {
 }
 DEFAULT_PIPELINE = {
     "name": "UniBrain", "profile": "Full original architecture",
-    "stages": ["Brain extraction", "Registration", "Brain parcellation",
-               "Network generation", "Tissue segmentation", "Classification"],
+    "stages": ["Brain extraction", "Registration", "Tissue segmentation", "Atlas parcellation",
+               "ROI feature extraction", "Network generation", "Classification"],
+    "connections": [
+        {"from": "Input MRI", "to": "Brain extraction"},
+        {"from": "Brain extraction", "to": "Registration"},
+        {"from": "Registration", "to": "Atlas parcellation"},
+        {"from": "Atlas parcellation", "to": "ROI feature extraction"},
+        {"from": "Input MRI", "to": "ROI feature extraction"},
+        {"from": "ROI feature extraction", "to": "Network generation"},
+        {"from": "ROI feature extraction", "to": "Classification"},
+        {"from": "Network generation", "to": "Classification"},
+        {"from": "Input MRI", "to": "Tissue segmentation"},
+    ],
+    "branch_note": "Tissue segmentation reads the input MRI independently of the classification path.",
     "sample": "demo", "mode": "inference", "training_enabled": False,
+    "controller": "Constrained tool workflow with a fixed demonstration sample",
 }
 SYSTEM = """You are the controller of an educational UniBrain demo.
 Return only the requested JSON decision. Describe actions concisely in English.
@@ -94,6 +107,7 @@ def call_provider(config, prompt, folder, role):
     completed = run_capture(command, input_text=prompt, timeout=240, cwd=folder)
     (folder / "provider.stderr.txt").write_text(completed.stderr, encoding="utf-8")
     if completed.returncode or not output.exists():
+        (folder / "provider.stdout.jsonl").write_text(completed.stdout, encoding="utf-8")
         raise RuntimeError("Provider unavailable")
     usage = None
     for line in completed.stdout.splitlines():
@@ -103,6 +117,7 @@ def call_provider(config, prompt, folder, role):
                 usage = event.get("usage")
             if event.get("type") == "item.completed" and event.get("item", {}).get("type") in {
                     "command_execution", "mcp_tool_call", "web_search", "file_change"}:
+                (folder / "provider.stdout.jsonl").write_text(completed.stdout, encoding="utf-8")
                 raise RuntimeError("Unexpected native tool invocation")
         except json.JSONDecodeError:
             pass

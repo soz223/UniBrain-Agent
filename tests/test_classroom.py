@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -10,7 +11,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from unibrain_agent.classroom import Classroom, DemoBusy, create_server, safe_value
+from unibrain_agent.classroom import Classroom, DEFAULT_PIPELINE, DemoBusy, call_provider, create_server, safe_value
 
 
 TOKEN = "classroom-test-token-with-more-than-32-characters"
@@ -170,6 +171,31 @@ class ClassroomTests(unittest.TestCase):
         self.assertNotIn("path", value)
         self.assertNotIn("subject_id", value)
         self.assertEqual(value["note"], "[private path] [private]")
+
+    def test_pipeline_describes_segmentation_as_a_separate_branch(self):
+        connections = DEFAULT_PIPELINE["connections"]
+        self.assertIn({"from": "Input MRI", "to": "Tissue segmentation"}, connections)
+        self.assertFalse(any(edge["from"] == "Tissue segmentation" for edge in connections))
+        self.assertIn("Constrained", DEFAULT_PIPELINE["controller"])
+
+    def test_codex_native_tools_are_disabled_and_failures_are_private(self):
+        calls = []
+        def capture(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 1, '{"error":"model unavailable"}', "provider error")
+        folder = Path(self.temp.name) / "provider"
+        with patch("unibrain_agent.classroom.shutil.which", return_value="codex"), patch(
+                "unibrain_agent.classroom.run_capture", side_effect=capture):
+            with self.assertRaises(RuntimeError):
+                call_provider({"provider": "codex", "model": "test-model"}, "Inspect demo", folder, "decision")
+        command = calls[0]
+        disabled = {command[index + 1] for index, value in enumerate(command) if value == "--disable"}
+        self.assertTrue({"shell_tool", "unified_exec", "apps", "browser_use", "computer_use", "view_image",
+                         "multi_agent", "skill_search", "shell_snapshot"}.issubset(disabled))
+        self.assertIn('web_search="disabled"', command)
+        self.assertIn("--ignore-user-config", command)
+        self.assertEqual(command[command.index("--sandbox") + 1], "read-only")
+        self.assertIn("model unavailable", (folder / "provider.stdout.jsonl").read_text())
 
 
 if __name__ == "__main__":

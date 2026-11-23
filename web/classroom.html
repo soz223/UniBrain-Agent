@@ -25,10 +25,11 @@
       <p class="subtitle">The LLM chooses a tool. Python runs UniBrain. The result returns to the conversation.</p>
       <form id="requestForm" class="request">
         <label for="prompt" class="sr-only">Your instruction</label>
-        <textarea id="prompt" rows="2" maxlength="2000">Inspect the UniBrain pipeline, run inference on the demo sample, and explain what each output represents.</textarea>
+        <textarea id="prompt" rows="2" maxlength="1200">Inspect the UniBrain pipeline, run inference on the demo sample, and explain what each output represents.</textarea>
         <div class="request-footer"><span id="providerLabel">Isolated demonstration</span><button id="run" type="submit" disabled>Run instruction <span aria-hidden="true">↗</span></button></div>
       </form>
       <p id="notice" class="notice" role="status" aria-live="polite">Connecting to the demonstration backend.</p>
+      <button id="replay" class="quiet" type="button">Replay verified run <span aria-hidden="true">↻</span></button>
     </section>
 
     <section class="flow" aria-label="Agent execution loop">
@@ -64,7 +65,7 @@
 def infer_sample(sample_id: str):
     sample = demo_samples.load(sample_id)
     return unibrain.predict(sample)</code></pre><p>Illustrative wrapper. The harness exposes a fixed sample and approved tools, validates the request, and records each returned observation.</p></div></details>
-    <footer><span>Demo process and outputs are isolated from training.</span><a href="https://github.com/soz223/UniBrain-Agent" target="_blank" rel="noopener">Source code ↗</a></footer>
+    <footer><span>Constrained tool workflow: inspect, infer, explain. Isolated from training.</span><a href="https://github.com/soz223/UniBrain-Agent" target="_blank" rel="noopener">Source code ↗</a></footer>
   </main>
   <script src="classroom.js" defer></script>
 </body>

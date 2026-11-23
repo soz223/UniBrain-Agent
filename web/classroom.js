@@ -1,7 +1,7 @@
 'use strict';
 
 const el = id => document.getElementById(id);
-const state = { backend: '', connected: false, run: null, generation: 0, timer: null, errors: 0, eventCount: 0, outputKey: '', busy: false };
+const state = { backend: '', connected: false, run: null, generation: 0, timer: null, errors: 0, eventCount: 0, outputKey: '', busy: false, recording: false };
 const names = { 'llm.started': 'LLM request', 'llm.completed': 'LLM decision', 'tool.started': 'Tool call', 'tool.completed': 'Tool result', 'run.completed': 'Run complete', 'run.failed': 'Run failed' };
 
 function backendUrl(value) {
@@ -19,8 +19,9 @@ function notice(text, error = false) {
 }
 
 function accessState() {
-  el('run').disabled = !state.connected || state.busy || !el('token').value.trim();
-  el('run').firstChild.textContent = state.busy ? 'Running ' : 'Run instruction ';
+  el('run').disabled = !state.connected || state.busy || state.recording || !el('token').value.trim();
+  el('run').firstChild.textContent = state.busy ? (state.recording ? 'Replaying ' : 'Running ') : 'Run instruction ';
+  el('replay').disabled = state.busy;
 }
 
 async function request(path, body) {
@@ -63,10 +64,13 @@ function stopPolling() {
 
 async function connect() {
   stopPolling();
+  const generation = state.generation;
+  state.recording = false;
   try {
     state.backend = backendUrl(el('backend').value);
     el('connectionStatus').textContent = 'Connecting';
     const health = await request('/demo/health');
+    if (generation !== state.generation) return;
     if (health.mode !== 'isolated_inference') throw new Error('This address is not an isolated classroom backend.');
     setConnection(true, 'Demo backend online');
     el('providerLabel').textContent = `${health.provider} · ${health.model || 'Model not reported'}`;
@@ -83,6 +87,7 @@ async function connect() {
     accessState();
     el('retry').hidden = true;
   } catch (error) {
+    if (generation !== state.generation) return;
     state.busy = false;
     setConnection(false, 'Demo backend offline');
     notice(error.message, true);
@@ -261,7 +266,7 @@ el('token').addEventListener('input', accessState);
 el('forget').addEventListener('click', () => { el('token').value = ''; accessState(); notice('Instructor access cleared. You can continue viewing this run.'); });
 el('requestForm').addEventListener('submit', async event => {
   event.preventDefault();
-  if (!state.connected || state.busy || !el('token').value.trim()) return;
+  if (!state.connected || state.busy || state.recording || !el('token').value.trim()) return;
   const prompt = el('prompt').value.trim();
   if (!prompt) { notice('Enter an instruction first.', true); return; }
   state.busy = true;
@@ -270,6 +275,7 @@ el('requestForm').addEventListener('submit', async event => {
   try {
     const run = await request('/demo/runs', { prompt });
     stopPolling();
+    state.recording = false;
     state.run = run.id;
     state.eventCount = 0;
     state.outputKey = '';
@@ -280,6 +286,7 @@ el('requestForm').addEventListener('submit', async event => {
     el('modelOutput').className = 'output-empty';
     el('answerSection').hidden = true;
     const url = new URL(location.href);
+    url.searchParams.delete('recording');
     url.searchParams.set('run', run.id);
     history.replaceState(null, '', url);
     showConnection(false);
@@ -294,17 +301,87 @@ el('requestForm').addEventListener('submit', async event => {
 el('share').addEventListener('click', async () => {
   if (!state.run) return;
   const url = new URL(location.href);
-  url.searchParams.set('run', state.run);
+  if (state.recording) { url.searchParams.delete('run'); url.searchParams.set('recording', '1'); }
+  else { url.searchParams.delete('recording'); url.searchParams.set('run', state.run); }
   try { await navigator.clipboard.writeText(url.href); notice('Run link copied. It contains no instructor credential.'); }
   catch { notice('Copy this run link from your browser address bar.'); history.replaceState(null, '', url); }
 });
+
+async function replay() {
+  if (state.busy) return;
+  stopPolling();
+  const generation = state.generation;
+  state.recording = true;
+  state.busy = true;
+  accessState();
+  notice('Recorded execution. Loading a verified real run for accelerated playback.');
+  try {
+    const response = await fetch('classroom-recording.json', { cache: 'no-store' });
+    if (!response.ok) throw new Error('The saved recording could not be loaded.');
+    const run = await response.json();
+    if (run.status !== 'complete' || !Array.isArray(run.events) || !run.result) throw new Error('The saved recording is incomplete.');
+    if (generation !== state.generation) return;
+    state.run = run.id;
+    state.outputKey = '';
+    el('prompt').value = run.prompt;
+    el('providerLabel').textContent = `${run.provider} · ${run.model} · Recorded`;
+    el('runMeta').textContent = `Recorded run ${run.id} · ${run.provider} · ${run.model}`;
+    el('runStatus').textContent = 'Recorded execution';
+    el('runStatus').className = 'pill active';
+    el('images').replaceChildren();
+    el('modelOutput').textContent = 'Recorded model output will appear at the corresponding tool result.';
+    el('modelOutput').className = 'output-empty';
+    el('answerSection').hidden = true;
+    el('share').hidden = false;
+    el('retry').hidden = true;
+    showConnection(false);
+    const url = new URL(location.href);
+    url.searchParams.delete('run');
+    url.searchParams.set('recording', '1');
+    history.replaceState(null, '', url);
+    let count = 0;
+    function frame() {
+      if (generation !== state.generation) return;
+      count += 1;
+      const events = run.events.slice(0, count);
+      const complete = count === run.events.length;
+      renderEvents(events);
+      renderFlow(events, !complete, false);
+      const result = events.find(event => event.type === 'tool.completed' && event.tool === 'run_inference')?.result;
+      if (result) renderOutput(result);
+      if (complete) {
+        state.busy = false;
+        renderOutput(run.result);
+        el('answerSection').hidden = false;
+        el('answer').textContent = run.summary || '';
+        el('runStatus').className = 'pill';
+        notice('Recorded execution complete. No LLM or model calls were made. Open Connection to return to live mode.');
+        accessState();
+      } else {
+        notice('Recorded execution · accelerated playback. Original event timestamps are preserved. No live LLM or model calls.');
+        const gap = new Date(run.events[count].time) - new Date(events.at(-1).time);
+        state.timer = setTimeout(frame, Math.max(650, Math.min(3500, gap / 3)));
+      }
+    }
+    frame();
+  } catch (error) {
+    state.busy = false;
+    accessState();
+    notice('Recorded execution unavailable. ' + error.message, true);
+  }
+}
+
+el('replay').addEventListener('click', replay);
 
 (async () => {
   try {
     const response = await fetch('classroom-config.json', { cache: 'no-store' });
     const config = await response.json();
     el('backend').value = config.backend_url || '';
-    if (config.backend_url) await connect();
+    if (new URLSearchParams(location.search).get('recording') === '1') {
+      el('connectionStatus').textContent = 'Recorded replay';
+      await replay();
+    } else if (config.backend_url) await connect();
     else { setConnection(false, 'Backend not configured'); notice('Open Connection and enter the isolated demo backend address.'); showConnection(true); }
   } catch { setConnection(false, 'Backend not configured'); notice('Open Connection and enter the isolated demo backend address.'); showConnection(true); }
 })();
