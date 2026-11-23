@@ -35,3 +35,5 @@ populate the public demonstration with private records or real access tokens.
 
 The historical independent inference service is documented in
 `docs/classroom-demo.md`; it is not the current classroom entry point.
+
+The Volume Inspector displays the [MNI ICBM152 nonlinear VI symmetric T1 template](https://www.bic.mni.mcgill.ca/ServicesAtlases/ICBM152NLin6), its distributed brain mask, and their voxelwise product. These are reference images. The NIfTI volumes were padded to a cube, resampled to 96 voxels per axis, and intensity scaled to 8 bit for display. The embedded preview includes the original copyright notice in web/mni_preview.json. Training values remain simulated.

@@ -16,6 +16,7 @@ def document(payload=None, standalone=False):
     parts = {
         "__STYLE__": "\n".join((web / name).read_text(encoding="utf-8") for name in ("dashboard.css", "assistant.css", "settings.css", "data.css", "cycle.css", "objective.css", "training.css")),
         "__CONNECTION_SCRIPT__": (web / "connection.js").read_text(encoding="utf-8"),
+        "__DEMO_ATLAS__": (web / "mni_preview.json").read_text(encoding="utf-8"),
         "__DEMO_SCRIPT__": (web / "demo.js").read_text(encoding="utf-8"),
         "__SCRIPT__": (web / "dashboard.js").read_text(encoding="utf-8"),
         "__EDITOR_SCRIPT__": "\n".join((web / name).read_text(encoding="utf-8") for name in ("objective.js", "editor.js")),

@@ -27,7 +27,7 @@ test('demo status is identifiable and idle while original pages receive complete
   assert.equal(h.backend.active,true);assert.equal(data.provenance.model_executed,false);
   const report=data.report;
   assert.equal(report.previews.candidate.shape.join(','),'96,96,96');
-  for(const stage of ['input','mask','extracted','warped'])assert.equal(report.previews.candidate.planes[stage].length,3);
+  for(const stage of ['input','mask','extracted'])assert.equal(report.previews.candidate.planes[stage].length,3);
   assert.ok(report.candidate.history.length>1);assert.equal(report.candidate.history.at(-1).gradient_policy.gram.length,4);
   assert.equal(report.native.updates.length,report.candidate.steps);
   assert.equal(report.provenance.synthetic,true);
@@ -82,6 +82,11 @@ test('both experiments expose five folds, sample SD, policies and epoch outcomes
   assert.ok(Math.abs(policy.reward - policy.reward_terms.training_loss_improvement + policy.reward_terms.gradient_norm_penalty)<1e-6);
   const trace=packet.history.map(row=>row.gradient_policy);
   assert.ok(trace.some(p=>p.reward<0) && trace.some(p=>p.reward>0));
+  const spread = rows => {
+    const shares = rows.map(p => p.actions.classification);
+    return Math.max(...shares) - Math.min(...shares);
+  };
+  assert.ok(spread(trace.slice(-32)) < .25 * spread(trace.slice(0,32)));
   const alignment=trace.map(p=>p.cosine_similarity[0][1]);
   assert.ok(Math.min(...alignment)<-.2 && Math.max(...alignment)>.2);
   const context=vm.createContext({escapeHtml:String,titleCase:value=>value});vm.runInContext(readFileSync('web/training.js','utf8'),context);
@@ -94,9 +99,9 @@ test('both experiments expose five folds, sample SD, policies and epoch outcomes
   const original=await h.get('/api/training-runs/demo_original_fold2');assert.equal(original.coordination,'none');assert.equal(original.history[0].gradient_policy,undefined);
 });
 
-test('every slice is generated locally and a slice or plane changes the synthetic image',async()=>{
+test('the public atlas supplies different anatomical slices and planes',async()=>{
   const h=harness(),a=await h.get('/api/volume?stage=input&index=48'),b=await h.get('/api/volume?stage=input&index=49');
-  assert.equal(a.planes.length,3);assert.ok(a.planes.every(uri=>uri.startsWith('data:image/svg+xml;')));
+  assert.equal(a.planes.length,3);assert.ok(a.planes.every(uri=>uri.startsWith('data:image/png;base64,')));
   assert.notEqual(a.planes[0],b.planes[0]);assert.notEqual(a.planes[0],a.planes[1]);
   for(const index of [0,95])assert.equal((await h.backend.fetch('/api/volume?index='+index)).status,200);
   assert.equal((await h.backend.fetch('/api/volume?index=96')).status,400);

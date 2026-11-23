@@ -186,6 +186,11 @@ async function renderVolume() {
   const request = ++volumeRequest;
   volumeAbort?.abort();
   const preview = report.previews.candidate;
+  if (preview.reference_atlas) {
+    document.querySelector('[data-stage="warped"]').hidden = true;
+    document.querySelector('[data-stage="extracted"]').textContent = "Masked template";
+    if (!(imageStage in preview.planes)) imageStage = "input";
+  }
   const maximum = Math.min(...(preview.shape || [96, 96, 96])) - 1;
   const index = Math.min(maximum, Math.max(0, Number(byId("sliceIndex").value)));
   byId("sliceIndex").max = maximum;
@@ -223,7 +228,7 @@ async function renderVolume() {
   byId("volumeImages").innerHTML = ["I", "J", "K"].map((plane, axis) => '<figure class="volume-plane' + crosshair + '" style="--cross-x:' + (index / maximum * 100) + '%;--cross-y:' + ((maximum - index) / maximum * 100) + '%"><img src="' + planes[axis] + '" alt="' + escapeHtml(titleCase(imageStage)) + ', array ' + plane + ' plane, index ' + index + '"><figcaption>' + plane + ' PLANE</figcaption><span class="plane-index">' + plane + ' = ' + index + '</span></figure>').join("");
   byId("volumeImages").setAttribute("aria-busy", "false");
   byId("volumeStatus").textContent = "All " + (maximum + 1) + " slices · one slice per arrow key";
-  byId("sampleId").textContent = "After training";
+  byId("sampleId").textContent = preview.reference_atlas || "After training";
 }
 
 function renderGradients() {

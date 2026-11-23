@@ -15,6 +15,7 @@
   const mapTasks = fn => Object.fromEntries(TASKS.map((task, i) => [task, fn(task, i)]));
 
   function createDemoBackend(initialConfig, clock = () => Date.now()) {
+    let atlas;
     let config, started = clock(), serial = 0, running = null, latest = null;
     const builds = new Map(), jobs = new Map();
     const stamp = value => new Date(value ?? clock()).toISOString();
@@ -26,6 +27,8 @@
     function configure(value) {
       if (!value?.catalog?.stages || !value.catalog.defaults) throw new Error('The demo requires the bundled UniBrain catalog.');
       config = clone(value);
+      atlas = typeof document === 'undefined' ? require('./mni_preview.json') :
+        JSON.parse(document.getElementById('demoAtlas').textContent);
       api.active = true;
       return api;
     }
@@ -65,8 +68,10 @@
       const scale = 1 + .08 * Math.sin(step / 7);
       const gram = vectors.map(a => vectors.map(b => round(a.reduce((s, v, k) => s + v * b[k], 0) * scale)));
       const gradient_norms = mapTasks((_, i) => Math.sqrt(gram[i][i]));
+      const exploration = .09 + .91 * Math.exp(-step / 67);
       const action_logits = mapTasks((task, i) =>
-        1.75 * Math.tanh(.6 * Math.sin(step / 3 + i) + .8 * noise(step, 32+i) + .5 * batchLoss[task]));
+        [.18,-.15,.09,-.12][i] + exploration * 1.55 * Math.tanh(
+          .6 * Math.sin(step / 3 + i) + .8 * noise(step, 32+i) + .5 * batchLoss[task]));
       const denominator = Object.values(action_logits).reduce((s, x) => s + Math.exp(x), 0);
       const actions = mapTasks(task => Math.exp(action_logits[task]) / denominator);
       const accepted = round(.68 + .30 * noise(step, 40));
@@ -180,15 +185,9 @@
     }
 
     function slice(stage, index, axis) {
-      const radius = 62 * Math.sqrt(Math.max(.02, 1 - ((index - 47.5) / 49) ** 2));
-      const colors = stage === 'mask' ? ['#e4f1ee','#e4f1ee','#e4f1ee'] : stage === 'segmentation' ? ['#b4cce1','#809fca','#dacb9a'] : ['atlas','parcellation'].includes(stage) ? ['#8eb9c4','#b9a2d6','#dcae87'] : ['#858c95','#c4c9ce','#41464e'];
-      let shapes = '<ellipse cx="110" cy="108" rx="'+(radius+8)+'" ry="'+(radius*1.2+8)+'" fill="#31353c"/>';
-      for (let side = -1; side <= 1; side += 2) {
-        shapes += '<ellipse cx="'+(110+side*radius*.35)+'" cy="108" rx="'+radius*.63+'" ry="'+radius*1.16+'" fill="'+colors[0]+'"/>';
-        for(let band=0;band<6;band++) shapes += '<ellipse cx="'+(110+side*radius*(.26+.05*Math.sin(index*.17+band+axis)))+'" cy="'+(108+(band-2.5)*radius*.31)+'" rx="'+radius*(.4-.03*Math.abs(band-2.5))+'" ry="'+radius*.12+'" fill="'+colors[band%3]+'" opacity=".65"/>';
-      }
-      shapes += '<ellipse cx="110" cy="108" rx="'+radius*.09+'" ry="'+radius*.34+'" fill="#171b21"/>';
-      return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 240"><rect width="220" height="240" fill="#11151b"/>'+shapes+'<text x="110" y="230" fill="#9aa7b5" font-family="sans-serif" font-size="9" text-anchor="middle">SYNTHETIC PHANTOM · '+index+'</text></svg>');
+      const plane = atlas.planes[stage]?.[axis]?.[index];
+      if (!plane) throw new Error('No reference image for this stage.');
+      return plane;
     }
 
     function live(run) {
@@ -203,7 +202,7 @@
         modules:keys.map((key,i)=>({module:key,label:key,calls:count,seconds:round(count*(i+1)*.025),status:phase==='complete'?'completed':'started'})),
         current_module:phase==='complete'?null:keys[Math.floor(elapsed)%keys.length],
         agents:TASKS.map(role=>({role,status:phase==='complete'?'completed':'running',seconds:elapsed,usage:{input_tokens:0,output_tokens:0},decision:{summary:'Simulated local policy observation and gradient coordination; no LLM request.'}})),
-        events:[{kind:'demo',message:'Simulation started. All values and images are synthetic.',seconds:0},
+        events:[{kind:'demo',message:'Simulation started. Training values are simulated. The viewer uses a public MRI template.',seconds:0},
           ...history.map(row=>({kind:'training',message:'Simulated optimizer update '+row.step,seconds:row.step*16/run.steps,losses:row.losses,weights:row.gradient_policy?.weights||{extraction:1,registration:.1,segmentation:1,classification:1},weighted_loss:row.weighted_loss,simulated:true}))],
         validation:{completed:phase==='complete'?24:0,total:24},provenance:PROVENANCE};
     }
@@ -211,13 +210,13 @@
     function report(run = null) {
       const selection=run?.selection||defaults(), steps=run?.steps||INITIAL_STEPS, keys=activeModules(selection);
       const history=Array.from({length:steps},(_,i)=>frame(i+1,selection,run ? run.coordination!=='single' : true,run?.coordination||'taskforce'));
-      const planes=Object.fromEntries(['input','mask','extracted','warped','registered','segmentation','parcellation','brain','atlas'].map(stage=>[stage,[0,1,2].map(axis=>[slice(stage,48,axis)])]));
+      const planes=Object.fromEntries(Object.keys(atlas.planes).map(stage=>[stage,[0,1,2].map(axis=>[slice(stage,48,axis)])]));
       const matrix=Object.fromEntries(TASKS.map(task=>[task,Object.fromEntries(keys.map(key=>[key,{state:history.at(-1).objective.connections.some(edge=>edge.loss===task&&edge.module===key)?'active':'disconnected',parameter_tensors:8,connected_tensors:8,nonzero_tensors:8,norm:.08,simulated:true}]))]));
       return {status:'complete',profile:'original',mode:'single',created:stamp(run?.started||started),run_dir:'demo/'+(run?.id||'initial'),epochs:Math.ceil(steps / STEPS_PER_EPOCH),seed:0,
         upstream_commit:'simulated display, not an executed source revision',elapsed_seconds:16,
         build:run?{id:run.build_id,selection}:null, objective:history.at(-1).objective,
         data:{splits:{train:{count:96},val:{count:24},test:{count:24}}},environment:{device:'Browser simulation',threads:0},
-        previews:{candidate:{shape:[96,96,96],slice_indices:[48],planes,run_id:run?.id||'initial'}},
+        previews:{candidate:{reference_atlas:atlas.source,shape:[96,96,96],slice_indices:[48],planes,run_id:run?.id||'initial'}},
         native:{parameters:1280000,updates:history.map(row=>({step:row.step,modules_with_observed_updates:keys})),audit:{checks:{synthetic_fixture:true}},provenance:PROVENANCE},
         candidate:{steps,history,training_seconds:16,validation:metrics(Math.ceil(steps / STEPS_PER_EPOCH)),model:{config:{stages:selection}},
           gradients:{matrix,updated_parameters:Object.fromEntries(keys.map(key=>[key,100]))},spatial:{synthetic_geometry:true},checkpoint:'In-memory simulated record',
