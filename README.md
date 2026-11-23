@@ -3,11 +3,11 @@
 An agent controlled training workspace built on the original [UniBrain](https://github.com/Anonymous7852/UniBrain) implementation. Select modules, inspect generated pipeline code, verify gradients and watch the selected pipeline train.
 
 For the November 23, 2026 teaching demonstration, open the
-[classroom page](https://soz223.github.io/UniBrain-Agent/classroom.html),
-[verified replay](https://soz223.github.io/UniBrain-Agent/classroom.html?recording=1),
-or [deployment and teaching guide](docs/classroom-demo.md).
-The isolated demo connects a real LLM to full UniBrain inference and exposes
-tool calls and observations. Starting it requires separate instructor access.
+[original workspace in demo mode](https://soz223.github.io/UniBrain-Agent/?demo=1).
+Pipeline and Training use the same interface and animations as the connected
+application, with embedded simulated data. No backend, login, LLM call or GPU
+is needed. See the [demo guide](docs/demo-mode.md). The separate classroom page
+has been retired.
 
 ## Current research handoff
 

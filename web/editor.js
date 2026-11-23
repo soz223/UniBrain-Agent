@@ -292,6 +292,12 @@ async function initializeEditor() {
   byId("prepareBuild").onclick = prepareSelection;
   byId("viewBuild").onclick = reviewBuild;
   byId("confirmBuild").onclick = runBuild;
+  window.addEventListener("trainingtelemetry", event => {
+    if (event.detail?.phase !== "complete" || !buildBusy || activeBuild?.status !== "ready") return;
+    byId("buildSteps").disabled = false;
+    byId("confirmBuild").textContent = "Confirm & run";
+    showBuild(activeBuild);
+  });
   window.addEventListener("experimentfailed", () => {
     byId("buildSteps").disabled = false;
     byId("confirmBuild").textContent = "Confirm & run";

@@ -1,5 +1,4 @@
 import argparse
-import shutil
 import sys
 from pathlib import Path
 
@@ -14,9 +13,6 @@ def main():
     folder = Path(args.output)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "index.html").write_text(document(standalone=True), encoding="utf-8")
-    for source in (Path(__file__).resolve().parents[1] / "web").glob("classroom*"):
-        if source.is_file():
-            shutil.copy2(source, folder / source.name)
     (folder / ".nojekyll").touch()
     print(f"Static frontend written to {folder}")
 

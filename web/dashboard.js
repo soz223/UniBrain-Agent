@@ -47,7 +47,7 @@ function startLiveRun(steps) {
   runBusy = true;
   byId("results").hidden = true;
   byId("metricsPanel").hidden = true;
-  byId("gradientPanel").hidden = true;
+  if (byId("gradientPanel")) byId("gradientPanel").hidden = true;
   byId("empty").hidden = true;
   byId("activityPanel").hidden = true;
   byId("runError").hidden = true;
@@ -308,7 +308,7 @@ function renderResults() {
   const model = report.candidate, validation = model.validation;
   byId("empty").hidden = true;
   byId("results").hidden = false;
-  byId("gradientPanel").hidden = false;
+  if (byId("gradientPanel")) byId("gradientPanel").hidden = false;
   byId("metricsPanel").hidden = false;
   byId("metricsPanel").open = true;
   byId("runDate").textContent = new Date(report.created).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });

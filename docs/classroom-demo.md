@@ -1,5 +1,11 @@
 # Classroom demonstration
 
+Retired on November 23, 2026. The current teaching interface is the
+[original workspace with embedded simulated data](https://soz223.github.io/UniBrain-Agent/?demo=1).
+See [demo-mode.md](demo-mode.md). The standalone classroom page was removed
+and its dedicated service was stopped. The instructions below are retained
+as historical documentation of the isolated inference implementation.
+
 Updated 2026-11-23. This document describes the portable deployment procedure.
 Deployment-specific verification belongs in the dated classroom handoff.
 

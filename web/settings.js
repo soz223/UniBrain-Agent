@@ -106,6 +106,30 @@ async function pollAITest() {
 }
 
 async function initializeAISettings() {
+  if (demoMode) {
+    await backendReady;
+    byId('aiCurrent').textContent='Demo · no external connection';
+    byId('backendLabel').textContent='Built-in demo backend';
+    byId('backendAddress').textContent='Simulated data in this browser';
+    byId('backendForm').hidden=true;
+    byId('editBackend').hidden=true;
+    byId('disconnectBackend').hidden=true;
+    document.querySelectorAll('#settingsView input, #settingsView button').forEach(node=>node.disabled=true);
+    document.querySelectorAll('[data-provider]').forEach(node=>{
+      node.classList.remove('selected');node.setAttribute('aria-checked','false');
+      node.querySelector('.provider-state').textContent='Not used in demo';
+    });
+    byId('accountBadge').textContent='Simulated';
+    byId('accountName').textContent='No AI account is connected';
+    byId('accountPlan').textContent='Agent responses and metrics are illustrative.';
+    byId('accountAvatar').textContent='D';
+    byId('aiLoginStatus').textContent='The demo makes no LLM, training or backend requests.';
+    byId('aiApiFields').hidden=true;
+    byId('aiModel').value='Simulated responses';
+    byId('modelHint').textContent='Exit demo to configure your own provider.';
+    aiNotice('Demo mode uses built-in examples. Exit demo to connect a real backend or AI account.');
+    return;
+  }
   byId('aiConnect').onclick=async()=>{
     if(selectedProvider!==aiConfig?.provider){aiNotice('Save the selected provider first, then connect your account.');return;}
     aiControls(true);aiNotice('Connecting the account you selected on this backend…',true);

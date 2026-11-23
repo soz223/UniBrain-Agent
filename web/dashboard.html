@@ -10,7 +10,7 @@
 <body>
   <a class="skip" href="#workspace">Skip to workspace</a>
   <aside class="sidebar"><a href="#workspace" class="brand"><span class="brand-symbol">U</span><span class="nav-text">UniBrain Agent</span></a><nav aria-label="Workspace navigation"><a href="#builderPanel" aria-label="Pipeline"><span aria-hidden="true">▦</span><span class="nav-text">Pipeline</span></a><a href="#data" data-workspace-link="data" aria-label="Data workspace"><span aria-hidden="true">◫</span><span class="nav-text">Data</span></a><a href="#research" data-workspace-link="research" aria-label="Literature research"><span aria-hidden="true">⌕</span><span class="nav-text">Research</span></a><a href="#roles" data-workspace-link="roles" aria-label="Training workspace"><span aria-hidden="true">◎</span><span class="nav-text">Training</span></a><a href="#runPanel" aria-label="Run monitor"><span aria-hidden="true">◉</span><span class="nav-text">Run monitor</span></a><a href="#results" aria-label="Model outputs"><span aria-hidden="true">◫</span><span class="nav-text">Model outputs</span></a><a href="#settings" data-workspace-link="settings" aria-label="AI settings"><span aria-hidden="true">⚙</span><span class="nav-text">AI settings</span></a></nav><div class="sidebar-bottom"><button id="resetPipeline" aria-label="New UniBrain run" class="text-button">↺ <span class="nav-text">New UniBrain run</span></button><button id="runtimeDetails" aria-label="Runtime" class="text-button">⚙ <span class="nav-text">Runtime</span></button></div></aside>
-  <header class="topbar"><span class="muted">Structural MRI</span><span id="snapshotLabel" class="muted">○ Ready to configure</span></header>
+  <header class="topbar"><span class="muted topbar-domain">Structural MRI</span><div class="topbar-actions"><span id="demoBadge" class="demo-badge" hidden title="Illustrative data only. No backend, model training or LLM calls.">Demo · simulated data</span><span id="snapshotLabel" class="muted">○ Ready to configure</span><button id="demoToggle" class="demo-toggle" type="button" aria-pressed="false">Try demo</button></div></header>
   <main id="workspace">
     <div id="pipelineView" data-workspace="pipeline">
     <section class="heading-row"><h1>Pipeline workspace</h1><span id="profileLabel" class="profile-label">⚙ Customizable pipeline</span></section>
@@ -46,6 +46,7 @@
   </main>
   <dialog id="detailDialog"><div class="dialog-head"><div><div id="dialogEyebrow" class="eyebrow">EXPERIMENT</div><h2 id="dialogTitle"></h2></div><button class="icon-button" id="closeDialog" aria-label="Close details">×</button></div><div id="dialogBody" class="dialog-body"></div></dialog>
   <script id="appConfig" type="application/json">__APP_CONFIG__</script>
+  <script>__DEMO_SCRIPT__</script>
   <script>__CONNECTION_SCRIPT__</script>
   <script id="reportData" type="application/json">__REPORT_JSON__</script>
   <script>__SCRIPT__</script><script>__EDITOR_SCRIPT__</script><script>__ASSISTANT_SCRIPT__</script>

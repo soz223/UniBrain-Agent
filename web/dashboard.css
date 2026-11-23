@@ -132,6 +132,21 @@ p {
   top:0;
   z-index:10;
 }
+.topbar-actions { display:flex; align-items:center; justify-content:flex-end; gap:14px; min-width:0; }
+.demo-toggle { padding:6px 11px; border:1px solid var(--accent); color:var(--accent); background:transparent; border-radius:6px; font-size:11px; white-space:nowrap; }
+.demo-toggle:hover { background:#a6d8c714; }
+.demo-badge { color:var(--amber); font-size:11px; white-space:nowrap; }
+.demo-badge[hidden] { display:none; }
+@media(max-width:760px) {
+  .topbar-actions { gap:9px; }
+  .demo-badge { font-size:10px; }
+  .topbar-actions:has(.demo-badge:not([hidden])) #snapshotLabel { display:none; }
+}
+@media(max-width:580px) {
+  .topbar-domain { display:none; }
+  .topbar-actions { width:100%; justify-content:space-between; }
+  .topbar-actions #snapshotLabel { font-size:10px; }
+}
 .brand {
   display:flex;
   align-items:center;
