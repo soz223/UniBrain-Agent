@@ -101,8 +101,9 @@ def call_provider(config, prompt, folder, role):
                "--output-schema", str(schema.resolve()), "--output-last-message", str(output.resolve()),
                "--model", config["model"], "-c", "web_search=\"disabled\""]
     for feature in ("shell_tool", "shell_snapshot", "unified_exec", "apps", "browser_use", "computer_use",
-                    "view_image", "multi_agent", "skill_search"):
+                    "view_image", "multi_agent", "skill_search", "plugins", "remote_plugin"):
         command.extend(["--disable", feature])
+    command.extend(["--enable", "skip_host_skill_discovery"])
     command.append("-")
     completed = run_capture(command, input_text=prompt, timeout=240, cwd=folder)
     (folder / "provider.stderr.txt").write_text(completed.stderr, encoding="utf-8")

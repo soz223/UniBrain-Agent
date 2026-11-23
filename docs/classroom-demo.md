@@ -142,3 +142,30 @@ systemctl --user stop unibrain-classroom.service
 
 Keep demonstration logs separate from publication experiments. The service has
 no training, code modification or production-data upload endpoint.
+# Verified classroom deployment
+
+Verified on November 23, 2026 (America/New_York). The public entry is
+https://soz223.github.io/UniBrain-Agent/classroom.html. Add `?recording=1`
+for an accelerated replay of a completed real execution. Replay makes no
+LLM or inference requests and remains explicitly labeled as recorded.
+
+The live deployment uses Codex CLI with `gpt-6-astra`, two allowlisted tools,
+and the complete paper-form UniBrain model with 271,483,811 parameters.
+The first accepted run made three LLM calls, executed one CPU forward in
+28.972 seconds, and recorded zero training updates. Its total elapsed time
+was approximately 65 seconds. This verifies invocation, not model accuracy.
+The checkpoint is a copied ADHD experiment artifact, and the input MRI
+comes from the pinned upstream public example. No cohort performance or
+independent test result is claimed for this demonstration.
+
+The deployment has a 2-CPU quota, 12 GiB memory limit, hidden CUDA devices,
+and a read-only filesystem except its isolated state directory. The normal
+training backend runs as a separate, unchanged service. Public viewers can
+read results; starting a run requires the separate instructor credential.
+
+The current HTTPS address uses a temporary Cloudflare tunnel. Its hostname
+can change after a tunnel restart; update `web/classroom-config.json` and
+publish Pages again if that happens. A permanent deployment should use a
+named tunnel or an existing HTTPS reverse proxy. The static replay remains
+available through Pages independently of the inference backend.
+
